@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ r_case_detail.case.title }} | ExpertBoard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='expertboard.css', v='20260729i') }}">
+</head>
+<body>
+    <div class="page">
+        <div class="shell">
+            <header class="topbar">
+                <div class="brand">
+                    <div class="brand-mark">EB</div>
+                    <div>
+                        <div class="brand-title">ExpertBoard</div>
+                    </div>
+                </div>
+                <div class="top-actions">
+                    <a class="top-pill top-link" href="{{ url_for('expertboard.board_detail', board_id=r_case_detail.board.id) }}">Back to Expert Board</a>
+                </div>
+            </header>
+
+            <div class="layout">
+                <aside class="sidebar">
+                    <div class="sidebar-label">Overview</div>
+                    <nav class="nav">
+                        <button class="nav-item active" type="button" data-view="workspace">
+                            <span>Review room</span><span class="nav-badge">Live</span>
+                        </button>
+                        <button class="nav-item" type="button" data-view="dashboard">
+                            <span>Dashboard</span><span class="nav-badge">Guide</span>
+                        </button>
+                    </nav>
+
+                    <div class="sidebar-label">Review</div>
+                    <nav class="nav">
+                        <button class="nav-item" type="button" data-view="phenotype">Phenotype review</button>
+                        <button class="nav-item" type="button" data-view="variant">Variant review</button>
+                        <button class="nav-item" type="button" data-view="hypothesis">Hypothesis board</button>
+                        <button class="nav-item" type="button" data-view="evidence">Evidence inbox</button>
+                        <button class="nav-item" type="button" data-view="history">Review history</button>
+                    </nav>
+
+                    <div class="sidebar-label">Presentation</div>
+                    <nav class="nav">
+                        <button class="nav-item" type="button" data-view="briefing">Case briefing</button>
+                    </nav>
+
+                </aside>
+
+                <main class="main">
+                    <section class="case-hero">
+                        <div>
+                            <h1>{{ r_case_detail.case.title }}</h1>
+                            <p class="hero-copy">
+                                A case-specific review room under {{ r_case_detail.board.name }}.
+                            </p>
+                        </div>
+                        <div class="case-status">
+                            <div class="status-card">
+                                <span>Board category</span>
+                                <strong>{% if r_case_detail.board.scope_type == "Disease area" %}Disease-focused board{% else %}{{ r_case_detail.board.scope_type }}{% endif %}</strong>
+                            </div>
+                            <div class="status-card">
+                                <span>Status</span>
+                                <strong>{{ r_case_detail.status_label }}</strong>
+                            </div>
+                            <div class="status-card">
+                                <span>Core board</span>
+                                <strong>{{ r_case_detail.consensus.total }} reviewers</strong>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="view-panel is-active" data-panel="workspace">
+                        <div class="board-grid">
+                            <article class="panel">
+                                <div class="panel-header">
+                                    <div>
+                                        <h2 class="panel-title">Current interpretation supported</h2>
+                                        <p class="panel-copy">
+                                            {{ r_case_detail.consensus.supported }} of {{ r_case_detail.consensus.total }}
+                                            core reviewers support the current diagnostic direction.
+                                        </p>
+                                    </div>
+                                    <span class="panel-link">Export minutes</span>
+                                </div>
+                                <div class="consensus-card">
+                                    <div class="dial">
+                                        <div class="dial-inner">{{ r_case_detail.consensus.percent }}%</div>
+                                    </div>
+                                    <div>
+                                        <h2>Core board consensus</h2>
+                                        <p>{{ r_case_detail.decision.current_interpretation }}</p>
+                                        <div class="position-row">
+                                            {% for position in r_case_detail.core_positions %}
+                                                <div class="position-chip">
+                                                    {{ position.role }}
+                                                    <span>{{ position.stance }}</span>
+                                                </div>
+                                            {% endfor %}
+                                        </div>
+                                    </div>
+                                </div>
+                            </article>
+
+                            <article class="panel">
+                                <h2 class="panel-title">Optional support</h2>
+                                <p class="panel-copy">Participants who coordinate, advise, or contribute evidence without changing the core denominator.</p>
+                                <div class="position-row">
+                                    {% for position in r_case_detail.optional_support %}
+                                        <div class="evidence-card">
+                                            <strong>{{ position.role }}</strong>
+                                            <p>{{ position.stance }}</p>
+                                        </div>
+                                    {% endfor %}
+                                </div>
+                            </article>
+                        </div>
+
+                        <article class="panel">
+                            <div class="evidence-grid">
+                                {% for card in r_case_detail.evidence_cards %}
+                                    <div class="evidence-card">
+                                        <strong>{{ card.title }}</strong>
+                                        <p>{{ card.detail }}</p>
+                                        <span class="tag">{{ card.tag }}</span>
+                                    </div>
+                                {% endfor %}
+                            </div>
+                        </article>
+                    </section>
+
+                    <section class="view-panel" data-panel="dashboard">
+                        <article class="panel">
+                            <div class="detail-grid">
+                                <div class="detail-card">
+                                    <span>Expert Board</span>
+                                    <strong>{{ r_case_detail.board.name }}</strong>
+                                    <p>{{ r_case_detail.board.scope }}</p>
+                                </div>
+                                <div class="detail-card">
+                                    <span>Status</span>
+                                    <strong>{{ r_case_detail.status_label }}</strong>
+                                    <p>Review room state for this case under the selected Expert Board.</p>
+                                </div>
+                                <div class="detail-card">
+                                    <span>Review mode</span>
+                                    <strong>Human-governed</strong>
+                                    <p>AI drafts assist the team, but decisions remain reviewer-owned.</p>
+                                </div>
+                            </div>
+
+                            <div class="section-divider">
+                                <div class="panel-header">
+                                    <div>
+                                        <h2 class="panel-title">How this board works</h2>
+                                        <p class="panel-copy">The Expert Board is fixed by domain; this Review Room is opened for one case under that board.</p>
+                                    </div>
+                                </div>
+                                <div class="board-flow">
+                                    <div class="flow-node accent">
+                                        <span>Expert Board</span>
+                                        <strong>{{ r_case_detail.board.name }}</strong>
+                                        <p>A reusable specialist team defined by gene, disease, or clinical domain.</p>
+                                    </div>
+                                    <div class="flow-arrow">-&gt;</div>
+                                    <div class="flow-node">
+                                        <span>Review Room</span>
+                                        <strong>{{ r_case_detail.case.title }}</strong>
+                                        <p>A case-specific workspace for phenotype, variant, hypothesis, evidence, and history.</p>
+                                    </div>
+                                    <div class="flow-arrow">-&gt;</div>
+                                    <div class="flow-node consensus">
+                                        <span>Consensus</span>
+                                        <strong>{{ r_case_detail.consensus.supported }} / {{ r_case_detail.consensus.total }} supported</strong>
+                                        <p>The board records the current diagnostic direction for this room.</p>
+                                    </div>
+                                </div>
+                                <div class="flow-support">
+                                    <div class="flow-node">
+                                        <span>Evidence inbox</span>
+                                        <strong>Signals enter the room</strong>
+                                        <p>Diagnostic support results, literature cues, and case evidence are triaged into review workspaces.</p>
+                                    </div>
+                                    <div class="flow-node">
+                                        <span>Board membership</span>
+                                        <strong>Fixed across rooms</strong>
+                                        <p>Core and optional roles belong to the Expert Board; positions are recorded per Review Room.</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="section-divider">
+                                <div class="panel-header">
+                                    <div>
+                                        <h2 class="panel-title">Workspace ownership</h2>
+                                        <p class="panel-copy">Ownership is a default guide, not a fixed permission boundary.</p>
+                                    </div>
+                                </div>
+                                <div class="ownership-matrix">
+                                    <div class="ownership-row header">
+                                        <span>Workspace</span>
+                                        <span>Lead role</span>
+                                        <span>Support / intent</span>
+                                    </div>
+                                    <div class="ownership-row">
+                                        <strong>Review room</strong>
+                                        <span>Case chair</span>
+                                        <span>Case chair leads the interpretation flow; Case coordinator keeps actions moving.</span>
+                                    </div>
+                                    <div class="ownership-row">
+                                        <strong>Phenotype review</strong>
+                                        <span>Clinical reviewer</span>
+                                        <span>Clinical reviewer leads phenotype and HPO review, with counselor or external consultant input when needed.</span>
+                                    </div>
+                                    <div class="ownership-row">
+                                        <strong>Variant review</strong>
+                                        <span>Bioinformatician + Laboratory scientist</span>
+                                        <span>Bioinformatician and Laboratory scientist lead variant interpretation, ACMG/AMP criteria, and validation evidence.</span>
+                                    </div>
+                                    <div class="ownership-row">
+                                        <strong>Hypothesis board</strong>
+                                        <span>Case chair + Core board</span>
+                                        <span>Core board records positions; Case chair facilitates the current diagnostic direction.</span>
+                                    </div>
+                                    <div class="ownership-row">
+                                        <strong>Evidence inbox</strong>
+                                        <span>Case coordinator</span>
+                                        <span>Case coordinator triages incoming evidence with reviewer input from clinical and bioinformatics roles.</span>
+                                    </div>
+                                    <div class="ownership-row">
+                                        <strong>Review history</strong>
+                                        <span>Case coordinator + Case chair</span>
+                                        <span>Case coordinator and Case chair keep the timeline, decisions, and exported artifacts readable.</span>
+                                    </div>
+                                    <div class="ownership-row">
+                                        <strong>Case briefing</strong>
+                                        <span>Case chair</span>
+                                        <span>Case chair presents a meeting-ready narrative across summary, evidence, interpretation, and next actions.</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </article>
+                    </section>
+
+                    <section class="view-panel" data-panel="phenotype">
+                        <article class="panel">
+                            <h2 class="panel-title">Phenotype review</h2>
+                            <p class="panel-copy">Clinical reviewers confirm HPO terms, onset, severity, and fit with the current diagnostic direction.</p>
+                            <div class="detail-grid compact-grid">
+                                <div class="detail-card">
+                                    <span>Suspected diseases</span>
+                                    <strong>{{ r_case_detail.case.suspected_diseases }}</strong>
+                                    <p>Working disease hypotheses brought into the board room.</p>
+                                </div>
+                                <div class="detail-card">
+                                    <span>Clinical diagnoses</span>
+                                    <strong>{{ r_case_detail.clinical_diagnoses }}</strong>
+                                    <p>Clinical label before board-level interpretation.</p>
+                                </div>
+                                <div class="detail-card">
+                                    <span>Final diagnoses</span>
+                                    <strong>{{ r_case_detail.final_diagnoses }}</strong>
+                                    <p>Filled only after human-governed consensus.</p>
+                                </div>
+                                <div class="detail-card">
+                                    <span>Genes</span>
+                                    <strong>{{ r_case_detail.case.genes }}</strong>
+                                    <p>Current candidate genes for phenotype-genotype review.</p>
+                                </div>
+                            </div>
+                            <div class="section-divider">
+                                <h3 class="mini-heading">HPO terms</h3>
+                                <p class="panel-copy">Phenotype terms currently attached to this synthetic case.</p>
+                            </div>
+                            <div class="chip-row">
+                                {% for term in r_case_detail.phenotype_hints %}
+                                    <span class="tag">{{ term }}</span>
+                                {% endfor %}
+                            </div>
+                        </article>
+                    </section>
+
+                    <section class="view-panel" data-panel="variant">
+                        <article class="panel">
+                            <div class="panel-header">
+                                <div>
+                                    <h2 class="panel-title">Variant review</h2>
+                                    <p class="panel-copy">ClinGen-inspired classification view for variant identity, ACMG/AMP criteria, expert panel context, and evidence rationale.</p>
+                                </div>
+                                <div class="panel-link">Draft assertion</div>
+                            </div>
+
+                            <div class="variant-layout">
+                                <div class="variant-hero">
+                                    <span class="classification-label">Variant identity</span>
+                                    <h3>NM_000350.3(ABCA4):c.6764G&gt;T (p.Ser2255Ile)</h3>
+                                    <p>Gene: ABCA4 · Condition: ABCA4-related retinopathy · Inheritance: autosomal recessive</p>
+                                    <div class="grid-2 compact-grid">
+                                        <div class="detail-card">
+                                            <span>Allele registry</span>
+                                            <strong>CA202970</strong>
+                                            <p>External allele identifier for traceable review.</p>
+                                        </div>
+                                        <div class="detail-card">
+                                            <span>ClinVar</span>
+                                            <strong>99494</strong>
+                                            <p>Linked public assertion context.</p>
+                                        </div>
+                                        <div class="detail-card">
+                                            <span>Specification</span>
+                                            <strong>ABCA4 VCEP v1.0.0</strong>
+                                            <p>Panel-specific thresholds should drive criteria interpretation.</p>
+                                        </div>
+                                        <div class="detail-card">
+                                            <span>Review state</span>
+                                            <strong>ExpertBoard draft</strong>
+                                            <p>Human reviewer confirmation required before minutes export.</p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="classification-card">
+                                    <div class="classification-top">
+                                        <div>
+                                            <span class="classification-label">Classification</span>
+                                            <h3>Benign</h3>
+                                            <p>Draft interpretation based on met benign criteria and non-applied pathogenic criteria.</p>
+                                        </div>
+                                        <div class="panel-link classification-version">Version 1.0</div>
+                                    </div>
+                                    <div class="criteria-section">
+                                        <div class="criteria-heading">Met criteria codes</div>
+                                        <div class="criteria-row">
+                                            <div class="criteria-code">BA1</div>
+                                            <div class="criteria-code">BP4</div>
+                                        </div>
+                                    </div>
+                                    <div class="criteria-section">
+                                        <div class="criteria-heading">Not met criteria codes</div>
+                                        <div class="criteria-row">
+                                            <div class="criteria-code not-met">PS4</div>
+                                            <div class="criteria-code not-met">PM3</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="grid-2 compact-grid">
+                                <div class="detail-card">
+                                    <span>Expert panel</span>
+                                    <strong>ABCA4 VCEP</strong>
+                                    <p>Panel-specific ACMG/AMP rules are treated as the source of truth for criteria thresholds.</p>
+                                </div>
+                                <div class="detail-card">
+                                    <span>Evidence links</span>
+                                    <strong>0 attached</strong>
+                                    <p>ExpertBoard should let reviewers attach PubMed, ClinVar, gnomAD, and internal case evidence.</p>
+                                </div>
+                            </div>
+
+                            <div class="evidence-summary compact-grid">
+                                <div class="evidence-row">
+                                    <strong>BA1</strong>
+                                    <p>Population frequency is above the panel-defined benign stand-alone threshold, so this criterion is met.</p>
+                                </div>
+                                <div class="evidence-row">
+                                    <strong>BP4</strong>
+                                    <p>Computational evidence is consistent with a benign effect under the applicable panel specification.</p>
+                                </div>
+                                <div class="evidence-row">
+                                    <strong>PS4</strong>
+                                    <p>Case-control evidence is insufficient for pathogenic support in this review context.</p>
+                                </div>
+                                <div class="evidence-row">
+                                    <strong>PM3</strong>
+                                    <p>Observed-in-trans evidence is not applied because benign frequency evidence dominates the assertion.</p>
+                                </div>
+                            </div>
+                        </article>
+                    </section>
+
+                    <section class="view-panel" data-panel="hypothesis">
+                        <article class="panel">
+                            <h2 class="panel-title">Hypothesis board</h2>
+                            <p class="panel-copy">Current leading direction: {{ r_case_detail.case.suspected_diseases }}</p>
+                        </article>
+                    </section>
+
+                    <section class="view-panel" data-panel="evidence">
+                        <article class="panel">
+                            <h2 class="panel-title">Evidence inbox</h2>
+                            <div class="evidence-grid">
+                                {% for task in r_case_detail.tasks %}
+                                    <div class="task-card">
+                                        <strong>{{ task.title }}</strong>
+                                        <p>{{ task.owner }} · {{ task.status }}</p>
+                                    </div>
+                                {% endfor %}
+                            </div>
+                        </article>
+                    </section>
+
+                    <section class="view-panel" data-panel="history">
+                        <article class="panel">
+                            <h2 class="panel-title">Review history</h2>
+                            <div class="history-list">
+                                {% for item in r_case_detail.audit_logs %}
+                                    <div class="history-item">{{ item.actor_name }} · {{ item.action_type }} · {{ item.created_at }}</div>
+                                {% endfor %}
+                            </div>
+                        </article>
+                    </section>
+
+                    <section class="view-panel" data-panel="briefing">
+                        <article class="panel">
+                            <h2 class="panel-title">Case briefing</h2>
+                            <p class="panel-copy">
+                                A presentation-oriented summary of the case, board positions, evidence, and next decision points.
+                            </p>
+                        </article>
+                    </section>
+                </main>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const navItems = document.querySelectorAll("[data-view]");
+        const panels = document.querySelectorAll("[data-panel]");
+
+        function switchBoardView(viewName) {
+            navItems.forEach((item) => item.classList.toggle("active", item.dataset.view === viewName));
+            panels.forEach((panel) => panel.classList.toggle("is-active", panel.dataset.panel === viewName));
+        }
+
+        navItems.forEach((item) => {
+            item.addEventListener("click", () => switchBoardView(item.dataset.view));
+        });
+    </script>
+</body>
+</html>

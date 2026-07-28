@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ExpertBoard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='expertboard.css', v='20260729i') }}">
+</head>
+<body>
+    <main class="landing">
+        <section class="hero">
+            <div class="eyebrow">ExpertBoard</div>
+            <h1 class="landing-title">Expert boards for undiagnosed disease case</h1>
+            <p class="lede">
+                Expert Boards are organized by gene, disease, or clinical domain. Each board opens case-specific Review Rooms.
+            </p>
+            <div class="launch-row">
+                <form method="POST" action="{{ url_for('expertboard.create_demo_board') }}">
+                    <button class="launch-button" type="submit">Create expert board</button>
+                </form>
+                <div class="stat-card">
+                    <span>Expert boards</span>
+                    <strong>{{ r_boards|length }}</strong>
+                </div>
+                <div class="stat-card">
+                    <span>Board experts</span>
+                    <strong>{{ r_boards | sum(attribute='expert_count') }}</strong>
+                </div>
+                <div class="stat-card">
+                    <span>Case rooms</span>
+                    <strong>{{ r_boards | sum(attribute='room_count') }}</strong>
+                </div>
+            </div>
+        </section>
+
+        <section class="workspace">
+            <article class="section">
+                <h2 class="section-title">Expert Board List</h2>
+                <p class="section-copy">An Expert Board is a reusable specialist group. A Review Room is opened under that board for each case.</p>
+                <div class="list-search-box">Search expert boards by gene, disease, domain, or team name</div>
+
+                {% if r_boards %}
+                    <div class="case-list">
+                        {% for row in r_boards %}
+                            <article class="case-card">
+                                <div class="case-top">
+                                    <h3 class="case-name">{{ row.board.name }}</h3>
+                                    <span class="badge">{% if row.board.scope_type == "Disease area" %}Disease-focused{% else %}{{ row.board.scope_type }}{% endif %}</span>
+                                </div>
+                                <div class="meta">
+                                    <div>
+                                        <span>Clinical scope</span>
+                                        <strong>{{ row.board.scope }}</strong>
+                                    </div>
+                                    <div>
+                                        <span>Review rooms</span>
+                                        <strong>{{ row.room_count }}</strong>
+                                    </div>
+                                    <div>
+                                        <span>Status</span>
+                                        <strong>{{ row.board.status }}</strong>
+                                    </div>
+                                </div>
+                                <p class="summary">{{ row.summary }}</p>
+                                <div class="actions">
+                                    <span class="meta-note">Fixed board, case-specific rooms</span>
+                                    <a class="link-button" href="{{ url_for('expertboard.board_detail', board_id=row.board.id) }}">Open expert board</a>
+                                </div>
+                            </article>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <div class="empty">
+                        No expert boards yet. Create the first demo board to start the prototype.
+                    </div>
+                {% endif %}
+            </article>
+
+            <aside class="section">
+                <h2 class="section-title">MVP shape</h2>
+                <p class="section-copy">The board is fixed by expertise. The review room changes per case.</p>
+                <div class="candidate-list">
+                    <div class="candidate">
+                        <h3>Expert Board</h3>
+                        <p>Gene, disease, or domain-specific expert team, similar in granularity to expert panels but focused on case review.</p>
+                    </div>
+                    <div class="candidate">
+                        <h3>Review Room</h3>
+                        <p>Case-specific workspace for phenotype, variant, hypothesis, evidence, and consensus review.</p>
+                    </div>
+                    <div class="candidate">
+                        <h3>Human-governed AI</h3>
+                        <p>AI prepares summaries and draft interpretations; the board owns the final judgment.</p>
+                    </div>
+                </div>
+            </aside>
+        </section>
+    </main>
+</body>
+</html>

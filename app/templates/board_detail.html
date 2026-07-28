@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ r_board_detail.board.name }} | ExpertBoard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='expertboard.css', v='20260729i') }}">
+</head>
+<body>
+    <main class="landing">
+        <a class="page-back-link" href="{{ url_for('expertboard.board_list') }}">Back to Expert Board List</a>
+        <section class="hero">
+            <div class="eyebrow">Expert Board</div>
+            <h1>{{ r_board_detail.board.name }}</h1>
+            <p class="lede">{{ r_board_detail.board.description }}</p>
+            <div class="launch-row">
+                <form method="POST" action="{{ url_for('expertboard.create_demo_board') }}">
+                    <button class="launch-button" type="submit">Create review room</button>
+                </form>
+                <div class="stat-card">
+                    <span>Board category</span>
+                    <strong>{% if r_board_detail.board.scope_type == "Disease area" %}Disease-focused board{% else %}{{ r_board_detail.board.scope_type }}{% endif %}</strong>
+                </div>
+                <div class="stat-card">
+                    <span>Review rooms</span>
+                    <strong>{{ r_board_detail.rooms|length }}</strong>
+                </div>
+                <div class="stat-card">
+                    <span>Core reviewers</span>
+                    <strong>5</strong>
+                </div>
+            </div>
+        </section>
+
+        <section class="workspace">
+            <article class="section">
+                <h2 class="section-title">Case Review Rooms</h2>
+                <p class="section-copy">Each room belongs to this fixed expert board and represents one case review.</p>
+                <div class="list-search-box">Search review rooms by case, disease, HPO, gene, or variant</div>
+                <div class="case-list">
+                    {% for row in r_board_detail.rooms %}
+                        <article class="case-card">
+                            <div class="case-top">
+                                <h3 class="case-name">{{ row.case.title }}</h3>
+                                <span class="badge">{{ row.status_label }}</span>
+                            </div>
+                            <div class="meta">
+                                <div>
+                                    <span>Suspected diseases</span>
+                                    <strong>{{ row.case.suspected_diseases }}</strong>
+                                </div>
+                                <div>
+                                    <span>Genes</span>
+                                    <strong>{{ row.case.genes }}</strong>
+                                </div>
+                                <div>
+                                    <span>Room type</span>
+                                    <strong>Case review</strong>
+                                </div>
+                            </div>
+                            <p class="summary">{{ row.summary }}</p>
+                            <div class="actions">
+                                <span class="meta-note">Board: {{ r_board_detail.board.name }}</span>
+                                <a class="link-button" href="{{ url_for('expertboard.room_detail', board_id=r_board_detail.board.id, room_id=row.case.id) }}">Open review room</a>
+                            </div>
+                        </article>
+                    {% endfor %}
+                </div>
+            </article>
+
+            <aside class="section">
+                <h2 class="section-title">Board members</h2>
+                <p class="section-copy">Members are attached to the expert board, not selected from scratch per case.</p>
+                <div class="candidate-list">
+                    {% for member in r_board_detail.members %}
+                        <div class="candidate">
+                            <h3>{{ member.display_name }}</h3>
+                            <p>{{ member.board_group }} · {{ member.status }}</p>
+                        </div>
+                    {% endfor %}
+                </div>
+            </aside>
+        </section>
+    </main>
+</body>
+</html>
