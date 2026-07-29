@@ -4,6 +4,12 @@ ExpertBoard is an experimental, standalone prototype for AI-assisted complex cas
 
 It explores reusable expert boards organized by gene, disease, or clinical domain. Each board can open case-specific review rooms where multidisciplinary experts review evidence, record positions, track consensus, and keep final decisions human-governed.
 
+## Prerequisites
+
+- Install Docker Desktop or Docker Engine.
+- Start Docker locally before running the development environment.
+- Make sure ports `8010` and `13307` are available, or change them in `.env`.
+
 ## Local development
 
 ```bash
