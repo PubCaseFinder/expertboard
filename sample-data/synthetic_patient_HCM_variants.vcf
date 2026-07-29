@@ -1,0 +1,35 @@
+##fileformat=VCFv4.2
+##fileDate=20260729
+##source=SyntheticDataGenerator_v1
+##reference=GRCh38
+##comment=ENTIRELY SYNTHETIC DATA - fictional patient, fictional variants, for demonstration/testing purposes only. Not derived from any real individual or real ClinVar submission.
+##INFO=<ID=GENE,Number=1,Type=String,Description="Gene symbol">
+##INFO=<ID=HGVSC,Number=1,Type=String,Description="HGVS coding sequence notation">
+##INFO=<ID=HGVSP,Number=1,Type=String,Description="HGVS protein notation">
+##INFO=<ID=CLNSIG,Number=1,Type=String,Description="Clinical significance (synthetic classification)">
+##INFO=<ID=NOTE,Number=.,Type=String,Description="Free-text annotation note">
+##FILTER=<ID=PASS,Description="All filters passed">
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Read depth">
+##FORMAT=<ID=GQ,Number=1,Type=Integer,Description="Genotype quality">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	SYN-PATIENT-88291
+14	23429581	syn001	G	A	99	PASS	GENE=MYH7;HGVSC=c.1988G>A;HGVSP=p.Arg663His;CLNSIG=Pathogenic;NOTE=Classic_HCM_hotspot_residue	GT:DP:GQ	0/1:62:99
+11	47339251	syn002	C	T	99	PASS	GENE=MYBPC3;HGVSC=c.2827C>T;HGVSP=p.Arg943Ter;CLNSIG=Pathogenic;NOTE=Premature_stop_established_allele	GT:DP:GQ	0/1:58:99
+1	201365984	syn003	C	T	97	PASS	GENE=TNNT2;HGVSC=c.421C>T;HGVSP=p.Arg141Trp;CLNSIG=Likely_pathogenic;NOTE=Segregation_reported_similar_families	GT:DP:GQ	0/1:54:96
+19	55663415	syn004	G	A	91	PASS	GENE=TNNI3;HGVSC=c.575G>A;HGVSP=p.Arg192His;CLNSIG=VUS;NOTE=Conflicting_functional_data	GT:DP:GQ	0/1:49:90
+12	111350628	syn005	G	A	88	PASS	GENE=MYL2;HGVSC=c.64G>A;HGVSP=p.Glu22Lys;CLNSIG=VUS;NOTE=Rare_absent_population_databases	GT:DP:GQ	0/1:45:88
+15	35081627	syn006	G	A	90	PASS	GENE=ACTC1;HGVSC=c.301G>A;HGVSP=p.Glu101Lys;CLNSIG=VUS;NOTE=Predicted_damaging_in_silico_no_segregation	GT:DP:GQ	0/1:47:89
+15	63354245	syn007	C	T	95	PASS	GENE=TPM1;HGVSC=c.500C>T;HGVSP=p.Ala167Val;CLNSIG=Likely_benign;NOTE=Seen_in_unaffected_relatives	GT:DP:GQ	0/1:60:95
+11	47332415	syn008	A	AA	93	PASS	GENE=MYBPC3;HGVSC=c.3624dupA;HGVSP=p.fs;CLNSIG=Pathogenic;NOTE=Frameshift_truncating	GT:DP:GQ	0/1:51:93
+7	151546980	syn009	G	A	85	PASS	GENE=PRKAG2;HGVSC=c.905G>A;HGVSP=p.Arg302Gln;CLNSIG=VUS;NOTE=Overlap_phenotype_gene_unclear_penetrance	GT:DP:GQ	0/1:42:85
+X	101397459	syn010	G	T	80	PASS	GENE=GLA;HGVSC=c.937G>T;HGVSP=p.Asp313Tyr;CLNSIG=Benign;NOTE=Common_low_penetrance_polymorphism	GT:DP:GQ	1:55:80
+X	119571089	syn011	A	G	83	PASS	GENE=LAMP2;HGVSC=c.1000A>G;HGVSP=p.Met334Val;CLNSIG=VUS;NOTE=Insufficient_case_data	GT:DP:GQ	0/1:44:83
+14	23412897	syn012	G	A	78	PASS	GENE=MYH7;HGVSC=c.5135G>A;HGVSP=p.Arg1712Gln;CLNSIG=VUS;NOTE=Novel_not_previously_reported	GT:DP:GQ	0/1:39:78
+2	178562438	syn013	G	A	96	PASS	GENE=TTN;HGVSC=c.29470G>A;HGVSP=p.Ala9824Thr;CLNSIG=Likely_benign;NOTE=Common_missense_nontruncating_region	GT:DP:GQ	0/1:63:96
+2	219420854	syn014	C	T	87	PASS	GENE=DES;HGVSC=c.1195C>T;HGVSP=p.Arg399Cys;CLNSIG=VUS;NOTE=Associated_more_with_skeletal_myopathy	GT:DP:GQ	0/1:46:87
+11	19203368	syn015	C	T	92	PASS	GENE=CSRP3;HGVSC=c.170C>T;HGVSP=p.Ser57Leu;CLNSIG=Likely_pathogenic;NOTE=Reported_in_HCM_cohort_functional_pending	GT:DP:GQ	0/1:52:92
+6	118880281	syn016	CAGA	C	99	PASS	GENE=PLN;HGVSC=c.40_42delAGA;HGVSP=p.Arg14del;CLNSIG=Pathogenic;NOTE=Well_established_cardiomyopathy_variant	GT:DP:GQ	0/1:65:99
+20	42893117	syn017	C	T	82	PASS	GENE=JPH2;HGVSC=c.797C>T;HGVSP=p.Ser266Phe;CLNSIG=VUS;NOTE=Limited_case_reports	GT:DP:GQ	0/1:41:82
+10	92673415	syn018	C	T	94	PASS	GENE=ANKRD1;HGVSC=c.169C>T;HGVSP=p.Pro57Ser;CLNSIG=Benign;NOTE=Common_population_variant_MAF_gt_2pct	GT:DP:GQ	0/1:58:94
+7	128480246	syn019	C	T	84	PASS	GENE=FLNC;HGVSC=c.6478C>T;HGVSP=p.Arg2160Trp;CLNSIG=VUS;NOTE=Emerging_candidate_gene_limited_evidence	GT:DP:GQ	0/1:43:84
+4	120214897	syn020	C	T	89	PASS	GENE=MYOZ2;HGVSC=c.856C>T;HGVSP=p.Gln286Ter;CLNSIG=Likely_pathogenic;NOTE=Truncating_gene_dosage_sensitive	GT:DP:GQ	0/1:48:89
