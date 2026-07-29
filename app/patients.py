@@ -1,34 +1,36 @@
-"""Patient and variant data access, plus demo seeding.
+"""Patient and variant data access, plus VCF upload import.
 
-For the hackathon each patient row links to on-disk artifacts (a VCF file and a
-free-text clinical note) by file path. Variants are parsed out of the VCF and
-stored in the ``variants`` table so they can be listed and access-controlled.
+Each patient row links to its uploaded VCF file by path. Variants are parsed out
+of the VCF and stored in the ``variants`` table so they can be listed per patient.
 """
 
 import os
 
+from werkzeug.utils import secure_filename
 from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 
 from app.db import Session
 from app.models import Patient
 from app.models import Variant
-from app.vcf_import import import_vcf_for_patient
+from app.vcf_import import import_variants_for_patient
+from app.vcf_import import parse_vcf_records
 
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+UPLOAD_DIR = os.path.join(PROJECT_ROOT, "uploads")
 
-DEMO_PATIENT = {
-    "patient_code": "SYN-PATIENT-88291",
-    "display_name": "Synthetic HCM proband",
-    "diagnosis_name": "Suspected hypertrophic cardiomyopathy (HCM)",
-    "vcf_path": "sample-data/synthetic_patient_HCM_variants.vcf",
-    "clinical_text_path": "sample-data/synthetic_patient_HCM_clinical.txt",
-    "summary": (
-        "Entirely synthetic proband with a pre-filtered candidate panel of "
-        "cardiomyopathy-related variants for expert board review."
-    ),
-}
+ALLOWED_EXTENSIONS = (".vcf", ".txt")
+
+
+def ensure_schema():
+    """Add columns introduced after the patients table was first created."""
+    session = Session()
+    try:
+        session.execute(text("ALTER TABLE patients ADD COLUMN clinical_text TEXT NULL"))
+        session.commit()
+    except OperationalError:
+        session.rollback()
 
 
 def resolve_path(relative_or_absolute):
@@ -40,45 +42,8 @@ def resolve_path(relative_or_absolute):
     return os.path.join(PROJECT_ROOT, relative_or_absolute)
 
 
-def _ensure_case_patient_id_column(session):
-    try:
-        session.execute(text("ALTER TABLE cases ADD COLUMN patient_id INT NULL"))
-        session.commit()
-    except OperationalError:
-        session.rollback()
-
-
-def ensure_demo_patient():
-    """Create the demo patient and import its VCF if not already present."""
-    session = Session()
-    _ensure_case_patient_id_column(session)
-
-    patient = (
-        session.query(Patient)
-        .filter(Patient.patient_code == DEMO_PATIENT["patient_code"])
-        .first()
-    )
-    if patient is None:
-        patient = Patient(
-            patient_code=DEMO_PATIENT["patient_code"],
-            display_name=DEMO_PATIENT["display_name"],
-            diagnosis_name=DEMO_PATIENT["diagnosis_name"],
-            vcf_path=DEMO_PATIENT["vcf_path"],
-            clinical_text_path=DEMO_PATIENT["clinical_text_path"],
-            summary=DEMO_PATIENT["summary"],
-        )
-        session.add(patient)
-        session.flush()
-
-    vcf_full_path = resolve_path(patient.vcf_path)
-    already_imported = (
-        session.query(Variant).filter(Variant.patient_id == patient.id).count() > 0
-    )
-    if vcf_full_path and os.path.exists(vcf_full_path) and not already_imported:
-        import_vcf_for_patient(session, patient.id, vcf_full_path)
-
-    session.commit()
-    return patient
+def is_allowed_filename(filename):
+    return bool(filename) and filename.lower().endswith(ALLOWED_EXTENSIONS)
 
 
 def list_patients():
@@ -98,6 +63,17 @@ def get_patient(patient_id):
     return session.get(Patient, patient_id)
 
 
+def save_clinical_text(patient_id, clinical_text):
+    """Store the patient's free-text clinical description. Returns the patient."""
+    session = Session()
+    patient = session.get(Patient, patient_id)
+    if patient is None:
+        return None
+    patient.clinical_text = clinical_text or None
+    session.commit()
+    return patient
+
+
 def get_patient_variants(patient_id):
     session = Session()
     return (
@@ -108,12 +84,50 @@ def get_patient_variants(patient_id):
     )
 
 
-def read_clinical_text(patient):
-    """Return the free-text clinical note contents, or None if unavailable."""
-    if patient is None or not patient.clinical_text_path:
-        return None
-    full_path = resolve_path(patient.clinical_text_path)
-    if not full_path or not os.path.exists(full_path):
-        return None
-    with open(full_path, "r", encoding="utf-8") as handle:
-        return handle.read()
+def _get_or_create_patient(session, patient_code, display_name, diagnosis_name, vcf_path):
+    patient = (
+        session.query(Patient).filter(Patient.patient_code == patient_code).first()
+    )
+    if patient is None:
+        patient = Patient(patient_code=patient_code)
+        session.add(patient)
+    patient.display_name = display_name or patient.display_name
+    patient.diagnosis_name = diagnosis_name or patient.diagnosis_name
+    patient.vcf_path = vcf_path
+    session.flush()
+    return patient
+
+
+def _store_uploaded_file(patient_code, file_storage, content):
+    """Persist the uploaded VCF under ``uploads/`` and return its relative path."""
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
+    safe_name = secure_filename(file_storage.filename or "upload.vcf")
+    safe_code = secure_filename(patient_code) or "patient"
+    stored_name = f"{safe_code}_{safe_name}"
+    stored_path = os.path.join(UPLOAD_DIR, stored_name)
+    with open(stored_path, "w", encoding="utf-8") as handle:
+        handle.write(content)
+    return os.path.relpath(stored_path, PROJECT_ROOT)
+
+
+def import_uploaded_vcf(file_storage, patient_code, display_name, diagnosis_name):
+    """Parse an uploaded VCF, store the file, and replace the patient's variants.
+
+    Returns ``(patient, variant_count)``.
+    """
+    raw = file_storage.read()
+    content = raw.decode("utf-8", errors="replace")
+    lines = content.splitlines()
+
+    stored_path = _store_uploaded_file(patient_code, file_storage, content)
+
+    session = Session()
+    patient = _get_or_create_patient(
+        session, patient_code, display_name, diagnosis_name, stored_path
+    )
+    count = import_variants_for_patient(
+        session, patient.id, parse_vcf_records(lines)
+    )
+    session.commit()
+    return patient, count
+

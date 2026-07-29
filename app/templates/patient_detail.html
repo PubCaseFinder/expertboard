@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ r_patient.display_name or r_patient.patient_code }} | ExpertBoard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='expertboard.css', v='20260729j') }}">
+</head>
+<body>
+    {% include "_role_bar.html" %}
+    <main class="landing">
+        <a class="page-back-link" href="{{ url_for('expertboard.patient_list') }}">Back to Patients</a>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="flash-stack">
+                    {% for category, message in messages %}
+                        <div class="flash {{ category }}">{{ message }}</div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+
+        <section class="hero">
+            <div class="eyebrow">Patient · {{ r_patient.patient_code }}</div>
+            <h1 class="landing-title">{{ r_patient.display_name or r_patient.patient_code }}</h1>
+            <p class="lede">{{ r_patient.diagnosis_name or "" }}</p>
+            <div class="launch-row">
+                <div class="stat-card">
+                    <span>Patient ID</span>
+                    <strong>{{ r_patient.patient_code }}</strong>
+                </div>
+                <div class="stat-card">
+                    <span>VCF file</span>
+                    <strong>{{ r_patient.vcf_path or "—" }}</strong>
+                </div>
+                <div class="stat-card">
+                    <span>Variants</span>
+                    <strong>{{ r_variants|length }}</strong>
+                </div>
+            </div>
+        </section>
+
+        <section class="workspace">
+            <article class="section section-wide">
+                <h2 class="section-title">Clinical free text</h2>
+                <p class="section-copy">
+                    Enter the patient's clinical description. Phenotype (HPO) extraction will be added next.
+                </p>
+                <form class="clinical-form" method="POST"
+                      action="{{ url_for('expertboard.patient_clinical_text', patient_id=r_patient.id) }}">
+                    <textarea name="clinical_text" rows="8"
+                              placeholder="e.g. 12-year-old with progressive muscle weakness, ptosis, and exercise intolerance...">{{ r_patient.clinical_text or "" }}</textarea>
+                    <button class="launch-button" type="submit">Save clinical text</button>
+                </form>
+            </article>
+
+            <article class="section section-wide">
+                <h2 class="section-title">VCF variants</h2>
+                {% if r_variants %}
+                    <p class="section-copy">{{ r_variants|length }} variants parsed from the uploaded VCF.</p>
+                    <div class="table-wrap">
+                        <table class="variant-table">
+                            <thead>
+                                <tr>
+                                    <th>Gene</th>
+                                    <th>HGVS c.</th>
+                                    <th>HGVS p.</th>
+                                    <th>Type</th>
+                                    <th>Locus</th>
+                                    <th>REF/ALT</th>
+                                    <th>Clin. sig.</th>
+                                    <th>GT</th>
+                                    <th>DP</th>
+                                    <th>Note</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for v in r_variants %}
+                                    <tr>
+                                        <td><strong>{{ v.gene or "—" }}</strong></td>
+                                        <td>{{ v.hgvs_c or "—" }}</td>
+                                        <td>{{ v.hgvs_p or "—" }}</td>
+                                        <td>{{ v.variant_type or "—" }}</td>
+                                        <td>{{ v.chrom }}:{{ v.pos }}</td>
+                                        <td>{{ v.ref }}/{{ v.alt }}</td>
+                                        <td><span class="clnsig clnsig-{{ (v.clin_sig or 'unknown')|lower|replace('_','-') }}">{{ v.clin_sig or "—" }}</span></td>
+                                        <td>{{ v.genotype or "—" }}</td>
+                                        <td>{{ v.depth if v.depth is not none else "—" }}</td>
+                                        <td class="note-cell">{{ (v.note or "")|replace('_', ' ') }}</td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <div class="empty">No variants imported for this patient.</div>
+                {% endif %}
+            </article>
+        </section>
+    </main>
+</body>
+</html>

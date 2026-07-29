@@ -30,6 +30,7 @@ class Patient(Base):
     diagnosis_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     vcf_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
     clinical_text_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    clinical_text: Mapped[str | None] = mapped_column(Text(), nullable=True)
     summary: Mapped[str | None] = mapped_column(Text(), nullable=True)
     created_at: Mapped[str] = mapped_column(TIMESTAMP(), nullable=False, server_default=func.current_timestamp())
     updated_at: Mapped[str] = mapped_column(

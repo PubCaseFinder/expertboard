@@ -1,5 +1,6 @@
 from flask import Blueprint
 from flask import abort
+from flask import flash
 from flask import redirect
 from flask import render_template
 from flask import request
@@ -7,6 +8,7 @@ from flask import url_for
 
 from app import auth
 from app import cases
+from app import patients
 
 
 bp = Blueprint("expertboard", __name__)
@@ -19,6 +21,58 @@ def switch_role():
     if next_url and next_url.startswith("/"):
         return redirect(next_url)
     return redirect(url_for("expertboard.board_list"))
+
+
+@bp.route("/patients")
+def patient_list():
+    return render_template("patient_list.html", r_patients=patients.list_patients())
+
+
+@bp.route("/patients/import", methods=["POST"])
+def patient_import():
+    upload = request.files.get("vcf_file")
+    patient_code = (request.form.get("patient_code") or "").strip()
+    display_name = (request.form.get("display_name") or "").strip()
+    diagnosis_name = (request.form.get("diagnosis_name") or "").strip()
+
+    if not patient_code:
+        flash("Patient ID is required.", "error")
+        return redirect(url_for("expertboard.patient_list"))
+    if upload is None or not upload.filename:
+        flash("Please choose a VCF file to upload.", "error")
+        return redirect(url_for("expertboard.patient_list"))
+    if not patients.is_allowed_filename(upload.filename):
+        flash("Unsupported file type. Please upload a .vcf file.", "error")
+        return redirect(url_for("expertboard.patient_list"))
+
+    patient, count = patients.import_uploaded_vcf(
+        upload, patient_code, display_name, diagnosis_name
+    )
+    flash(f"Imported {count} variants for {patient.patient_code}.", "success")
+    return redirect(url_for("expertboard.patient_detail", patient_id=patient.id))
+
+
+@bp.route("/patients/<int:patient_id>")
+def patient_detail(patient_id):
+    patient = patients.get_patient(patient_id)
+    if patient is None:
+        abort(404)
+    return render_template(
+        "patient_detail.html",
+        r_patient=patient,
+        r_variants=patients.get_patient_variants(patient_id),
+    )
+
+
+@bp.route("/patients/<int:patient_id>/clinical-text", methods=["POST"])
+def patient_clinical_text(patient_id):
+    patient = patients.get_patient(patient_id)
+    if patient is None:
+        abort(404)
+    clinical_text = (request.form.get("clinical_text") or "").strip()
+    patients.save_clinical_text(patient_id, clinical_text)
+    flash("Clinical text saved.", "success")
+    return redirect(url_for("expertboard.patient_detail", patient_id=patient_id))
 
 
 @bp.route("/boards")

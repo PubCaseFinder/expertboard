@@ -1022,6 +1022,189 @@ h1 {
     color: rgba(255, 255, 255, 0.4);
 }
 
+/* --- Patients / VCF import --- */
+.page-nav {
+    display: flex;
+    gap: 8px;
+    margin: 18px 0 4px;
+}
+
+.page-nav a {
+    padding: 8px 16px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 750;
+    text-decoration: none;
+    color: var(--ink-soft, #5a6376);
+    border: 1px solid var(--line, #d9e0ea);
+    background: rgba(255, 255, 255, 0.7);
+}
+
+.page-nav a.active {
+    background: linear-gradient(135deg, #6a5bd1, #5547c8);
+    border-color: transparent;
+    color: #fff;
+}
+
+.flash-stack {
+    display: grid;
+    gap: 8px;
+    margin: 10px 0 4px;
+}
+
+.flash {
+    padding: 12px 16px;
+    border-radius: 12px;
+    font-size: 13px;
+    font-weight: 700;
+    border: 1px solid transparent;
+}
+
+.flash.success {
+    background: rgba(110, 224, 196, 0.16);
+    border-color: rgba(110, 224, 196, 0.45);
+    color: #1f7a63;
+}
+
+.flash.error {
+    background: rgba(255, 107, 107, 0.14);
+    border-color: rgba(255, 107, 107, 0.4);
+    color: #b3403a;
+}
+
+.import-form {
+    display: grid;
+    gap: 12px;
+    max-width: 460px;
+}
+
+.form-field {
+    display: grid;
+    gap: 5px;
+}
+
+.form-field span {
+    font-size: 12px;
+    font-weight: 750;
+    color: var(--ink-soft, #5a6376);
+}
+
+.form-field em {
+    color: #d1544c;
+    font-style: normal;
+}
+
+.form-field input[type="text"],
+.form-field input[type="file"] {
+    padding: 10px 12px;
+    border: 1px solid var(--line, #d9e0ea);
+    border-radius: 12px;
+    background: #fff;
+    font-size: 13px;
+    color: var(--ink, #26303f);
+}
+
+.section-wide {
+    grid-column: 1 / -1;
+}
+
+.clinical-form {
+    display: grid;
+    gap: 12px;
+    max-width: 720px;
+}
+
+.clinical-form textarea {
+    width: 100%;
+    padding: 12px 14px;
+    border: 1px solid var(--line, #d9e0ea);
+    border-radius: 12px;
+    background: #fff;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--ink, #26303f);
+    resize: vertical;
+    font-family: inherit;
+}
+
+.clinical-form .launch-button {
+    justify-self: start;
+}
+
+.table-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--line, #d9e0ea);
+    border-radius: 14px;
+}
+
+.variant-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12.5px;
+}
+
+.variant-table thead th {
+    text-align: left;
+    padding: 10px 12px;
+    background: #f4f7fb;
+    color: #5a6376;
+    font-weight: 800;
+    white-space: nowrap;
+    border-bottom: 1px solid var(--line, #d9e0ea);
+}
+
+.variant-table tbody td {
+    padding: 9px 12px;
+    border-bottom: 1px solid #eef2f7;
+    white-space: nowrap;
+    color: var(--ink, #26303f);
+}
+
+.variant-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+.note-cell {
+    white-space: normal;
+    min-width: 200px;
+    color: #6a7486;
+}
+
+.clnsig {
+    display: inline-block;
+    padding: 3px 9px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 800;
+    background: #eef2f7;
+    color: #5a6376;
+}
+
+.clnsig-pathogenic {
+    background: rgba(255, 107, 107, 0.16);
+    color: #c0392b;
+}
+
+.clnsig-likely-pathogenic {
+    background: rgba(255, 159, 91, 0.18);
+    color: #c76a19;
+}
+
+.clnsig-vus {
+    background: rgba(150, 160, 180, 0.18);
+    color: #5a6376;
+}
+
+.clnsig-likely-benign {
+    background: rgba(110, 200, 224, 0.16);
+    color: #1f7a8c;
+}
+
+.clnsig-benign {
+    background: rgba(110, 224, 196, 0.16);
+    color: #1f7a63;
+}
+
 
 .classification-label {
     display: inline-flex;

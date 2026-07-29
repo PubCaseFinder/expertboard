@@ -58,46 +58,72 @@ def _to_int(value):
         return None
 
 
+def parse_vcf_records(lines):
+    """Yield a dict of parsed fields for every variant record.
+
+    ``lines`` is any iterable of text lines (e.g. an open file handle or a list
+    produced from an uploaded file), so the same parser works for on-disk files
+    and browser uploads.
+    """
+    for raw_line in lines:
+        line = raw_line.rstrip("\n")
+        if not line or line.startswith("##"):
+            continue
+        if line.startswith("#"):
+            continue
+
+        columns = line.split("\t")
+        if len(columns) < 8:
+            continue
+
+        chrom, pos, ext_id, ref, alt, qual, filt, info_field = columns[:8]
+        format_field = columns[8] if len(columns) > 8 else ""
+        sample_field = columns[9] if len(columns) > 9 else ""
+
+        info = _parse_info(info_field)
+        sample = _parse_sample(format_field, sample_field)
+
+        yield {
+            "chrom": chrom,
+            "pos": _to_int(pos) or 0,
+            "variant_ext_id": None if ext_id == "." else ext_id,
+            "ref": ref,
+            "alt": alt,
+            "gene": info.get("GENE"),
+            "hgvs_c": info.get("HGVSC"),
+            "hgvs_p": info.get("HGVSP"),
+            "variant_type": _classify_variant_type(ref, alt),
+            "clin_sig": info.get("CLNSIG"),
+            "note": info.get("NOTE"),
+            "genotype": sample.get("GT"),
+            "depth": _to_int(sample.get("DP")),
+            "genotype_quality": _to_int(sample.get("GQ")),
+            "quality": None if qual == "." else qual,
+            "filter_status": None if filt == "." else filt,
+            "raw_info": info_field,
+        }
+
+
 def parse_vcf(path):
-    """Yield a dict of parsed fields for every variant record in the VCF."""
+    """Yield parsed variant records from a VCF file on disk."""
     with open(path, "r", encoding="utf-8") as handle:
-        for raw_line in handle:
-            line = raw_line.rstrip("\n")
-            if not line or line.startswith("##"):
-                continue
-            if line.startswith("#CHROM") or line.startswith("#"):
-                continue
+        yield from parse_vcf_records(handle)
 
-            columns = line.split("\t")
-            if len(columns) < 8:
-                continue
 
-            chrom, pos, ext_id, ref, alt, qual, filt, info_field = columns[:8]
-            format_field = columns[8] if len(columns) > 8 else ""
-            sample_field = columns[9] if len(columns) > 9 else ""
+def import_variants_for_patient(session, patient_id, records):
+    """Replace the variant rows for ``patient_id`` with ``records``.
 
-            info = _parse_info(info_field)
-            sample = _parse_sample(format_field, sample_field)
+    Returns the number of variants imported.
+    """
+    session.query(Variant).filter(Variant.patient_id == patient_id).delete()
 
-            yield {
-                "chrom": chrom,
-                "pos": _to_int(pos) or 0,
-                "variant_ext_id": None if ext_id == "." else ext_id,
-                "ref": ref,
-                "alt": alt,
-                "gene": info.get("GENE"),
-                "hgvs_c": info.get("HGVSC"),
-                "hgvs_p": info.get("HGVSP"),
-                "variant_type": _classify_variant_type(ref, alt),
-                "clin_sig": info.get("CLNSIG"),
-                "note": info.get("NOTE"),
-                "genotype": sample.get("GT"),
-                "depth": _to_int(sample.get("DP")),
-                "genotype_quality": _to_int(sample.get("GQ")),
-                "quality": None if qual == "." else qual,
-                "filter_status": None if filt == "." else filt,
-                "raw_info": info_field,
-            }
+    count = 0
+    for record in records:
+        session.add(Variant(patient_id=patient_id, **record))
+        count += 1
+
+    session.flush()
+    return count
 
 
 def import_vcf_for_patient(session, patient_id, path):
@@ -105,12 +131,4 @@ def import_vcf_for_patient(session, patient_id, path):
 
     Returns the number of variants imported.
     """
-    session.query(Variant).filter(Variant.patient_id == patient_id).delete()
-
-    count = 0
-    for record in parse_vcf(path):
-        session.add(Variant(patient_id=patient_id, **record))
-        count += 1
-
-    session.flush()
-    return count
+    return import_variants_for_patient(session, patient_id, parse_vcf(path))
