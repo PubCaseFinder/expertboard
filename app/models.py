@@ -9,6 +9,62 @@ from sqlalchemy.types import TIMESTAMP
 from app.db import Base
 
 
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    username: Mapped[str] = mapped_column(String(80), nullable=False, unique=True)
+    display_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    role: Mapped[str] = mapped_column(String(32), nullable=False, default="viewer")
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
+    created_at: Mapped[str] = mapped_column(TIMESTAMP(), nullable=False, server_default=func.current_timestamp())
+
+
+class Patient(Base):
+    __tablename__ = "patients"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    patient_code: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    display_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    diagnosis_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    vcf_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    clinical_text_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    summary: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    created_at: Mapped[str] = mapped_column(TIMESTAMP(), nullable=False, server_default=func.current_timestamp())
+    updated_at: Mapped[str] = mapped_column(
+        TIMESTAMP(),
+        nullable=False,
+        server_default=func.current_timestamp(),
+        onupdate=func.current_timestamp(),
+    )
+
+
+class Variant(Base):
+    __tablename__ = "variants"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    patient_id: Mapped[int] = mapped_column(ForeignKey("patients.id"), nullable=False)
+    chrom: Mapped[str] = mapped_column(String(16), nullable=False)
+    pos: Mapped[int] = mapped_column(nullable=False)
+    variant_ext_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    ref: Mapped[str] = mapped_column(String(255), nullable=False)
+    alt: Mapped[str] = mapped_column(String(255), nullable=False)
+    gene: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    hgvs_c: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    hgvs_p: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    variant_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    clin_sig: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    note: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    genotype: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    depth: Mapped[int | None] = mapped_column(nullable=True)
+    genotype_quality: Mapped[int | None] = mapped_column(nullable=True)
+    quality: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    filter_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    raw_info: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    created_at: Mapped[str] = mapped_column(TIMESTAMP(), nullable=False, server_default=func.current_timestamp())
+
+
 class ExpertBoard(Base):
     __tablename__ = "expert_boards"
 
@@ -44,6 +100,7 @@ class Case(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     board_id: Mapped[int | None] = mapped_column(ForeignKey(ExpertBoard.id), nullable=True)
+    patient_id: Mapped[int | None] = mapped_column(ForeignKey("patients.id"), nullable=True)
     title: Mapped[str] = mapped_column(String(160), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="draft")
     suspected_diseases: Mapped[str | None] = mapped_column(String(255), nullable=True)

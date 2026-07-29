@@ -891,6 +891,138 @@ h1 {
     align-items: start;
 }
 
+/* --- Role switcher bar (hackathon mock) --- */
+.role-bar {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: linear-gradient(135deg, #2c2350, #38316b);
+    color: #fff;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: 0 6px 18px rgba(20, 16, 45, 0.25);
+}
+
+.role-bar-inner {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 10px 20px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px 24px;
+}
+
+.role-switch {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.role-switch-label {
+    font-size: 11px;
+    font-weight: 850;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.55);
+    white-space: nowrap;
+}
+
+.role-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.role-buttons form {
+    margin: 0;
+}
+
+.role-chip {
+    padding: 7px 14px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    background: rgba(255, 255, 255, 0.06);
+    color: rgba(255, 255, 255, 0.82);
+    font-size: 12px;
+    font-weight: 750;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+}
+
+.role-chip:hover {
+    background: rgba(255, 255, 255, 0.16);
+    color: #fff;
+}
+
+.role-chip.active {
+    background: linear-gradient(135deg, #7aa8ff, #6ee0c4);
+    border-color: transparent;
+    color: #1a1440;
+    font-weight: 850;
+    box-shadow: 0 4px 12px rgba(110, 224, 196, 0.35);
+}
+
+.role-perms {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.role-perms-label {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.7);
+    white-space: nowrap;
+}
+
+.role-perms-label strong {
+    color: #fff;
+}
+
+.perm-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.perm-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 750;
+    border: 1px solid transparent;
+}
+
+.perm-badge.allowed {
+    background: rgba(110, 224, 196, 0.18);
+    border-color: rgba(110, 224, 196, 0.45);
+    color: #b8f5e6;
+}
+
+.perm-badge.denied {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(255, 255, 255, 0.14);
+    color: rgba(255, 255, 255, 0.42);
+}
+
+.perm-mark {
+    font-weight: 900;
+}
+
+.perm-badge.allowed .perm-mark {
+    color: #6ee0c4;
+}
+
+.perm-badge.denied .perm-mark {
+    color: rgba(255, 255, 255, 0.4);
+}
+
+
 .classification-label {
     display: inline-flex;
     align-items: center;

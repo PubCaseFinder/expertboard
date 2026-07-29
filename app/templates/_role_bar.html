@@ -1,0 +1,36 @@
+{# Top-bar role switcher (hackathon mock, no real auth). #}
+<div class="role-bar">
+    <div class="role-bar-inner">
+        <div class="role-switch">
+            <span class="role-switch-label">Switch role</span>
+            <div class="role-buttons">
+                {% for role in roles %}
+                    <form method="POST" action="{{ url_for('expertboard.switch_role') }}">
+                        <input type="hidden" name="role" value="{{ role }}">
+                        <input type="hidden" name="next" value="{{ request.path }}">
+                        <button type="submit"
+                                class="role-chip {{ 'active' if role == current_role else '' }}"
+                                title="{{ role_labels.get(role, role) }}">
+                            {{ role_labels.get(role, role) }}
+                        </button>
+                    </form>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="role-perms">
+            <span class="role-perms-label">
+                Current role: <strong>{{ role_labels.get(current_role, current_role) }}</strong> &mdash; edit permissions
+            </span>
+            <div class="perm-list">
+                {% for cap_key, cap_label in capabilities %}
+                    {% set allowed = has_capability(cap_key) %}
+                    <span class="perm-badge {{ 'allowed' if allowed else 'denied' }}">
+                        <span class="perm-mark">{{ '✓' if allowed else '✕' }}</span>
+                        {{ cap_label }}
+                    </span>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>

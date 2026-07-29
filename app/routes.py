@@ -2,12 +2,23 @@ from flask import Blueprint
 from flask import abort
 from flask import redirect
 from flask import render_template
+from flask import request
 from flask import url_for
 
+from app import auth
 from app import cases
 
 
 bp = Blueprint("expertboard", __name__)
+
+
+@bp.route("/switch-role", methods=["POST"])
+def switch_role():
+    auth.set_role(request.form.get("role"))
+    next_url = request.form.get("next")
+    if next_url and next_url.startswith("/"):
+        return redirect(next_url)
+    return redirect(url_for("expertboard.board_list"))
 
 
 @bp.route("/boards")
