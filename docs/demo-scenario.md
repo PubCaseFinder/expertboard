@@ -4,6 +4,8 @@
 
 From EHR note to expert consensus for a VUS case
 
+![ExpertBoard concept illustration](expertboard-concept.png)
+
 ## Purpose
 
 This scenario demonstrates how ExpertBoard turns an unstructured clinical note and a candidate variant into a shared, reviewable workspace for a multidisciplinary expert board.
