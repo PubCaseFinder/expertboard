@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ r_case_detail.case.title }} | ExpertBoard</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='expertboard.css', v='20260729j') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='expertboard.css', v='20260729n') }}">
 </head>
 <body>
     {% include "_role_bar.html" %}
@@ -75,6 +75,66 @@
                     </section>
 
                     <section class="view-panel is-active" data-panel="workspace">
+                        <article class="panel clinical-brief">
+                            <div class="panel-header">
+                                <div>
+                                    <h2 class="panel-title">Clinical &amp; candidate genes</h2>
+                                    <p class="panel-copy">Compact review summary. AI summarization will be added here later.</p>
+                                </div>
+                                <span class="panel-link ai-pending">AI summary · coming soon</span>
+                            </div>
+                            <div class="brief-grid">
+                                <div class="brief-block brief-clinical">
+                                    <span class="brief-label">Clinical</span>
+                                    {% if r_case_detail.clinical_brief.clinical_text %}
+                                        <p class="brief-text">{{ r_case_detail.clinical_brief.clinical_text }}</p>
+                                    {% else %}
+                                        <p class="brief-empty">No clinical summary entered.</p>
+                                    {% endif %}
+                                    {% if r_case_detail.clinical_brief.family_history %}
+                                        <span class="brief-label">Family history</span>
+                                        <p class="brief-text">{{ r_case_detail.clinical_brief.family_history }}</p>
+                                    {% endif %}
+                                    {% if r_case_detail.clinical_brief.phenotypes %}
+                                        <span class="brief-label">Phenotypes</span>
+                                        <div class="brief-chips">
+                                            {% for hp in r_case_detail.clinical_brief.phenotypes %}
+                                                <span class="brief-chip">{{ hp }}</span>
+                                            {% endfor %}
+                                        </div>
+                                    {% endif %}
+                                </div>
+                                <div class="brief-block brief-genes">
+                                    <span class="brief-label">Candidate genes</span>
+                                    {% if r_case_detail.clinical_brief.candidate_genes %}
+                                        <div class="brief-chips">
+                                            {% for gene in r_case_detail.clinical_brief.candidate_genes %}
+                                                <span class="brief-chip gene">{{ gene }}</span>
+                                            {% endfor %}
+                                        </div>
+                                    {% else %}
+                                        <p class="brief-empty">No candidate genes.</p>
+                                    {% endif %}
+                                    {% if r_case_detail.clinical_brief.candidate_variants %}
+                                        <span class="brief-label">Candidate variants</span>
+                                        <ul class="brief-list">
+                                            {% for variant in r_case_detail.clinical_brief.candidate_variants %}
+                                                <li>{{ variant }}</li>
+                                            {% endfor %}
+                                        </ul>
+                                    {% endif %}
+                                    {% if r_case_detail.clinical_brief.suspected_diseases %}
+                                        <span class="brief-label">Suspected diseases</span>
+                                        <div class="brief-chips">
+                                            {% for disease in r_case_detail.clinical_brief.suspected_diseases %}
+                                                <span class="brief-chip">{{ disease }}</span>
+                                            {% endfor %}
+                                        </div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </article>
+
                         <div class="board-grid">
                             <article class="panel">
                                 <div class="panel-header">

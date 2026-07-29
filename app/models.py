@@ -28,10 +28,16 @@ class Patient(Base):
     patient_code: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
     display_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
     diagnosis_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    family_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    family_history: Mapped[str | None] = mapped_column(Text(), nullable=True)
     vcf_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
     clinical_text_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
     clinical_text: Mapped[str | None] = mapped_column(Text(), nullable=True)
     summary: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    review_status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending_review")
+    requested_expert_group_id: Mapped[int | None] = mapped_column(
+        ForeignKey("expert_groups.id"), nullable=True
+    )
     created_at: Mapped[str] = mapped_column(TIMESTAMP(), nullable=False, server_default=func.current_timestamp())
     updated_at: Mapped[str] = mapped_column(
         TIMESTAMP(),
@@ -92,6 +98,8 @@ class ExpertBoardMember(Base):
     display_name: Mapped[str] = mapped_column(String(120), nullable=False)
     role: Mapped[str] = mapped_column(String(64), nullable=False)
     board_group: Mapped[str] = mapped_column(String(32), nullable=False)
+    member_kind: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    ref_id: Mapped[int | None] = mapped_column(nullable=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
     created_at: Mapped[str] = mapped_column(TIMESTAMP(), nullable=False, server_default=func.current_timestamp())
 
@@ -172,3 +180,36 @@ class AuditLog(Base):
     target_type: Mapped[str] = mapped_column(String(64), nullable=False)
     target_id: Mapped[str] = mapped_column(String(64), nullable=False)
     created_at: Mapped[str] = mapped_column(TIMESTAMP(), nullable=False, server_default=func.current_timestamp())
+
+
+class ExpertGroup(Base):
+    """A named group of specialists a patient can be referred to for review."""
+
+    __tablename__ = "expert_groups"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(160), nullable=False, unique=True)
+    specialty: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    description: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
+    created_at: Mapped[str] = mapped_column(TIMESTAMP(), nullable=False, server_default=func.current_timestamp())
+
+
+class PanelParticipant(Base):
+    """A group or an individual scheduled onto a patient's expert panel.
+
+    Expert groups and board members are treated uniformly here: each participant
+    row is either kind="group" or kind="individual", both handled the same way.
+    """
+
+    __tablename__ = "panel_participants"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    patient_id: Mapped[int] = mapped_column(ForeignKey("patients.id"), nullable=False)
+    participant_kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    ref_id: Mapped[int | None] = mapped_column(nullable=True)
+    display_name: Mapped[str] = mapped_column(String(160), nullable=False)
+    detail: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    created_at: Mapped[str] = mapped_column(TIMESTAMP(), nullable=False, server_default=func.current_timestamp())
+
+

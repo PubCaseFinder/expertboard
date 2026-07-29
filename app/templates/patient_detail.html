@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ r_patient.display_name or r_patient.patient_code }} | ExpertBoard</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='expertboard.css', v='20260729j') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='expertboard.css', v='20260729n') }}">
 </head>
 <body>
     {% include "_role_bar.html" %}
@@ -38,10 +38,71 @@
                     <span>Variants</span>
                     <strong>{{ r_variants|length }}</strong>
                 </div>
+                <div class="stat-card">
+                    <span>Review status</span>
+                    <strong>{{ r_review_status_labels.get(r_patient.review_status, r_patient.review_status) }}</strong>
+                </div>
             </div>
         </section>
 
         <section class="workspace">
+            <article class="section section-wide">
+                <h2 class="section-title">Review status</h2>
+                <p class="section-copy">
+                    Expert panels and reviews are organized based on the patient's status.
+                </p>
+                <form class="status-form" method="POST"
+                      action="{{ url_for('expertboard.patient_status', patient_id=r_patient.id) }}">
+                    <label class="form-field">
+                        <span>Status</span>
+                        <select name="review_status">
+                            {% for status in r_review_statuses %}
+                                <option value="{{ status }}"
+                                        {% if status == r_patient.review_status %}selected{% endif %}>
+                                    {{ r_review_status_labels.get(status, status) }}
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </label>
+                    <p class="status-hint">{{ r_review_status_hints.get(r_patient.review_status, "") }}</p>
+                    <button class="launch-button" type="submit">Update status</button>
+                </form>
+            </article>
+
+            <article class="section section-wide">
+                <h2 class="section-title">Requested expert group</h2>
+                <p class="section-copy">
+                    Choose which specialist group this patient should be referred to for review.
+                </p>
+                <form class="status-form" method="POST"
+                      action="{{ url_for('expertboard.patient_expert_group', patient_id=r_patient.id) }}">
+                    <label class="form-field">
+                        <span>Expert group</span>
+                        <select name="expert_group_id">
+                            <option value="">— Not assigned —</option>
+                            {% for group in r_expert_groups %}
+                                <option value="{{ group.id }}"
+                                        {% if group.id == r_patient.requested_expert_group_id %}selected{% endif %}>
+                                    {{ group.name }}{% if group.specialty %} · {{ group.specialty }}{% endif %}
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </label>
+                    {% if not r_expert_groups %}
+                        <p class="status-hint">
+                            No expert groups yet. Create one on the
+                            <a href="{{ url_for('expertboard.admin_panel') }}">Admin</a> page.
+                        </p>
+                    {% endif %}
+                    <button class="launch-button" type="submit">Save expert group</button>
+                </form>
+                <p class="section-copy" style="margin-top:14px;">
+                    <a class="link-button" href="{{ url_for('expertboard.patient_panel', patient_id=r_patient.id) }}">
+                        Open expert panel schedule →
+                    </a>
+                </p>
+            </article>
+
             <article class="section section-wide">
                 <h2 class="section-title">Clinical free text</h2>
                 <p class="section-copy">
@@ -53,6 +114,47 @@
                               placeholder="e.g. 12-year-old with progressive muscle weakness, ptosis, and exercise intolerance...">{{ r_patient.clinical_text or "" }}</textarea>
                     <button class="launch-button" type="submit">Save clinical text</button>
                 </form>
+            </article>
+
+            <article class="section section-wide">
+                <h2 class="section-title">Family</h2>
+                <p class="section-copy">
+                    Set a family (kindred) ID to link relatives, and record family history even when
+                    no relative sample has been submitted.
+                </p>
+                <form class="clinical-form" method="POST"
+                      action="{{ url_for('expertboard.patient_family', patient_id=r_patient.id) }}">
+                    <label class="form-field">
+                        <span>Family ID</span>
+                        <input type="text" name="family_id" value="{{ r_patient.family_id or '' }}"
+                               placeholder="e.g. FAM-00042">
+                    </label>
+                    <label class="form-field">
+                        <span>Family history</span>
+                        <textarea name="family_history" rows="5"
+                                  placeholder="e.g. Mother with similar muscle weakness; maternal uncle deceased, undiagnosed neuromuscular disorder...">{{ r_patient.family_history or "" }}</textarea>
+                    </label>
+                    <button class="launch-button" type="submit">Save family information</button>
+                </form>
+
+                {% if r_patient.family_id %}
+                    <h3 class="board-member-title" style="margin-top:16px;">
+                        Linked family members ({{ r_patient.family_id }})
+                    </h3>
+                    {% if r_family_members %}
+                        <div class="family-links">
+                            {% for member in r_family_members %}
+                                <a class="family-link" href="{{ url_for('expertboard.patient_detail', patient_id=member.id) }}">
+                                    <strong>{{ member.display_name or member.patient_code }}</strong>
+                                    <span>{{ member.patient_code }}</span>
+                                    <span>{{ member.diagnosis_name or "No diagnosis" }}</span>
+                                </a>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <div class="empty">No other patients registered under this family ID yet.</div>
+                    {% endif %}
+                {% endif %}
             </article>
 
             <article class="section section-wide">

@@ -9,6 +9,8 @@ from flask import url_for
 from app import auth
 from app import cases
 from app import patients
+from app import admin
+from app import panel
 
 
 bp = Blueprint("expertboard", __name__)
@@ -25,7 +27,19 @@ def switch_role():
 
 @bp.route("/patients")
 def patient_list():
-    return render_template("patient_list.html", r_patients=patients.list_patients())
+    return render_template(
+        "patient_list.html",
+        r_patients=patients.list_patients(),
+        r_review_status_labels=patients.REVIEW_STATUS_LABELS,
+    )
+
+
+@bp.route("/patients/queue")
+def patient_queue():
+    return render_template(
+        "patient_queue.html",
+        r_columns=patients.list_patients_by_status(),
+    )
 
 
 @bp.route("/patients/import", methods=["POST"])
@@ -61,7 +75,88 @@ def patient_detail(patient_id):
         "patient_detail.html",
         r_patient=patient,
         r_variants=patients.get_patient_variants(patient_id),
+        r_review_statuses=patients.REVIEW_STATUSES,
+        r_review_status_labels=patients.REVIEW_STATUS_LABELS,
+        r_review_status_hints=patients.REVIEW_STATUS_HINTS,
+        r_expert_groups=admin.list_expert_groups(),
+        r_family_members=patients.list_family_members(patient_id),
     )
+
+
+@bp.route("/patients/<int:patient_id>/family", methods=["POST"])
+def patient_family(patient_id):
+    patient = patients.get_patient(patient_id)
+    if patient is None:
+        abort(404)
+    patients.save_family_info(
+        patient_id,
+        request.form.get("family_id"),
+        request.form.get("family_history"),
+    )
+    flash("Family information saved.", "success")
+    return redirect(url_for("expertboard.patient_detail", patient_id=patient_id))
+
+
+@bp.route("/patients/<int:patient_id>/expert-group", methods=["POST"])
+def patient_expert_group(patient_id):
+    patient = patients.get_patient(patient_id)
+    if patient is None:
+        abort(404)
+    raw = (request.form.get("expert_group_id") or "").strip()
+    group_id = int(raw) if raw.isdigit() else None
+    patients.set_requested_expert_group(patient_id, group_id)
+    flash("Requested expert group updated.", "success")
+    return redirect(url_for("expertboard.patient_detail", patient_id=patient_id))
+
+
+@bp.route("/patients/<int:patient_id>/panel")
+def patient_panel(patient_id):
+    patient = patients.get_patient(patient_id)
+    if patient is None:
+        abort(404)
+    return render_template(
+        "panel_schedule.html",
+        r_patient=patient,
+        r_candidates=panel.list_candidates(),
+        r_participants=panel.list_participants(patient_id),
+    )
+
+
+@bp.route("/patients/<int:patient_id>/panel/add", methods=["POST"])
+def patient_panel_add(patient_id):
+    patient = patients.get_patient(patient_id)
+    if patient is None:
+        abort(404)
+    _participant, error = panel.add_participant(
+        patient_id, (request.form.get("participant") or "").strip()
+    )
+    flash(error or "Participant added to the panel.", "error" if error else "success")
+    return redirect(url_for("expertboard.patient_panel", patient_id=patient_id))
+
+
+@bp.route("/patients/<int:patient_id>/panel/<int:participant_id>/remove", methods=["POST"])
+def patient_panel_remove(patient_id, participant_id):
+    patient = patients.get_patient(patient_id)
+    if patient is None:
+        abort(404)
+    if panel.remove_participant(patient_id, participant_id):
+        flash("Participant removed from the panel.", "success")
+    else:
+        flash("Participant not found.", "error")
+    return redirect(url_for("expertboard.patient_panel", patient_id=patient_id))
+
+
+@bp.route("/patients/<int:patient_id>/status", methods=["POST"])
+def patient_status(patient_id):
+    patient = patients.get_patient(patient_id)
+    if patient is None:
+        abort(404)
+    status = (request.form.get("review_status") or "").strip()
+    if patients.set_review_status(patient_id, status) is None:
+        flash("Invalid patient status.", "error")
+    else:
+        flash("Patient status updated.", "success")
+    return redirect(url_for("expertboard.patient_detail", patient_id=patient_id))
 
 
 @bp.route("/patients/<int:patient_id>/clinical-text", methods=["POST"])
@@ -73,6 +168,65 @@ def patient_clinical_text(patient_id):
     patients.save_clinical_text(patient_id, clinical_text)
     flash("Clinical text saved.", "success")
     return redirect(url_for("expertboard.patient_detail", patient_id=patient_id))
+
+
+@bp.route("/admin")
+def admin_panel():
+    return render_template(
+        "admin.html",
+        r_users=admin.list_users(),
+        r_roles=auth.ROLES,
+        r_role_labels=auth.ROLE_LABELS,
+        r_expert_groups=admin.list_expert_groups(),
+        r_boards=admin.list_boards(),
+        r_boards_with_members=admin.list_boards_with_members(),
+        r_board_groups=admin.BOARD_GROUPS,
+        r_member_candidates=admin.list_member_candidates(),
+    )
+
+
+@bp.route("/admin/users", methods=["POST"])
+def admin_create_user():
+    _user, error = admin.create_user(
+        request.form.get("username"),
+        request.form.get("display_name"),
+        request.form.get("role"),
+    )
+    flash(error or "User created.", "error" if error else "success")
+    return redirect(url_for("expertboard.admin_panel"))
+
+
+@bp.route("/admin/expert-groups", methods=["POST"])
+def admin_create_expert_group():
+    _group, error = admin.create_expert_group(
+        request.form.get("name"),
+        request.form.get("specialty"),
+        request.form.get("description"),
+    )
+    flash(error or "Expert group created.", "error" if error else "success")
+    return redirect(url_for("expertboard.admin_panel"))
+
+
+@bp.route("/admin/board-members", methods=["POST"])
+def admin_add_board_member():
+    raw_board = (request.form.get("board_id") or "").strip()
+    board_id = int(raw_board) if raw_board.isdigit() else None
+    _member, error = admin.add_board_member(
+        board_id,
+        request.form.get("member"),
+        request.form.get("board_group"),
+    )
+    flash(error or "Board member added.", "error" if error else "success")
+    return redirect(url_for("expertboard.admin_panel"))
+
+
+@bp.route("/admin/board-members/<int:member_id>/remove", methods=["POST"])
+def admin_remove_board_member(member_id):
+    if admin.remove_board_member(member_id):
+        flash("Board member removed.", "success")
+    else:
+        flash("Board member not found.", "error")
+    return redirect(url_for("expertboard.admin_panel"))
 
 
 @bp.route("/boards")

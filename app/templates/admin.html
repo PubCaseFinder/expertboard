@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin | ExpertBoard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='expertboard.css', v='20260729n') }}">
+</head>
+<body>
+    {% include "_role_bar.html" %}
+    <main class="landing">
+        <nav class="page-nav">
+            <a href="{{ url_for('expertboard.board_list') }}">Expert boards</a>
+            <a href="{{ url_for('expertboard.patient_list') }}">Patients</a>
+            <a href="{{ url_for('expertboard.patient_queue') }}">Review queue</a>
+            <a class="active" href="{{ url_for('expertboard.admin_panel') }}">Admin</a>
+        </nav>
+
+        <section class="hero">
+            <div class="eyebrow">ExpertBoard</div>
+            <h1 class="landing-title">Administration</h1>
+            <p class="lede">
+                Manage users, board members, and specialist expert groups.
+            </p>
+        </section>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="flash-stack">
+                    {% for category, message in messages %}
+                        <div class="flash {{ category }}">{{ message }}</div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+
+        {% if not has_capability('manage_board') %}
+            <div class="flash error">
+                Your current role does not have the "Manage board &amp; members" capability.
+                Switch to Administrator to edit. (This build has no real access control.)
+            </div>
+        {% endif %}
+
+        <section class="workspace">
+            <!-- Add user -->
+            <article class="section section-wide">
+                <h2 class="section-title">Add user</h2>
+                <p class="section-copy">Create a mock user account and assign a role.</p>
+                <form class="admin-form" method="POST" action="{{ url_for('expertboard.admin_create_user') }}">
+                    <div class="admin-form-grid">
+                        <label class="form-field">
+                            <span>Username <em>*</em></span>
+                            <input type="text" name="username" placeholder="e.g. a.okahiro" required>
+                        </label>
+                        <label class="form-field">
+                            <span>Display name <em>*</em></span>
+                            <input type="text" name="display_name" placeholder="e.g. Dr. Aki Okahiro" required>
+                        </label>
+                        <label class="form-field">
+                            <span>Role</span>
+                            <select name="role">
+                                {% for role in r_roles %}
+                                    <option value="{{ role }}">{{ r_role_labels.get(role, role) }}</option>
+                                {% endfor %}
+                            </select>
+                        </label>
+                    </div>
+                    <button class="launch-button" type="submit">Add user</button>
+                </form>
+
+                {% if r_users %}
+                    <div class="table-wrap">
+                        <table class="variant-table">
+                            <thead>
+                                <tr><th>Username</th><th>Display name</th><th>Role</th><th>Status</th></tr>
+                            </thead>
+                            <tbody>
+                                {% for user in r_users %}
+                                    <tr>
+                                        <td>{{ user.username }}</td>
+                                        <td>{{ user.display_name }}</td>
+                                        <td>{{ r_role_labels.get(user.role, user.role) }}</td>
+                                        <td>{{ user.status }}</td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <div class="empty">No users yet.</div>
+                {% endif %}
+            </article>
+
+            <!-- Add expert group -->
+            <article class="section section-wide">
+                <h2 class="section-title">Add expert group</h2>
+                <p class="section-copy">Create a specialist group that patients can be referred to.</p>
+                <form class="admin-form" method="POST" action="{{ url_for('expertboard.admin_create_expert_group') }}">
+                    <div class="admin-form-grid">
+                        <label class="form-field">
+                            <span>Group name <em>*</em></span>
+                            <input type="text" name="name" placeholder="e.g. Cardiac genetics panel" required>
+                        </label>
+                        <label class="form-field">
+                            <span>Specialty</span>
+                            <input type="text" name="specialty" placeholder="e.g. Cardiology / inherited cardiomyopathy">
+                        </label>
+                    </div>
+                    <label class="form-field">
+                        <span>Description</span>
+                        <textarea name="description" rows="3" placeholder="What this group reviews..."></textarea>
+                    </label>
+                    <button class="launch-button" type="submit">Add expert group</button>
+                </form>
+
+                {% if r_expert_groups %}
+                    <div class="table-wrap">
+                        <table class="variant-table">
+                            <thead>
+                                <tr><th>Name</th><th>Specialty</th><th>Description</th><th>Status</th></tr>
+                            </thead>
+                            <tbody>
+                                {% for group in r_expert_groups %}
+                                    <tr>
+                                        <td>{{ group.name }}</td>
+                                        <td>{{ group.specialty or "—" }}</td>
+                                        <td class="note-cell">{{ group.description or "—" }}</td>
+                                        <td>{{ group.status }}</td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <div class="empty">No expert groups yet.</div>
+                {% endif %}
+            </article>
+
+            <!-- Board members -->
+            <article class="section section-wide">
+                <h2 class="section-title">Board member management</h2>
+                <p class="section-copy">Add an existing user or expert group to a board.</p>
+                <form class="admin-form" method="POST" action="{{ url_for('expertboard.admin_add_board_member') }}">
+                    <div class="admin-form-grid">
+                        <label class="form-field">
+                            <span>Board <em>*</em></span>
+                            <select name="board_id" required>
+                                <option value="" disabled selected>Choose a board</option>
+                                {% for board in r_boards %}
+                                    <option value="{{ board.id }}">{{ board.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </label>
+                        <label class="form-field">
+                            <span>User or group <em>*</em></span>
+                            <select name="member" required>
+                                <option value="" disabled selected>Choose a user or group</option>
+                                {% set member_users = r_member_candidates | selectattr('kind', 'equalto', 'user') | list %}
+                                {% set member_groups = r_member_candidates | selectattr('kind', 'equalto', 'group') | list %}
+                                {% if member_users %}
+                                    <optgroup label="Users">
+                                        {% for c in member_users %}
+                                            <option value="{{ c.token }}">{{ c.name }} — {{ c.detail }}</option>
+                                        {% endfor %}
+                                    </optgroup>
+                                {% endif %}
+                                {% if member_groups %}
+                                    <optgroup label="Expert groups">
+                                        {% for c in member_groups %}
+                                            <option value="{{ c.token }}">{{ c.name }} — {{ c.detail }}</option>
+                                        {% endfor %}
+                                    </optgroup>
+                                {% endif %}
+                            </select>
+                        </label>
+                        <label class="form-field">
+                            <span>Group</span>
+                            <select name="board_group">
+                                {% for group in r_board_groups %}
+                                    <option value="{{ group }}">{{ group|capitalize }}</option>
+                                {% endfor %}
+                            </select>
+                        </label>
+                    </div>
+                    {% if not r_member_candidates %}
+                        <p class="status-hint">
+                            No users or expert groups yet. Create them using the forms above.
+                        </p>
+                    {% endif %}
+                    <button class="launch-button" type="submit">Add board member</button>
+                </form>
+
+                {% for row in r_boards_with_members %}
+                    <div class="board-member-block">
+                        <h3 class="board-member-title">{{ row.board.name }}</h3>
+                        {% if row.members %}
+                            <div class="table-wrap">
+                                <table class="variant-table">
+                                    <thead>
+                                        <tr><th>Member</th><th>Type</th><th>Role</th><th>Group</th><th>Status</th><th></th></tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for member in row.members %}
+                                            <tr>
+                                                <td>{{ member.display_name }}</td>
+                                                <td>
+                                                    {% if member.member_kind == "group" %}
+                                                        <span class="participant-kind kind-group">Group</span>
+                                                    {% elif member.member_kind == "user" %}
+                                                        <span class="participant-kind kind-individual">User</span>
+                                                    {% else %}
+                                                        <span class="participant-kind">—</span>
+                                                    {% endif %}
+                                                </td>
+                                                <td>{{ member.role }}</td>
+                                                <td>{{ member.board_group|capitalize }}</td>
+                                                <td>{{ member.status }}</td>
+                                                <td>
+                                                    <form method="POST"
+                                                          action="{{ url_for('expertboard.admin_remove_board_member', member_id=member.id) }}">
+                                                        <button class="link-button danger" type="submit">Remove</button>
+                                                    </form>
+                                                </td>
+                                            </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        {% else %}
+                            <div class="empty">No members on this board yet.</div>
+                        {% endif %}
+                    </div>
+                {% endfor %}
+            </article>
+        </section>
+    </main>
+</body>
+</html>

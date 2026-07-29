@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Review queue | ExpertBoard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='expertboard.css', v='20260729n') }}">
+</head>
+<body>
+    {% include "_role_bar.html" %}
+    <main class="landing">
+        <nav class="page-nav">
+            <a href="{{ url_for('expertboard.board_list') }}">Expert boards</a>
+            <a href="{{ url_for('expertboard.patient_list') }}">Patients</a>
+            <a class="active" href="{{ url_for('expertboard.patient_queue') }}">Review queue</a>
+            <a href="{{ url_for('expertboard.admin_panel') }}">Admin</a>
+        </nav>
+
+        <section class="hero">
+            <div class="eyebrow">ExpertBoard</div>
+            <h1 class="landing-title">Review queue</h1>
+            <p class="lede">
+                Patients grouped by review status. Expert panels and reviews are organized from this queue.
+            </p>
+        </section>
+
+        <section class="queue-board">
+            {% for column in r_columns %}
+                <div class="queue-column">
+                    <header class="queue-column-head">
+                        <span class="status-badge status-{{ column.status }}">{{ column.label }}</span>
+                        <span class="queue-count">{{ column.rows|length }}</span>
+                    </header>
+                    <p class="queue-hint">{{ column.hint }}</p>
+                    <div class="queue-cards">
+                        {% for row in column.rows %}
+                            <a class="queue-card"
+                               href="{{ url_for('expertboard.patient_detail', patient_id=row.patient.id) }}">
+                                <strong class="queue-card-name">
+                                    {{ row.patient.display_name or row.patient.patient_code }}
+                                </strong>
+                                <span class="queue-card-code">{{ row.patient.patient_code }}</span>
+                                <div class="queue-card-meta">
+                                    <span>{{ row.patient.diagnosis_name or "No diagnosis" }}</span>
+                                    <span>{{ row.variant_count }} variants</span>
+                                </div>
+                            </a>
+                        {% else %}
+                            <div class="queue-empty">No patients</div>
+                        {% endfor %}
+                    </div>
+                </div>
+            {% endfor %}
+        </section>
+    </main>
+</body>
+</html>

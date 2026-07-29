@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Expert panel schedule | ExpertBoard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='expertboard.css', v='20260729n') }}">
+</head>
+<body>
+    {% include "_role_bar.html" %}
+    <main class="landing">
+        <a class="page-back-link" href="{{ url_for('expertboard.patient_detail', patient_id=r_patient.id) }}">Back to patient</a>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="flash-stack">
+                    {% for category, message in messages %}
+                        <div class="flash {{ category }}">{{ message }}</div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+
+        <section class="hero">
+            <div class="eyebrow">Patient · {{ r_patient.patient_code }}</div>
+            <h1 class="landing-title">Expert panel schedule</h1>
+            <p class="lede">
+                Add groups or individuals to this patient's expert panel. Groups and board
+                members are treated the same &mdash; add each one individually.
+            </p>
+        </section>
+
+        <section class="workspace">
+            <article class="section section-wide">
+                <h2 class="section-title">Add participant</h2>
+                <form class="admin-form" method="POST"
+                      action="{{ url_for('expertboard.patient_panel_add', patient_id=r_patient.id) }}">
+                    <label class="form-field">
+                        <span>Group or individual</span>
+                        <select name="participant" required>
+                            <option value="" disabled selected>Choose a group or individual</option>
+                            {% set groups = r_candidates | selectattr('kind', 'equalto', 'group') | list %}
+                            {% set individuals = r_candidates | selectattr('kind', 'equalto', 'individual') | list %}
+                            {% if groups %}
+                                <optgroup label="Expert groups">
+                                    {% for c in groups %}
+                                        <option value="{{ c.token }}">{{ c.name }} — {{ c.detail }}</option>
+                                    {% endfor %}
+                                </optgroup>
+                            {% endif %}
+                            {% if individuals %}
+                                <optgroup label="Individuals">
+                                    {% for c in individuals %}
+                                        <option value="{{ c.token }}">{{ c.name }} — {{ c.detail }}</option>
+                                    {% endfor %}
+                                </optgroup>
+                            {% endif %}
+                        </select>
+                    </label>
+                    {% if not r_candidates %}
+                        <p class="status-hint">
+                            No groups or board members yet. Create them on the
+                            <a href="{{ url_for('expertboard.admin_panel') }}">Admin</a> page.
+                        </p>
+                    {% endif %}
+                    <button class="launch-button" type="submit">Add to panel</button>
+                </form>
+            </article>
+
+            <article class="section section-wide">
+                <h2 class="section-title">Panel participants</h2>
+                {% if r_participants %}
+                    <div class="table-wrap">
+                        <table class="variant-table">
+                            <thead>
+                                <tr><th>Participant</th><th>Type</th><th>Detail</th><th></th></tr>
+                            </thead>
+                            <tbody>
+                                {% for p in r_participants %}
+                                    <tr>
+                                        <td>{{ p.display_name }}</td>
+                                        <td>
+                                            <span class="participant-kind kind-{{ p.participant_kind }}">
+                                                {{ "Group" if p.participant_kind == "group" else "Individual" }}
+                                            </span>
+                                        </td>
+                                        <td>{{ p.detail or "—" }}</td>
+                                        <td>
+                                            <form method="POST"
+                                                  action="{{ url_for('expertboard.patient_panel_remove', patient_id=r_patient.id, participant_id=p.id) }}">
+                                                <button class="link-button danger" type="submit">Remove</button>
+                                            </form>
+                                        </td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <div class="empty">No participants scheduled yet.</div>
+                {% endif %}
+            </article>
+        </section>
+    </main>
+</body>
+</html>

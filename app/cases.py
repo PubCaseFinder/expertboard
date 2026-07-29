@@ -10,6 +10,7 @@ from app.models import Comment
 from app.models import Decision
 from app.models import ExpertBoard
 from app.models import ExpertBoardMember
+from app.models import Patient
 from app.pubcasefinder_client import PubCaseFinderClient
 
 
@@ -388,6 +389,29 @@ def get_case_detail(case_id):
         if not board:
             board = boards_by_name[DEMO_BOARD_NAME]
 
+        patient = (
+            session.get(Patient, case.patient_id) if case.patient_id else None
+        )
+        clinical_brief = {
+            "patient": patient,
+            "clinical_text": (patient.clinical_text if patient else None) or case.summary,
+            "family_history": patient.family_history if patient else None,
+            "phenotypes": [
+                item.strip() for item in (case.phenotypes or "").split(",") if item.strip()
+            ],
+            "candidate_genes": [
+                item.strip() for item in (case.genes or "").split(",") if item.strip()
+            ],
+            "candidate_variants": [
+                item.strip() for item in (case.variants or "").split(",") if item.strip()
+            ],
+            "suspected_diseases": [
+                item.strip()
+                for item in (case.suspected_diseases or "").split(",")
+                if item.strip()
+            ],
+        }
+
         members = (
             session.query(CaseMember)
             .filter(CaseMember.case_id == case_id)
@@ -443,6 +467,7 @@ def get_case_detail(case_id):
             "board_members": board_members,
             "case": case,
             "status_label": _status_label(case.status),
+            "clinical_brief": clinical_brief,
             "clinical_diagnoses": "Undiagnosed neuromuscular disorder",
             "final_diagnoses": "Not entered",
             "members": members,

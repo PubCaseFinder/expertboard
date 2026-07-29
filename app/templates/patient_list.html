@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Patients | ExpertBoard</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='expertboard.css', v='20260729j') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='expertboard.css', v='20260729n') }}">
 </head>
 <body>
     {% include "_role_bar.html" %}
@@ -12,6 +12,8 @@
         <nav class="page-nav">
             <a href="{{ url_for('expertboard.board_list') }}">Expert boards</a>
             <a class="active" href="{{ url_for('expertboard.patient_list') }}">Patients</a>
+            <a href="{{ url_for('expertboard.patient_queue') }}">Review queue</a>
+            <a href="{{ url_for('expertboard.admin_panel') }}">Admin</a>
         </nav>
 
         <section class="hero">
@@ -68,6 +70,11 @@
                                 <div class="case-top">
                                     <h3 class="case-name">{{ row.patient.display_name or row.patient.patient_code }}</h3>
                                     <span class="badge">{{ row.patient.patient_code }}</span>
+                                </div>
+                                <div class="status-line">
+                                    <span class="status-badge status-{{ row.patient.review_status }}">
+                                        {{ r_review_status_labels.get(row.patient.review_status, row.patient.review_status) }}
+                                    </span>
                                 </div>
                                 <div class="meta">
                                     <div>

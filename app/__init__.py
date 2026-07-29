@@ -11,6 +11,7 @@ from werkzeug.exceptions import RequestEntityTooLarge
 from app.auth import register_roles
 from app.db import init_db
 from app.patients import ensure_schema
+from app.admin import ensure_schema as ensure_admin_schema
 from app.routes import bp
 
 
@@ -24,6 +25,7 @@ def create_app():
 
     init_db()
     ensure_schema()
+    ensure_admin_schema()
 
     register_roles(app)
     app.register_blueprint(bp)
