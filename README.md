@@ -13,6 +13,8 @@ It explores reusable expert boards organized by gene, disease, or clinical domai
 ## Local development
 
 ```bash
+git clone https://github.com/PubCaseFinder/expertboard.git
+cd expertboard
 cp .env.example .env
 docker compose up -d --build
 ```
