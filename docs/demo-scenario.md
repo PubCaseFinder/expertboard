@@ -10,6 +10,49 @@ This scenario demonstrates how ExpertBoard turns an unstructured clinical note a
 
 ExpertBoard does not replace ACMG interpretation. It prepares evidence, exposes uncertainty, and lets the expert board decide.
 
+## Scenario overview
+
+```mermaid
+flowchart LR
+    A["EHR / Clinical note<br/>Clinical history and test results"] --> B["Case intake<br/>Create Review Room"]
+    A2["Candidate variant<br/>RYR1 c.14582G>A<br/>p.Arg4861His"] --> B
+
+    B --> C["AI pre-read<br/>Prepare review packet"]
+
+    C --> D["Phenotype extraction<br/>HPO terms<br/>Suspected diseases"]
+    C --> E["Evidence pre-check<br/>ACMG-style candidates"]
+
+    E --> E1["PM2 candidate<br/>Population frequency"]
+    E --> E2["PP3 candidate<br/>In silico prediction"]
+    E --> E3["PP4 candidate<br/>Phenotype match"]
+    E --> E4["PS4 / PP1 / PS3 pending<br/>Case reports, segregation,<br/>functional evidence"]
+
+    D --> F["ExpertBoard Review Room"]
+    E1 --> F
+    E2 --> F
+    E3 --> F
+    E4 --> F
+
+    F --> G["Phenotype review<br/>Clinical reviewer confirms"]
+    F --> H["Variant review<br/>Bioinformatician and lab scientist review"]
+    F --> I["Consensus<br/>5 core reviewers"]
+
+    G --> J["Current interpretation<br/>VUS, suspicious for<br/>RYR1-related myopathy"]
+    H --> J
+    I --> J
+
+    J --> K["Board recommendation<br/>Segregation testing<br/>Population confirmation<br/>Functional evidence<br/>Minutes export"]
+
+    C -.-> L["AI proposes evidence"]
+    F -.-> M["Experts accept, reject,<br/>or keep pending"]
+```
+
+Key message:
+
+```text
+AI prepares the evidence. The expert board makes the decision.
+```
+
 ## 1. Case intake
 
 A clinician opens a new Review Room from the Neuromuscular Disease Expert Board.
