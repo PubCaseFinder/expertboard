@@ -1,0 +1,6 @@
+{% if r_user %}
+<div style="display:flex;justify-content:flex-end;align-items:center;gap:12px;padding:8px 24px;font-size:13px;background:#f4f4f6;border-bottom:1px solid #e2e2e6;">
+    <span>Signed in as <strong>{{ r_user.name or r_user.email }}</strong>{% if r_user.roles %} ({{ r_user.roles | join(", ") }}){% endif %}</span>
+    <a href="{{ url_for('auth.logout') }}">Log out</a>
+</div>
+{% endif %}

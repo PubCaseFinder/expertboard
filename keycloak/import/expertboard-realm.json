@@ -1,0 +1,81 @@
+{
+  "realm": "expertboard",
+  "enabled": true,
+  "sslRequired": "external",
+  "roles": {
+    "realm": [
+      { "name": "case_chair", "description": "Case chair" },
+      { "name": "clinical_reviewer", "description": "Clinical reviewer" },
+      { "name": "bioinformatician", "description": "Bioinformatician" },
+      { "name": "laboratory_scientist", "description": "Laboratory scientist" },
+      { "name": "genetic_counselor", "description": "Genetic counselor" }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "expertboard-app",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "changeme-in-dev",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": ["http://localhost:8010/*"],
+      "webOrigins": ["http://localhost:8010"],
+      "defaultClientScopes": ["openid", "profile", "email", "roles"]
+    }
+  ],
+  "users": [
+    {
+      "username": "aki.okahiro",
+      "email": "aki.okahiro@example.com",
+      "emailVerified": true,
+      "enabled": true,
+      "firstName": "Aki",
+      "lastName": "Okahiro",
+      "credentials": [{ "type": "password", "value": "ExpertBoard123!", "temporary": false }],
+      "realmRoles": ["case_chair"]
+    },
+    {
+      "username": "clinical.reviewer",
+      "email": "clinical.reviewer@example.com",
+      "emailVerified": true,
+      "enabled": true,
+      "firstName": "Clinical",
+      "lastName": "Reviewer",
+      "credentials": [{ "type": "password", "value": "ExpertBoard123!", "temporary": false }],
+      "realmRoles": ["clinical_reviewer"]
+    },
+    {
+      "username": "bioinformatician",
+      "email": "bioinformatician@example.com",
+      "emailVerified": true,
+      "enabled": true,
+      "firstName": "Bio",
+      "lastName": "Informatician",
+      "credentials": [{ "type": "password", "value": "ExpertBoard123!", "temporary": false }],
+      "realmRoles": ["bioinformatician"]
+    },
+    {
+      "username": "lab.scientist",
+      "email": "lab.scientist@example.com",
+      "emailVerified": true,
+      "enabled": true,
+      "firstName": "Lab",
+      "lastName": "Scientist",
+      "credentials": [{ "type": "password", "value": "ExpertBoard123!", "temporary": false }],
+      "realmRoles": ["laboratory_scientist"]
+    },
+    {
+      "username": "genetic.counselor",
+      "email": "genetic.counselor@example.com",
+      "emailVerified": true,
+      "enabled": true,
+      "firstName": "Genetic",
+      "lastName": "Counselor",
+      "credentials": [{ "type": "password", "value": "ExpertBoard123!", "temporary": false }],
+      "realmRoles": ["genetic_counselor"]
+    }
+  ]
+}
