@@ -189,6 +189,7 @@ class ExpertGroup(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(160), nullable=False, unique=True)
+    country: Mapped[str | None] = mapped_column(String(64), nullable=True)
     specialty: Mapped[str | None] = mapped_column(String(160), nullable=True)
     description: Mapped[str | None] = mapped_column(Text(), nullable=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
@@ -232,6 +233,29 @@ class FamilyMember(Base):
     linked_patient_id: Mapped[int | None] = mapped_column(
         ForeignKey("patients.id"), nullable=True
     )
+    created_at: Mapped[str] = mapped_column(
+        TIMESTAMP(), nullable=False, server_default=func.current_timestamp()
+    )
+
+
+class VariantAssessment(Base):
+    """A curated pathogenicity assessment for a variant, attributed to an expert group.
+
+    Multiple groups (e.g. Japan, Singapore) can each hold their own assessment
+    of the same variant, allowing side-by-side comparison of classifications.
+    """
+
+    __tablename__ = "variant_assessments"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    variant_id: Mapped[int] = mapped_column(ForeignKey("variants.id"), nullable=False)
+    expert_group_id: Mapped[int | None] = mapped_column(
+        ForeignKey("expert_groups.id"), nullable=True
+    )
+    classification: Mapped[str] = mapped_column(String(64), nullable=False)
+    evidence_level: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    assessed_by: Mapped[str | None] = mapped_column(String(120), nullable=True)
     created_at: Mapped[str] = mapped_column(
         TIMESTAMP(), nullable=False, server_default=func.current_timestamp()
     )

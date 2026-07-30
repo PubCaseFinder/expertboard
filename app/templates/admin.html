@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin | ExpertBoard</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='expertboard.css', v='20260729v') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='expertboard.css', v='20260729w') }}">
 </head>
 <body>
     {% include "_role_bar.html" %}
@@ -102,6 +102,10 @@
                             <input type="text" name="name" placeholder="e.g. Cardiac genetics panel" required>
                         </label>
                         <label class="form-field">
+                            <span>Country / Region</span>
+                            <input type="text" name="country" placeholder="e.g. Japan, Singapore, China">
+                        </label>
+                        <label class="form-field">
                             <span>Specialty</span>
                             <input type="text" name="specialty" placeholder="e.g. Cardiology / inherited cardiomyopathy">
                         </label>
@@ -117,12 +121,13 @@
                     <div class="table-wrap">
                         <table class="variant-table">
                             <thead>
-                                <tr><th>Name</th><th>Specialty</th><th>Description</th><th>Status</th></tr>
+                                <tr><th>Name</th><th>Country</th><th>Specialty</th><th>Description</th><th>Status</th></tr>
                             </thead>
                             <tbody>
                                 {% for group in r_expert_groups %}
                                     <tr>
                                         <td>{{ group.name }}</td>
+                                        <td>{{ group.country or "—" }}</td>
                                         <td>{{ group.specialty or "—" }}</td>
                                         <td class="note-cell">{{ group.description or "—" }}</td>
                                         <td>{{ group.status }}</td>

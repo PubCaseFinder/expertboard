@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ r_patient.display_name or r_patient.patient_code }} | ExpertBoard</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='expertboard.css', v='20260729v') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='expertboard.css', v='20260729w') }}">
 </head>
 <body>
     {% include "_role_bar.html" %}
@@ -188,11 +188,13 @@
                                     <th>Note</th>
                                     {% if r_linked_variants %}<th>Shared</th>{% endif %}
                                     <th>JP DB</th>
+                                    <th>Assessed</th>
                                 </tr>
                             </thead>
                             <tbody id="variant-tbody">
                                 {% for v in r_variants %}
                                     {% set shares = r_variant_shares.get(v.id, []) %}
+                                    {% set va_list = r_assessments.get(v.id, []) %}
                                     <tr
                                         class="{{ 'shared-row' if shares else '' }}"
                                         data-gene="{{ (v.gene or '')|lower }}"
@@ -224,6 +226,55 @@
                                                     type="button"
                                                     onclick="fetchTogoVar(this)">JP DB</button>
                                         </td>
+                                        <td class="assessment-cell">
+                                            {% for entry in va_list %}
+                                                <span class="assess-badge assess-{{ entry.css }}" title="{{ entry.assessment.evidence_level or '' }}{% if entry.assessment.notes %} · {{ entry.assessment.notes }}{% endif %}">
+                                                    {%- if entry.group and entry.group.country -%}
+                                                        <span class="assess-country">{{ entry.group.country }}</span>
+                                                    {%- elif entry.group -%}
+                                                        <span class="assess-country">{{ entry.group.name }}</span>
+                                                    {%- endif -%}
+                                                    {{ entry.assessment.classification }}
+                                                    <form method="POST" style="display:inline"
+                                                          action="{{ url_for('expertboard.patient_variant_assessment_remove', patient_id=r_patient.id, variant_id=v.id, assessment_id=entry.assessment.id) }}">
+                                                        <button class="badge-remove" type="submit" title="Remove">×</button>
+                                                    </form>
+                                                </span>
+                                            {% endfor %}
+                                            <button class="assess-add-btn" type="button"
+                                                    onclick="toggleAssessForm('af-{{ v.id }}')">+</button>
+                                        </td>
+                                    </tr>
+                                    <tr id="af-{{ v.id }}" class="assessment-form-row" style="display:none">
+                                        <td colspan="99">
+                                            <form class="assessment-inline-form" method="POST"
+                                                  action="{{ url_for('expertboard.patient_variant_assessment_add', patient_id=r_patient.id, variant_id=v.id) }}">
+                                                <select class="vf-input" name="expert_group_id" required>
+                                                    <option value="" disabled selected>Expert group *</option>
+                                                    {% for group in r_expert_groups %}
+                                                        <option value="{{ group.id }}">
+                                                            {{ group.name }}{% if group.country %} ({{ group.country }}){% endif %}
+                                                        </option>
+                                                    {% endfor %}
+                                                </select>
+                                                <select class="vf-input" name="classification" required>
+                                                    <option value="" disabled selected>Classification *</option>
+                                                    {% for key, label in r_classifications %}
+                                                        <option value="{{ key }}">{{ label }}</option>
+                                                    {% endfor %}
+                                                </select>
+                                                <select class="vf-input" name="evidence_level">
+                                                    {% for key, label in r_evidence_levels %}
+                                                        <option value="{{ key }}">{{ label }}</option>
+                                                    {% endfor %}
+                                                </select>
+                                                <input class="vf-input" type="text" name="assessed_by" placeholder="Assessed by">
+                                                <input class="vf-input" type="text" name="notes" placeholder="Notes">
+                                                <button class="inline-button" type="submit">Save</button>
+                                                <button class="vf-clear" type="button"
+                                                        onclick="toggleAssessForm('af-{{ v.id }}')">Cancel</button>
+                                            </form>
+                                        </td>
                                     </tr>
                                 {% endfor %}
                             </tbody>
@@ -231,11 +282,12 @@
                     </div>
                     <script>
                         (function () {
+                            // ── filter bar ────────────────────────────────
                             function applyFilters() {
                                 const gene = document.getElementById('vf-gene').value.trim().toLowerCase();
                                 const type = document.getElementById('vf-type').value.trim().toLowerCase();
                                 const clnsig = document.getElementById('vf-clnsig').value.toLowerCase();
-                                document.querySelectorAll('#variant-tbody tr').forEach(function (row) {
+                                document.querySelectorAll('#variant-tbody tr:not(.assessment-form-row)').forEach(function (row) {
                                     const match =
                                         (!gene   || row.dataset.gene.includes(gene)) &&
                                         (!type   || row.dataset.type.includes(type)) &&
@@ -247,7 +299,46 @@
                                 document.getElementById(id).addEventListener('input', applyFilters);
                                 document.getElementById(id).addEventListener('change', applyFilters);
                             });
+
+                            // ── TogoVar auto-fetch for top 20 by pathogenicity ──
+                            var CLNSIG_RANK = {
+                                'pathogenic': 9,
+                                'pathogenic/likely_pathogenic': 8,
+                                'likely_pathogenic': 7,
+                                'drug_response': 6,
+                                'risk_factor': 5,
+                                'association': 4,
+                                'uncertain_significance': 3,
+                                'vus': 3,
+                                'likely_benign': 2,
+                                'benign/likely_benign': 1,
+                                'benign': 1,
+                                'not_provided': 0,
+                                'other': 0,
+                            };
+                            function clnsigRank(val) {
+                                var v = (val || '').toLowerCase().replace(/ /g, '_');
+                                if (CLNSIG_RANK[v] !== undefined) return CLNSIG_RANK[v];
+                                // partial match
+                                if (v.includes('pathogenic')) return v.includes('likely') ? 7 : 9;
+                                if (v.includes('benign'))     return v.includes('likely') ? 2 : 1;
+                                if (v.includes('uncertain') || v.includes('vus')) return 3;
+                                return 0;
+                            }
+                            document.addEventListener('DOMContentLoaded', function () {
+                                var rows = Array.from(document.querySelectorAll('#variant-tbody tr'));
+                                // sort descending by pathogenicity rank
+                                rows.sort(function(a, b) {
+                                    return clnsigRank(b.dataset.clnsig) - clnsigRank(a.dataset.clnsig);
+                                });
+                                // auto-fetch top 20 that have a JP DB button
+                                rows.slice(0, 20).forEach(function (row) {
+                                    var btn = row.querySelector('.tv-btn');
+                                    if (btn) fetchTogoVar(btn);
+                                });
+                            });
                         })();
+
                         function clearVfFilters() {
                             ['vf-gene', 'vf-type'].forEach(function (id) {
                                 document.getElementById(id).value = '';
@@ -257,10 +348,16 @@
                                 row.style.display = '';
                             });
                         }
+
+                        function toggleAssessForm(id) {
+                            var row = document.getElementById(id);
+                            if (row) row.style.display = (row.style.display === 'none' ? '' : 'none');
+                        }
+
                         function fetchTogoVar(btn) {
-                            const cell = document.getElementById(btn.dataset.cell);
+                            var cell = document.getElementById(btn.dataset.cell);
                             cell.innerHTML = '<span class="tv-loading">…</span>';
-                            const params = new URLSearchParams({
+                            var params = new URLSearchParams({
                                 chrom: btn.dataset.chrom,
                                 pos:   btn.dataset.pos,
                                 ref:   btn.dataset.ref,
@@ -270,7 +367,7 @@
                                 .then(function(r) { return r.json(); })
                                 .then(function(d) {
                                     if (!d.found) { cell.innerHTML = '<span class="tv-notfound">—</span>'; return; }
-                                    let html = '';
+                                    var html = '';
                                     if (d.top_interp) {
                                         html += '<span class="tv-sig ' + d.top_interp_css + '">' + d.top_interp + '</span>';
                                     }

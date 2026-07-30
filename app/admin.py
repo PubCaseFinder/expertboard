@@ -28,9 +28,10 @@ KIND_GROUP = "group"
 
 
 def ensure_schema():
-    """Add columns introduced after the expert_board_members table was created."""
+    """Add columns introduced after the initial table creation."""
     _add_member_column_if_missing("member_kind VARCHAR(16) NULL")
     _add_member_column_if_missing("ref_id INT NULL")
+    _add_group_column_if_missing("country VARCHAR(64) NULL")
 
 
 def _add_member_column_if_missing(column_definition):
@@ -38,6 +39,17 @@ def _add_member_column_if_missing(column_definition):
     try:
         session.execute(
             text(f"ALTER TABLE expert_board_members ADD COLUMN {column_definition}")
+        )
+        session.commit()
+    except OperationalError:
+        session.rollback()
+
+
+def _add_group_column_if_missing(column_definition):
+    session = Session()
+    try:
+        session.execute(
+            text(f"ALTER TABLE expert_groups ADD COLUMN {column_definition}")
         )
         session.commit()
     except OperationalError:
@@ -91,11 +103,12 @@ def list_expert_groups():
     return session.query(ExpertGroup).order_by(asc(ExpertGroup.name)).all()
 
 
-def create_expert_group(name, specialty, description):
+def create_expert_group(name, specialty, description, country=None):
     """Create a specialist group. Returns (group, error_message)."""
     name = (name or "").strip()
     specialty = (specialty or "").strip()
     description = (description or "").strip()
+    country = (country or "").strip()
 
     if not name:
         return None, "Group name is required."
@@ -107,6 +120,7 @@ def create_expert_group(name, specialty, description):
 
     group = ExpertGroup(
         name=name,
+        country=country or None,
         specialty=specialty or None,
         description=description or None,
         status="active",

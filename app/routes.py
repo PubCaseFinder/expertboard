@@ -14,6 +14,7 @@ from app import admin
 from app import panel
 from app import family as family_module
 from app import togovar_client
+from app import assessments as assessments_module
 
 
 bp = Blueprint("expertboard", __name__)
@@ -126,7 +127,36 @@ def patient_detail(patient_id):
         r_affected_options=family_module.AFFECTED_OPTIONS,
         r_linkable_patients=family_module.list_patients_for_linking(),
         r_linked_variants=linked_variants,
+        r_assessments=assessments_module.list_for_variants([v.id for v in proband_variants]),
+        r_classifications=assessments_module.CLASSIFICATIONS,
+        r_evidence_levels=assessments_module.EVIDENCE_LEVELS,
     )
+
+
+@bp.route("/patients/<int:patient_id>/variants/<int:variant_id>/assessments", methods=["POST"])
+def patient_variant_assessment_add(patient_id, variant_id):
+    patient = patients.get_patient(patient_id)
+    if patient is None:
+        abort(404)
+    _a, error = assessments_module.add_assessment(
+        variant_id,
+        request.form.get("expert_group_id"),
+        request.form.get("classification"),
+        request.form.get("evidence_level"),
+        request.form.get("notes"),
+        request.form.get("assessed_by"),
+    )
+    flash(error or "Assessment saved.", "error" if error else "success")
+    return redirect(url_for("expertboard.patient_detail", patient_id=patient_id))
+
+
+@bp.route("/patients/<int:patient_id>/variants/<int:variant_id>/assessments/<int:assessment_id>/remove", methods=["POST"])
+def patient_variant_assessment_remove(patient_id, variant_id, assessment_id):
+    patient = patients.get_patient(patient_id)
+    if patient is None:
+        abort(404)
+    assessments_module.remove_assessment(assessment_id)
+    return redirect(url_for("expertboard.patient_detail", patient_id=patient_id))
 
 
 @bp.route("/patients/<int:patient_id>/family/members", methods=["POST"])
@@ -277,6 +307,7 @@ def admin_create_expert_group():
         request.form.get("name"),
         request.form.get("specialty"),
         request.form.get("description"),
+        request.form.get("country"),
     )
     flash(error or "Expert group created.", "error" if error else "success")
     return redirect(url_for("expertboard.admin_panel"))
