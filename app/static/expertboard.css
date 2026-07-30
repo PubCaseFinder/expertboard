@@ -1166,57 +1166,122 @@ h1 {
 }
 
 /* --- Role switcher bar (hackathon mock) --- */
-.role-bar {
+/* ── Site header ─────────────────────────────────────────────────────────── */
+
+.site-header {
     position: sticky;
     top: 0;
     z-index: 50;
     background: linear-gradient(135deg, #2c2350, #38316b);
     color: #fff;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.12);
-    box-shadow: 0 6px 18px rgba(20, 16, 45, 0.25);
+    border-bottom: 1px solid rgba(255,255,255,0.12);
+    box-shadow: 0 4px 14px rgba(20,16,45,0.3);
 }
 
-.role-bar-toggle {
+.site-header-inner {
     max-width: 1280px;
     margin: 0 auto;
-    padding: 10px 20px;
+    padding: 0 20px;
     display: flex;
     align-items: center;
-    gap: 10px;
-    cursor: pointer;
+    gap: 0;
+    height: 48px;
+}
+
+.site-brand {
+    font-size: 14px;
+    font-weight: 850;
+    letter-spacing: 0.03em;
+    color: #fff;
+    white-space: nowrap;
+    margin-right: 24px;
+}
+
+.site-nav {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    flex: 1;
+}
+
+.site-nav-link {
+    padding: 6px 12px;
+    border-radius: 6px;
     font-size: 13px;
+    font-weight: 600;
+    color: rgba(255,255,255,0.72);
+    text-decoration: none;
+    white-space: nowrap;
+    transition: background 0.15s, color 0.15s;
+}
+
+.site-nav-link:hover {
+    background: rgba(255,255,255,0.1);
+    color: #fff;
+}
+
+.site-nav-link.active {
+    background: rgba(255,255,255,0.15);
+    color: #fff;
+    font-weight: 750;
+}
+
+/* ── Role dropdown (right side of header) ──────────────────────────────── */
+
+.role-dropdown {
+    position: relative;
+    margin-left: auto;
+}
+
+.role-dropdown-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12px;
     list-style: none;
     user-select: none;
+    white-space: nowrap;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.18);
+    transition: background 0.15s;
 }
 
-.role-bar-toggle::-webkit-details-marker {
-    display: none;
+.role-dropdown-toggle::-webkit-details-marker { display: none; }
+
+.role-dropdown-toggle:hover { background: rgba(255,255,255,0.15); }
+
+.role-current-label {
+    font-weight: 750;
+    color: #7eefcf;
 }
 
-.role-toggle-icon {
-    font-size: 14px;
-    line-height: 1;
-}
-
-.role-toggle-hint {
+.role-acting {
+    color: rgba(255,255,255,0.65);
     font-size: 11px;
+}
+
+.role-caret {
+    font-size: 10px;
     opacity: 0.7;
-    letter-spacing: 0.03em;
 }
 
-.role-bar[open] .role-bar-toggle {
-    border-bottom: 1px solid rgba(255, 255, 255, 0.12);
-}
-
-.role-bar-inner {
-    max-width: 1280px;
-    margin: 0 auto;
-    padding: 10px 20px;
+.role-dropdown-panel {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 8px);
+    min-width: 320px;
+    background: #2c2350;
+    border: 1px solid rgba(255,255,255,0.18);
+    border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    padding: 14px 16px;
     display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px 24px;
+    flex-direction: column;
+    gap: 12px;
+    z-index: 100;
 }
 
 .role-switch {
@@ -1230,8 +1295,9 @@ h1 {
     font-weight: 850;
     letter-spacing: 0.04em;
     text-transform: uppercase;
-    color: rgba(255, 255, 255, 0.55);
+    color: rgba(255,255,255,0.5);
     white-space: nowrap;
+    min-width: 72px;
 }
 
 .role-buttons {
@@ -1240,93 +1306,58 @@ h1 {
     gap: 6px;
 }
 
-.role-buttons form {
-    margin: 0;
-}
+.role-buttons form { margin: 0; }
 
 .role-chip {
-    padding: 7px 14px;
+    padding: 5px 12px;
     border-radius: 999px;
-    border: 1px solid rgba(255, 255, 255, 0.22);
-    background: rgba(255, 255, 255, 0.06);
-    color: rgba(255, 255, 255, 0.82);
+    border: 1px solid rgba(255,255,255,0.22);
+    background: rgba(255,255,255,0.08);
+    color: rgba(255,255,255,0.85);
     font-size: 12px;
-    font-weight: 750;
+    font-weight: 700;
     cursor: pointer;
-    transition: all 0.15s ease;
+    transition: all 0.15s;
     white-space: nowrap;
 }
 
 .role-chip:hover {
-    background: rgba(255, 255, 255, 0.16);
-    color: #fff;
-}
-
-.role-chip.active {
-    background: linear-gradient(135deg, #7aa8ff, #6ee0c4);
-    border-color: transparent;
-    color: #1a1440;
-    font-weight: 850;
-    box-shadow: 0 4px 12px rgba(110, 224, 196, 0.35);
-}
-
-.role-perms {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    flex-wrap: wrap;
-}
-
-.role-perms-label {
-    font-size: 12px;
-    color: rgba(255, 255, 255, 0.7);
-    white-space: nowrap;
-}
-
-.role-perms-label strong {
+    background: rgba(255,255,255,0.18);
     color: #fff;
 }
 
 .perm-list {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
+    gap: 5px;
 }
 
 .perm-badge {
     display: inline-flex;
     align-items: center;
-    gap: 5px;
-    padding: 5px 10px;
+    gap: 4px;
+    padding: 4px 9px;
     border-radius: 999px;
     font-size: 11px;
-    font-weight: 750;
+    font-weight: 700;
     border: 1px solid transparent;
 }
 
 .perm-badge.allowed {
-    background: rgba(110, 224, 196, 0.18);
-    border-color: rgba(110, 224, 196, 0.45);
+    background: rgba(110,224,196,0.18);
+    border-color: rgba(110,224,196,0.4);
     color: #b8f5e6;
 }
 
 .perm-badge.denied {
-    background: rgba(255, 255, 255, 0.05);
-    border-color: rgba(255, 255, 255, 0.14);
-    color: rgba(255, 255, 255, 0.42);
+    background: rgba(255,255,255,0.04);
+    border-color: rgba(255,255,255,0.12);
+    color: rgba(255,255,255,0.38);
 }
 
-.perm-mark {
-    font-weight: 900;
-}
-
-.perm-badge.allowed .perm-mark {
-    color: #6ee0c4;
-}
-
-.perm-badge.denied .perm-mark {
-    color: rgba(255, 255, 255, 0.4);
-}
+.perm-mark { font-weight: 900; }
+.perm-badge.allowed .perm-mark { color: #6ee0c4; }
+.perm-badge.denied  .perm-mark { color: rgba(255,255,255,0.35); }
 
 /* --- Patients / VCF import --- */
 .top-cta {

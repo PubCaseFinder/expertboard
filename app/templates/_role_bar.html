@@ -1,61 +1,59 @@
-{# Top-bar role switcher (hackathon mock, no real auth). Click to expand. #}
-<details class="role-bar">
-    <summary class="role-bar-toggle">
-        <span class="role-toggle-icon" aria-hidden="true">☰</span>
-        <span>Role: <strong>{{ role_labels.get(current_role, current_role) }}</strong>
-            {% if acting_user %} &middot; <strong>{{ acting_user.display_name }}</strong>{% endif %}
-        </span>
-        <span class="role-toggle-hint">click to switch</span>
-    </summary>
-    <div class="role-bar-inner">
-        <div class="role-switch">
-            <span class="role-switch-label">Switch role</span>
-            <div class="role-buttons">
-                {% for role in roles %}
-                    <form method="POST" action="{{ url_for('expertboard.switch_role') }}">
-                        <input type="hidden" name="role" value="{{ role }}">
+{# Site-wide header: navigation + role switcher (hackathon mock, no real auth). #}
+<header class="site-header">
+    <div class="site-header-inner">
+        <span class="site-brand">ExpertBoard</span>
+        <nav class="site-nav">
+            <a class="site-nav-link {% if request.endpoint in ('expertboard.board_list','expertboard.board_detail') %}active{% endif %}"
+               href="{{ url_for('expertboard.board_list') }}">Expert boards</a>
+            <a class="site-nav-link {% if request.endpoint in ('expertboard.patient_list','expertboard.patient_detail') %}active{% endif %}"
+               href="{{ url_for('expertboard.patient_list') }}">Patients</a>
+            <a class="site-nav-link {% if request.endpoint == 'expertboard.patient_queue' %}active{% endif %}"
+               href="{{ url_for('expertboard.patient_queue') }}">Review queue</a>
+            <a class="site-nav-link {% if request.endpoint == 'expertboard.admin_panel' %}active{% endif %}"
+               href="{{ url_for('expertboard.admin_panel') }}">Admin</a>
+        </nav>
+        <details class="role-dropdown">
+            <summary class="role-dropdown-toggle">
+                <span class="role-current-label">{{ role_labels.get(current_role, current_role) }}</span>
+                {% if acting_user %}<span class="role-acting">&middot; {{ acting_user.display_name }}</span>{% endif %}
+                <span class="role-caret">▾</span>
+            </summary>
+            <div class="role-dropdown-panel">
+                <div class="role-switch">
+                    <span class="role-switch-label">Switch role</span>
+                    <div class="role-buttons">
+                        {% for role in roles %}{% if role != current_role %}
+                            <form method="POST" action="{{ url_for('expertboard.switch_role') }}">
+                                <input type="hidden" name="role" value="{{ role }}">
+                                <input type="hidden" name="next" value="{{ request.path }}">
+                                <button type="submit" class="role-chip">{{ role_labels.get(role, role) }}</button>
+                            </form>
+                        {% endif %}{% endfor %}
+                    </div>
+                </div>
+                <div class="role-switch">
+                    <span class="role-switch-label">Acting as</span>
+                    <form method="POST" action="{{ url_for('expertboard.switch_user') }}" class="inline-form">
                         <input type="hidden" name="next" value="{{ request.path }}">
-                        <button type="submit"
-                                class="role-chip {{ 'active' if role == current_role else '' }}"
-                                title="{{ role_labels.get(role, role) }}">
-                            {{ role_labels.get(role, role) }}
-                        </button>
+                        <select name="user_id" class="inline-select role-user-select" onchange="this.form.submit()">
+                            <option value="">— Role only —</option>
+                            {% for user in all_users %}
+                                <option value="{{ user.id }}" {% if current_user_id and current_user_id == user.id %}selected{% endif %}>
+                                    {{ user.display_name }} ({{ role_labels.get(user.role, user.role) }})
+                                </option>
+                            {% endfor %}
+                        </select>
                     </form>
-                {% endfor %}
-            </div>
-        </div>
-
-        <div class="role-switch">
-            <span class="role-switch-label">Acting as</span>
-            <form method="POST" action="{{ url_for('expertboard.switch_user') }}" class="inline-form">
-                <input type="hidden" name="next" value="{{ request.path }}">
-                <select name="user_id" class="inline-select role-user-select"
-                        onchange="this.form.submit()">
-                    <option value="">— Role only —</option>
-                    {% for user in all_users %}
-                        <option value="{{ user.id }}"
-                                {% if current_user_id and current_user_id == user.id %}selected{% endif %}>
-                            {{ user.display_name }}
-                            ({{ role_labels.get(user.role, user.role) }})
-                        </option>
+                </div>
+                <div class="perm-list" style="padding-top:8px;border-top:1px solid rgba(255,255,255,0.12)">
+                    {% for cap_key, cap_label in capabilities %}
+                        {% set allowed = has_capability(cap_key) %}
+                        <span class="perm-badge {{ 'allowed' if allowed else 'denied' }}">
+                            <span class="perm-mark">{{ '✓' if allowed else '✕' }}</span>{{ cap_label }}
+                        </span>
                     {% endfor %}
-                </select>
-            </form>
-        </div>
-
-        <div class="role-perms">
-            <span class="role-perms-label">
-                Current role: <strong>{{ role_labels.get(current_role, current_role) }}</strong> &mdash; edit permissions
-            </span>
-            <div class="perm-list">
-                {% for cap_key, cap_label in capabilities %}
-                    {% set allowed = has_capability(cap_key) %}
-                    <span class="perm-badge {{ 'allowed' if allowed else 'denied' }}">
-                        <span class="perm-mark">{{ '✓' if allowed else '✕' }}</span>
-                        {{ cap_label }}
-                    </span>
-                {% endfor %}
+                </div>
             </div>
-        </div>
+        </details>
     </div>
-</details>
+</header>
