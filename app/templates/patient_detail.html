@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ r_patient.display_name or r_patient.patient_code }} | ExpertBoard</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='expertboard.css', v='20260729n') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='expertboard.css', v='20260729t') }}">
 </head>
 <body>
     {% include "_role_bar.html" %}
@@ -21,139 +21,137 @@
             {% endif %}
         {% endwith %}
 
-        <section class="hero">
-            <div class="eyebrow">Patient · {{ r_patient.patient_code }}</div>
-            <h1 class="landing-title">{{ r_patient.display_name or r_patient.patient_code }}</h1>
-            <p class="lede">{{ r_patient.diagnosis_name or "" }}</p>
-            <div class="launch-row">
-                <div class="stat-card">
-                    <span>Patient ID</span>
-                    <strong>{{ r_patient.patient_code }}</strong>
+        <section class="hero patient-hero">
+            <div class="patient-hero-main">
+                <div class="eyebrow">{{ r_patient.patient_code }}</div>
+                <h1 class="landing-title">{{ r_patient.display_name or r_patient.patient_code }}</h1>
+                {% if r_patient.diagnosis_name %}<p class="lede">{{ r_patient.diagnosis_name }}</p>{% endif %}
+                {% if r_patient.family_id %}<p class="lede">Family: {{ r_patient.family_id }}</p>{% endif %}
+            </div>
+            <div class="patient-hero-controls">
+                <div class="patient-hero-stat-row">
+                    <div class="stat-card"><span>Variants</span><strong>{{ r_variants|length }}</strong></div>
                 </div>
-                <div class="stat-card">
-                    <span>VCF file</span>
-                    <strong>{{ r_patient.vcf_path or "—" }}</strong>
-                </div>
-                <div class="stat-card">
-                    <span>Variants</span>
-                    <strong>{{ r_variants|length }}</strong>
-                </div>
-                <div class="stat-card">
-                    <span>Review status</span>
-                    <strong>{{ r_review_status_labels.get(r_patient.review_status, r_patient.review_status) }}</strong>
-                </div>
+                <form class="inline-form" method="POST"
+                      action="{{ url_for('expertboard.patient_status', patient_id=r_patient.id) }}">
+                    <span class="inline-label">Status</span>
+                    <select class="inline-select" name="review_status">
+                        {% for status in r_review_statuses %}
+                            <option value="{{ status }}"
+                                    {% if status == r_patient.review_status %}selected{% endif %}>
+                                {{ r_review_status_labels.get(status, status) }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                    <button class="inline-button" type="submit">Update</button>
+                </form>
+                <form class="inline-form" method="POST"
+                      action="{{ url_for('expertboard.patient_expert_group', patient_id=r_patient.id) }}">
+                    <span class="inline-label">Expert group</span>
+                    <select class="inline-select" name="expert_group_id">
+                        <option value="">— Not assigned —</option>
+                        {% for group in r_expert_groups %}
+                            <option value="{{ group.id }}"
+                                    {% if group.id == r_patient.requested_expert_group_id %}selected{% endif %}>
+                                {{ group.name }}{% if group.specialty %} · {{ group.specialty }}{% endif %}
+                            </option>
+                        {% endfor %}
+                    </select>
+                    <button class="inline-button" type="submit">Save</button>
+                    <a class="inline-link" href="{{ url_for('expertboard.patient_panel', patient_id=r_patient.id) }}">Panel →</a>
+                </form>
+                <p class="status-hint">{{ r_review_status_hints.get(r_patient.review_status, "") }}</p>
             </div>
         </section>
 
         <section class="workspace">
             <article class="section section-wide">
-                <h2 class="section-title">Review status</h2>
-                <p class="section-copy">
-                    Expert panels and reviews are organized based on the patient's status.
-                </p>
-                <form class="status-form" method="POST"
-                      action="{{ url_for('expertboard.patient_status', patient_id=r_patient.id) }}">
-                    <label class="form-field">
-                        <span>Status</span>
-                        <select name="review_status">
-                            {% for status in r_review_statuses %}
-                                <option value="{{ status }}"
-                                        {% if status == r_patient.review_status %}selected{% endif %}>
-                                    {{ r_review_status_labels.get(status, status) }}
-                                </option>
-                            {% endfor %}
-                        </select>
-                    </label>
-                    <p class="status-hint">{{ r_review_status_hints.get(r_patient.review_status, "") }}</p>
-                    <button class="launch-button" type="submit">Update status</button>
-                </form>
-            </article>
-
-            <article class="section section-wide">
-                <h2 class="section-title">Requested expert group</h2>
-                <p class="section-copy">
-                    Choose which specialist group this patient should be referred to for review.
-                </p>
-                <form class="status-form" method="POST"
-                      action="{{ url_for('expertboard.patient_expert_group', patient_id=r_patient.id) }}">
-                    <label class="form-field">
-                        <span>Expert group</span>
-                        <select name="expert_group_id">
-                            <option value="">— Not assigned —</option>
-                            {% for group in r_expert_groups %}
-                                <option value="{{ group.id }}"
-                                        {% if group.id == r_patient.requested_expert_group_id %}selected{% endif %}>
-                                    {{ group.name }}{% if group.specialty %} · {{ group.specialty }}{% endif %}
-                                </option>
-                            {% endfor %}
-                        </select>
-                    </label>
-                    {% if not r_expert_groups %}
-                        <p class="status-hint">
-                            No expert groups yet. Create one on the
-                            <a href="{{ url_for('expertboard.admin_panel') }}">Admin</a> page.
-                        </p>
-                    {% endif %}
-                    <button class="launch-button" type="submit">Save expert group</button>
-                </form>
-                <p class="section-copy" style="margin-top:14px;">
-                    <a class="link-button" href="{{ url_for('expertboard.patient_panel', patient_id=r_patient.id) }}">
-                        Open expert panel schedule →
-                    </a>
-                </p>
-            </article>
-
-            <article class="section section-wide">
                 <h2 class="section-title">Clinical free text</h2>
-                <p class="section-copy">
-                    Enter the patient's clinical description. Phenotype (HPO) extraction will be added next.
-                </p>
                 <form class="clinical-form" method="POST"
                       action="{{ url_for('expertboard.patient_clinical_text', patient_id=r_patient.id) }}">
-                    <textarea name="clinical_text" rows="8"
+                    <textarea name="clinical_text" rows="5"
                               placeholder="e.g. 12-year-old with progressive muscle weakness, ptosis, and exercise intolerance...">{{ r_patient.clinical_text or "" }}</textarea>
-                    <button class="launch-button" type="submit">Save clinical text</button>
+                    <button class="inline-button" type="submit">Save</button>
                 </form>
             </article>
 
             <article class="section section-wide">
                 <h2 class="section-title">Family</h2>
-                <p class="section-copy">
-                    Set a family (kindred) ID to link relatives, and record family history even when
-                    no relative sample has been submitted.
-                </p>
-                <form class="clinical-form" method="POST"
+                <form class="inline-form" method="POST"
                       action="{{ url_for('expertboard.patient_family', patient_id=r_patient.id) }}">
-                    <label class="form-field">
-                        <span>Family ID</span>
-                        <input type="text" name="family_id" value="{{ r_patient.family_id or '' }}"
-                               placeholder="e.g. FAM-00042">
-                    </label>
-                    <label class="form-field">
-                        <span>Family history</span>
-                        <textarea name="family_history" rows="5"
-                                  placeholder="e.g. Mother with similar muscle weakness; maternal uncle deceased, undiagnosed neuromuscular disorder...">{{ r_patient.family_history or "" }}</textarea>
-                    </label>
-                    <button class="launch-button" type="submit">Save family information</button>
+                    <input class="inline-select" type="text" name="family_id"
+                           value="{{ r_patient.family_id or '' }}" placeholder="Family (kindred) ID  e.g. FAM-00042">
+                    <button class="inline-button" type="submit">Save</button>
                 </form>
 
-                {% if r_patient.family_id %}
-                    <h3 class="board-member-title" style="margin-top:16px;">
-                        Linked family members ({{ r_patient.family_id }})
-                    </h3>
-                    {% if r_family_members %}
-                        <div class="family-links">
-                            {% for member in r_family_members %}
-                                <a class="family-link" href="{{ url_for('expertboard.patient_detail', patient_id=member.id) }}">
-                                    <strong>{{ member.display_name or member.patient_code }}</strong>
-                                    <span>{{ member.patient_code }}</span>
-                                    <span>{{ member.diagnosis_name or "No diagnosis" }}</span>
-                                </a>
-                            {% endfor %}
-                        </div>
-                    {% else %}
-                        <div class="empty">No other patients registered under this family ID yet.</div>
-                    {% endif %}
+                {# Structured family members #}
+                <form class="family-add-form" method="POST"
+                      action="{{ url_for('expertboard.patient_family_member_add', patient_id=r_patient.id) }}">
+                    <select class="vf-input" name="relationship" required>
+                        <option value="" disabled selected>Relationship</option>
+                        {% for key, label in r_relationships %}
+                            <option value="{{ key }}">{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                    <input class="vf-input" type="text" name="display_name" placeholder="Name (optional)">
+                    <select class="vf-input" name="affected">
+                        {% for key, label in r_affected_options %}
+                            <option value="{{ key }}">{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                    <input class="vf-input" type="text" name="medical_history" placeholder="Medical history / notes">
+                    <select class="vf-input" name="linked_patient_id">
+                        <option value="">Link to patient (optional)</option>
+                        {% for p in r_linkable_patients %}
+                            {% if p.id != r_patient.id %}
+                                <option value="{{ p.id }}">{{ p.label }}</option>
+                            {% endif %}
+                        {% endfor %}
+                    </select>
+                    <button class="inline-button" type="submit">Add member</button>
+                </form>
+
+                {% if r_structured_family %}
+                    <div class="table-wrap" style="margin-top:10px;">
+                        <table class="variant-table">
+                            <thead>
+                                <tr>
+                                    <th>Relationship</th>
+                                    <th>Name</th>
+                                    <th>Affected</th>
+                                    <th>Medical history</th>
+                                    <th>Linked patient</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for row in r_structured_family %}
+                                    <tr>
+                                        <td><strong>{{ row.relationship_label }}</strong></td>
+                                        <td>{{ row.member.display_name or "—" }}</td>
+                                        <td>{{ row.member.affected or "—" }}</td>
+                                        <td class="note-cell">{{ row.member.medical_history or "—" }}</td>
+                                        <td>
+                                            {% if row.linked_patient %}
+                                                <a class="inline-link"
+                                                   href="{{ url_for('expertboard.patient_detail', patient_id=row.linked_patient.id) }}">
+                                                    {{ row.linked_patient.patient_code }}
+                                                </a>
+                                            {% else %}—{% endif %}
+                                        </td>
+                                        <td>
+                                            <form method="POST"
+                                                  action="{{ url_for('expertboard.patient_family_member_remove', patient_id=r_patient.id, member_id=row.member.id) }}">
+                                                <button class="link-button danger" type="submit">Remove</button>
+                                            </form>
+                                        </td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <p class="status-hint" style="margin-top:8px;">No family members registered yet.</p>
                 {% endif %}
             </article>
 
@@ -161,8 +159,21 @@
                 <h2 class="section-title">VCF variants</h2>
                 {% if r_variants %}
                     <p class="section-copy">{{ r_variants|length }} variants parsed from the uploaded VCF.</p>
+                    <div class="vf-filters">
+                        <input class="vf-input" id="vf-gene" type="text" placeholder="Gene">
+                        <input class="vf-input" id="vf-type" type="text" placeholder="Type">
+                        <select class="vf-input" id="vf-clnsig">
+                            <option value="">All Clin. sig.</option>
+                            <option value="pathogenic">Pathogenic</option>
+                            <option value="likely_pathogenic">Likely pathogenic</option>
+                            <option value="vus">VUS</option>
+                            <option value="likely_benign">Likely benign</option>
+                            <option value="benign">Benign</option>
+                        </select>
+                        <button class="vf-clear" type="button" onclick="clearVfFilters()">Clear</button>
+                    </div>
                     <div class="table-wrap">
-                        <table class="variant-table">
+                        <table class="variant-table" id="variant-table">
                             <thead>
                                 <tr>
                                     <th>Gene</th>
@@ -175,11 +186,19 @@
                                     <th>GT</th>
                                     <th>DP</th>
                                     <th>Note</th>
+                                    {% if r_linked_variants %}<th>Shared</th>{% endif %}
                                 </tr>
                             </thead>
-                            <tbody>
+                            <tbody id="variant-tbody">
                                 {% for v in r_variants %}
-                                    <tr>
+                                    {% set shares = r_variant_shares.get(v.id, []) %}
+                                    <tr
+                                        class="{{ 'shared-row' if shares else '' }}"
+                                        data-gene="{{ (v.gene or '')|lower }}"
+                                        data-type="{{ (v.variant_type or '')|lower }}"
+                                        data-clnsig="{{ (v.clin_sig or '')|lower|replace(' ','_') }}"
+                                        data-vkey="{{ v.chrom }}:{{ v.pos }}:{{ v.ref }}:{{ v.alt }}"
+                                    >
                                         <td><strong>{{ v.gene or "—" }}</strong></td>
                                         <td>{{ v.hgvs_c or "—" }}</td>
                                         <td>{{ v.hgvs_p or "—" }}</td>
@@ -190,15 +209,159 @@
                                         <td>{{ v.genotype or "—" }}</td>
                                         <td>{{ v.depth if v.depth is not none else "—" }}</td>
                                         <td class="note-cell">{{ (v.note or "")|replace('_', ' ') }}</td>
+                                        {% if r_linked_variants %}
+                                            <td>{% for label in shares %}<span class="shared-badge">{{ label }}</span>{% endfor %}</td>
+                                        {% endif %}
                                     </tr>
                                 {% endfor %}
                             </tbody>
                         </table>
                     </div>
+                    <script>
+                        (function () {
+                            function applyFilters() {
+                                const gene = document.getElementById('vf-gene').value.trim().toLowerCase();
+                                const type = document.getElementById('vf-type').value.trim().toLowerCase();
+                                const clnsig = document.getElementById('vf-clnsig').value.toLowerCase();
+                                document.querySelectorAll('#variant-tbody tr').forEach(function (row) {
+                                    const match =
+                                        (!gene   || row.dataset.gene.includes(gene)) &&
+                                        (!type   || row.dataset.type.includes(type)) &&
+                                        (!clnsig || row.dataset.clnsig === clnsig);
+                                    row.style.display = match ? '' : 'none';
+                                });
+                            }
+                            ['vf-gene', 'vf-type', 'vf-clnsig'].forEach(function (id) {
+                                document.getElementById(id).addEventListener('input', applyFilters);
+                                document.getElementById(id).addEventListener('change', applyFilters);
+                            });
+                        })();
+                        function clearVfFilters() {
+                            ['vf-gene', 'vf-type'].forEach(function (id) {
+                                document.getElementById(id).value = '';
+                            });
+                            document.getElementById('vf-clnsig').value = '';
+                            document.querySelectorAll('#variant-tbody tr').forEach(function (row) {
+                                row.style.display = '';
+                            });
+                        }
+                    </script>
                 {% else %}
                     <div class="empty">No variants imported for this patient.</div>
                 {% endif %}
             </article>
+
+            {# ── Family variant comparison (shown when ≥1 linked patient has variants) ── #}
+            {% set compare_pairs = r_linked_variants.values() | list %}
+            {% if compare_pairs %}
+                <article class="section section-wide">
+                    <h2 class="section-title">Family variant comparison</h2>
+                    <p class="section-copy">Side-by-side view of proband and linked family members' variants.</p>
+
+                    <div class="compare-filter-bar">
+                        <input class="vf-input" id="cmp-gene" type="text" placeholder="Filter by gene…">
+                        <button class="vf-clear" type="button"
+                                onclick="document.getElementById('cmp-gene').value='';applyCompareFilter()">Clear</button>
+                    </div>
+
+                    <div class="family-compare" id="family-compare">
+                        {# Proband column #}
+                        <div class="family-compare-col">
+                            <div class="family-compare-header">
+                                <span class="compare-role-badge proband">Proband</span>
+                                <span class="compare-code">{{ r_patient.patient_code }}</span>
+                                <span class="compare-name">{{ r_patient.display_name or "" }}</span>
+                                <span class="compare-count">{{ r_variants|length }} variants</span>
+                            </div>
+                            <div class="compare-table-wrap">
+                                <table class="variant-table compare-table" data-col="proband">
+                                    <thead>
+                                        <tr><th>Gene</th><th>HGVS c.</th><th>p.</th><th>Type</th><th>Clin.sig.</th><th>GT</th></tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for v in r_variants %}
+                                            <tr data-gene="{{ (v.gene or '')|lower }}"
+                                                data-vkey="{{ v.chrom }}:{{ v.pos }}:{{ v.ref }}:{{ v.alt }}">
+                                                <td><strong>{{ v.gene or "—" }}</strong></td>
+                                                <td>{{ v.hgvs_c or "—" }}</td>
+                                                <td>{{ v.hgvs_p or "—" }}</td>
+                                                <td>{{ v.variant_type or "—" }}</td>
+                                                <td><span class="clnsig clnsig-{{ (v.clin_sig or 'unknown')|lower|replace('_','-') }}">{{ v.clin_sig or "—" }}</span></td>
+                                                <td>{{ v.genotype or "—" }}</td>
+                                            </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        {# Linked family member columns #}
+                        {% for pid, info in r_linked_variants.items() %}
+                            <div class="family-compare-col">
+                                <div class="family-compare-header">
+                                    <span class="compare-role-badge family">{{ info.relationship_label }}</span>
+                                    <span class="compare-code">{{ info.patient.patient_code }}</span>
+                                    <a class="compare-name inline-link"
+                                       href="{{ url_for('expertboard.patient_detail', patient_id=info.patient.id) }}">
+                                        {{ info.patient.display_name or info.patient.patient_code }}
+                                    </a>
+                                    <span class="compare-count">{{ info.variants|length }} variants</span>
+                                </div>
+                                <div class="compare-table-wrap">
+                                    {% if info.variants %}
+                                        <table class="variant-table compare-table" data-col="{{ pid }}">
+                                            <thead>
+                                                <tr><th>Gene</th><th>HGVS c.</th><th>p.</th><th>Type</th><th>Clin.sig.</th><th>GT</th></tr>
+                                            </thead>
+                                            <tbody>
+                                                {% for v in info.variants %}
+                                                    <tr data-gene="{{ (v.gene or '')|lower }}"
+                                                        data-vkey="{{ v.chrom }}:{{ v.pos }}:{{ v.ref }}:{{ v.alt }}">
+                                                        <td><strong>{{ v.gene or "—" }}</strong></td>
+                                                        <td>{{ v.hgvs_c or "—" }}</td>
+                                                        <td>{{ v.hgvs_p or "—" }}</td>
+                                                        <td>{{ v.variant_type or "—" }}</td>
+                                                        <td><span class="clnsig clnsig-{{ (v.clin_sig or 'unknown')|lower|replace('_','-') }}">{{ v.clin_sig or "—" }}</span></td>
+                                                        <td>{{ v.genotype or "—" }}</td>
+                                                    </tr>
+                                                {% endfor %}
+                                            </tbody>
+                                        </table>
+                                    {% else %}
+                                        <p class="status-hint" style="padding:12px 8px;">No variants imported.</p>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        {% endfor %}
+                    </div>
+
+                    <script>
+                        (function () {
+                            // Keys shared between proband and ≥1 linked patient
+                            var sharedKeys  = new Set({{ r_shared_vkeys  | tojson }});
+                            // All proband keys (for highlighting matching rows in linked columns)
+                            var probandKeys = new Set({{ r_proband_vkeys | tojson }});
+
+                            // Proband column: highlight rows that appear in a linked patient
+                            document.querySelectorAll('.compare-table[data-col="proband"] tbody tr').forEach(function (row) {
+                                if (sharedKeys.has(row.dataset.vkey)) row.classList.add('shared-row');
+                            });
+                            // Linked columns: highlight rows that appear in the proband
+                            document.querySelectorAll('.compare-table:not([data-col="proband"]) tbody tr').forEach(function (row) {
+                                if (probandKeys.has(row.dataset.vkey)) row.classList.add('shared-row');
+                            });
+
+                            function applyCompareFilter() {
+                                var gene = document.getElementById('cmp-gene').value.trim().toLowerCase();
+                                document.querySelectorAll('#family-compare .compare-table tbody tr').forEach(function (row) {
+                                    row.style.display = (!gene || row.dataset.gene.includes(gene)) ? '' : 'none';
+                                });
+                            }
+                            document.getElementById('cmp-gene').addEventListener('input', applyCompareFilter);
+                        })();
+                    </script>
+                </article>
+            {% endif %}
         </section>
     </main>
 </body>

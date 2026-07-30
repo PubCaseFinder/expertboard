@@ -213,3 +213,26 @@ class PanelParticipant(Base):
     created_at: Mapped[str] = mapped_column(TIMESTAMP(), nullable=False, server_default=func.current_timestamp())
 
 
+class FamilyMember(Base):
+    """A structured family member record for a patient (proband).
+
+    Each row represents one relative. If that relative is registered as a
+    patient in the system, ``linked_patient_id`` links to their record so
+    variant data can be accessed directly.
+    """
+
+    __tablename__ = "family_members"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    patient_id: Mapped[int] = mapped_column(ForeignKey("patients.id"), nullable=False)
+    relationship: Mapped[str] = mapped_column(String(32), nullable=False)
+    display_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    affected: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    medical_history: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    linked_patient_id: Mapped[int | None] = mapped_column(
+        ForeignKey("patients.id"), nullable=True
+    )
+    created_at: Mapped[str] = mapped_column(
+        TIMESTAMP(), nullable=False, server_default=func.current_timestamp()
+    )
+

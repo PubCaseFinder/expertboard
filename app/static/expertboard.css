@@ -49,9 +49,9 @@ a { color: inherit; }
 }
 
 .hero {
-    padding: 26px 28px;
+    padding: 14px 18px;
     border: 1px solid var(--line);
-    border-radius: 30px;
+    border-radius: 18px;
     background: linear-gradient(180deg, rgba(255,255,255,0.74), rgba(247,250,253,0.94));
     box-shadow: var(--shadow);
     backdrop-filter: blur(14px);
@@ -70,22 +70,22 @@ h1 {
     margin: 0;
     color: #4f5da2;
     font-family: Georgia, "Times New Roman", serif;
-    font-size: clamp(34px, 4.8vw, 58px);
-    line-height: 1.02;
-    letter-spacing: -0.04em;
+    font-size: clamp(18px, 2.4vw, 28px);
+    line-height: 1.1;
+    letter-spacing: -0.03em;
 }
 
 .landing-title {
-    font-size: clamp(30px, 4.1vw, 50px);
+    font-size: clamp(16px, 2vw, 24px);
     white-space: nowrap;
 }
 
 .lede {
     max-width: 100%;
-    margin: 14px 0 0;
+    margin: 8px 0 0;
     color: var(--ink-soft);
-    font-size: 18px;
-    line-height: 1.55;
+    font-size: 12px;
+    line-height: 1.5;
 }
 
 .launch-row {
@@ -104,21 +104,21 @@ h1 {
     border: 0;
     cursor: pointer;
     text-decoration: none;
-    border-radius: 18px;
+    border-radius: 10px;
     background: linear-gradient(135deg, var(--purple-deep), var(--purple));
     color: white;
-    font-size: 15px;
-    font-weight: 800;
-    box-shadow: 0 18px 34px rgba(88, 75, 187, 0.2);
+    font-size: 12px;
+    font-weight: 700;
+    box-shadow: 0 6px 14px rgba(88, 75, 187, 0.15);
 }
 
 .launch-button {
-    padding: 12px 16px;
+    padding: 7px 12px;
     width: 100%;
     height: 100%;
-    min-height: 86px;
-    border-radius: 20px;
-    font-size: 16px;
+    min-height: 36px;
+    border-radius: 10px;
+    font-size: 12px;
     font-weight: 760;
 }
 
@@ -132,8 +132,8 @@ h1 {
 }
 
 .stat-card {
-    padding: 18px;
-    border-radius: 20px;
+    padding: 10px 14px;
+    border-radius: 12px;
 }
 
 .workspace {
@@ -144,26 +144,152 @@ h1 {
 }
 
 .section {
-    padding: 24px;
+    padding: 14px 18px;
     border: 1px solid var(--line);
-    border-radius: 28px;
+    border-radius: 16px;
     background: rgba(255, 255, 255, 0.86);
     box-shadow: var(--shadow);
     backdrop-filter: blur(14px);
 }
 
 .section-title {
-    margin: 0 0 10px;
+    margin: 0 0 8px;
     color: #45537b;
-    font-size: 27px;
+    font-size: 15px;
     font-family: Georgia, "Times New Roman", serif;
 }
 
 .section-copy {
-    margin: 0 0 18px;
+    margin: 0 0 10px;
     color: var(--ink-soft);
-    line-height: 1.6;
+    font-size: 12px;
+    line-height: 1.5;
 }
+
+/* Compact patient hero */
+.patient-hero {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 12px 16px;
+}
+
+.patient-hero-main {
+    flex: 1 1 180px;
+    min-width: 0;
+}
+
+.patient-hero-main h1 {
+    font-size: clamp(13px, 1.6vw, 18px);
+    white-space: normal;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.patient-hero-controls {
+    flex: 2 1 320px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.patient-hero-stat-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+/* Inline form row: select/input + button side by side */
+.inline-form {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 6px;
+}
+
+.inline-select {
+    flex: 1;
+    min-width: 160px;
+    max-width: 340px;
+    padding: 6px 10px;
+    border: 1px solid var(--line, #d9e0ea);
+    border-radius: 8px;
+    background: #fff;
+    font-size: 12px;
+    color: var(--ink, #26303f);
+    font-family: inherit;
+}
+
+.inline-button {
+    flex-shrink: 0;
+    padding: 6px 14px;
+    border: 0;
+    border-radius: 8px;
+    background: linear-gradient(135deg, var(--purple-deep), var(--purple));
+    color: #fff;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.inline-link {
+    flex-shrink: 0;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--purple);
+    text-decoration: none;
+    padding: 6px 4px;
+}
+
+.inline-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.inline-label {
+    flex-shrink: 0;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--muted, #6b7688);
+    min-width: 80px;
+}
+
+.family-history-area {
+    width: 100%;
+    margin: 8px 0 6px;
+    padding: 8px 10px;
+    border: 1px solid var(--line, #d9e0ea);
+    border-radius: 8px;
+    font-size: 12px;
+    font-family: inherit;
+    color: var(--ink, #26303f);
+    resize: vertical;
+}
+
+.family-add-form {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+    margin-top: 10px;
+}
+
+.family-add-form .vf-input {
+    flex: 1 1 120px;
+    min-width: 100px;
+    max-width: 200px;
+}
+
+.family-add-form .inline-button {
+    flex-shrink: 0;
+}
+
+
 
 .list-search-box {
     position: relative;
@@ -902,6 +1028,38 @@ h1 {
     box-shadow: 0 6px 18px rgba(20, 16, 45, 0.25);
 }
 
+.role-bar-toggle {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 10px 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    font-size: 13px;
+    list-style: none;
+    user-select: none;
+}
+
+.role-bar-toggle::-webkit-details-marker {
+    display: none;
+}
+
+.role-toggle-icon {
+    font-size: 14px;
+    line-height: 1;
+}
+
+.role-toggle-hint {
+    font-size: 11px;
+    opacity: 0.7;
+    letter-spacing: 0.03em;
+}
+
+.role-bar[open] .role-bar-toggle {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+
 .role-bar-inner {
     max-width: 1280px;
     margin: 0 auto;
@@ -1023,6 +1181,52 @@ h1 {
 }
 
 /* --- Patients / VCF import --- */
+.top-cta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 20px 0 4px;
+}
+
+.top-cta-primary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.cta-button {
+    display: inline-block;
+    padding: 12px 22px;
+    border-radius: 12px;
+    font-size: 14px;
+    font-weight: 800;
+    text-decoration: none;
+    color: #fff;
+    background: linear-gradient(135deg, #6a5bd1, #5547c8);
+    border: 1px solid transparent;
+    box-shadow: 0 6px 16px rgba(85, 71, 200, 0.25);
+}
+
+.cta-button.secondary {
+    background: #fff;
+    color: var(--ink, #26303f);
+    border-color: var(--line, #d9e0ea);
+    box-shadow: none;
+}
+
+.cta-button:hover {
+    filter: brightness(1.03);
+}
+
+.cta-link {
+    font-size: 13px;
+    font-weight: 700;
+    text-decoration: none;
+    color: var(--ink-soft, #5a6376);
+}
+
 .page-nav {
     display: flex;
     gap: 8px;
@@ -1262,6 +1466,122 @@ h1 {
     color: var(--muted, #6b7688);
 }
 
+/* ── Family variant comparison ────────────────────────────────────────── */
+.compare-filter-bar {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.family-compare {
+    display: flex;
+    gap: 10px;
+    overflow-x: auto;
+    align-items: flex-start;
+    padding-bottom: 6px;
+}
+
+.family-compare-col {
+    flex: 0 0 auto;
+    width: 420px;
+    border: 1px solid var(--line, #d9e0ea);
+    border-radius: 10px;
+    overflow: hidden;
+    background: #fff;
+}
+
+.family-compare-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 12px;
+    background: var(--surface, #f7f9fc);
+    border-bottom: 1px solid var(--line, #d9e0ea);
+    font-size: 12px;
+}
+
+.compare-role-badge {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    border: 1px solid transparent;
+}
+
+.compare-role-badge.proband {
+    background: #eef2ff;
+    color: #3949ab;
+    border-color: #c8d2f7;
+}
+
+.compare-role-badge.family {
+    background: #fff3e0;
+    color: #e65100;
+    border-color: #ffd8a8;
+}
+
+.compare-code {
+    font-weight: 600;
+    color: var(--ink, #26303f);
+}
+
+.compare-name {
+    color: var(--muted, #6b7688);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 160px;
+}
+
+.compare-count {
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--muted, #6b7688);
+}
+
+.compare-table-wrap {
+    max-height: 380px;
+    overflow-y: auto;
+}
+
+.compare-table {
+    width: 100%;
+    font-size: 11px;
+    border-radius: 0;
+}
+
+.compare-table thead th {
+    position: sticky;
+    top: 0;
+    background: var(--surface, #f7f9fc);
+    z-index: 1;
+}
+
+/* Shared variant highlighting */
+.shared-row {
+    background: #fffbeb !important;
+}
+
+.shared-row td:first-child {
+    border-left: 3px solid #f59e0b;
+}
+
+.shared-badge {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 600;
+    background: #fef3c7;
+    color: #92400e;
+    border: 1px solid #fde68a;
+    margin: 1px;
+    white-space: nowrap;
+}
+
 /* Compact clinical + candidate gene brief on the review screen */
 .clinical-brief {
     margin-bottom: 18px;
@@ -1486,6 +1806,36 @@ h1 {
     overflow-x: auto;
     border: 1px solid var(--line, #d9e0ea);
     border-radius: 14px;
+}
+
+.vf-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 10px;
+    align-items: center;
+}
+
+.vf-input {
+    padding: 5px 10px;
+    border: 1px solid var(--line, #d9e0ea);
+    border-radius: 8px;
+    background: #fff;
+    font-size: 12px;
+    color: var(--ink, #26303f);
+    font-family: inherit;
+    min-width: 110px;
+}
+
+.vf-clear {
+    padding: 5px 12px;
+    border: 1px solid var(--line, #d9e0ea);
+    border-radius: 8px;
+    background: #f3f5f8;
+    font-size: 12px;
+    font-family: inherit;
+    cursor: pointer;
+    color: var(--ink-soft, #5a6376);
 }
 
 .variant-table {

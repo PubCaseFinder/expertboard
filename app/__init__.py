@@ -37,6 +37,6 @@ def create_app():
 
     @app.route("/")
     def root():
-        return redirect(url_for("expertboard.board_list"))
+        return redirect(url_for("expertboard.patient_queue"))
 
     return app

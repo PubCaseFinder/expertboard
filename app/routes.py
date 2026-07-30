@@ -11,9 +11,15 @@ from app import cases
 from app import patients
 from app import admin
 from app import panel
+from app import family as family_module
 
 
 bp = Blueprint("expertboard", __name__)
+
+
+def _vkey(v):
+    """Canonical genomic key for variant matching: chrom:pos:ref:alt"""
+    return f"{v.chrom}:{v.pos}:{v.ref}:{v.alt}"
 
 
 @bp.route("/switch-role", methods=["POST"])
@@ -71,16 +77,83 @@ def patient_detail(patient_id):
     patient = patients.get_patient(patient_id)
     if patient is None:
         abort(404)
+    structured_family = family_module.list_family_members(patient_id)
+
+    # Proband variants
+    proband_variants = patients.get_patient_variants(patient_id)
+    proband_key_map = {_vkey(v): v.id for v in proband_variants}
+
+    # Linked patient variants (deduplicated by patient id)
+    linked_variants = {}
+    for row in structured_family:
+        lp = row.get("linked_patient")
+        if lp and lp.id not in linked_variants:
+            linked_variants[lp.id] = {
+                "patient": lp,
+                "relationship_label": row["relationship_label"],
+                "variants": patients.get_patient_variants(lp.id),
+            }
+
+    # variant_shares: proband variant_id → [relationship_label, ...]
+    # shared_vkeys:   set of vkeys present in proband AND at least one linked patient
+    variant_shares = {}
+    shared_vkeys_set = set()
+    for info in linked_variants.values():
+        for lv in info["variants"]:
+            k = _vkey(lv)
+            if k in proband_key_map:
+                shared_vkeys_set.add(k)
+                variant_shares.setdefault(proband_key_map[k], []).append(
+                    info["relationship_label"]
+                )
+
     return render_template(
         "patient_detail.html",
         r_patient=patient,
-        r_variants=patients.get_patient_variants(patient_id),
+        r_variants=proband_variants,
+        r_variant_shares=variant_shares,
+        r_proband_vkeys=list(proband_key_map.keys()),
+        r_shared_vkeys=list(shared_vkeys_set),
         r_review_statuses=patients.REVIEW_STATUSES,
         r_review_status_labels=patients.REVIEW_STATUS_LABELS,
         r_review_status_hints=patients.REVIEW_STATUS_HINTS,
         r_expert_groups=admin.list_expert_groups(),
         r_family_members=patients.list_family_members(patient_id),
+        r_structured_family=structured_family,
+        r_relationships=family_module.RELATIONSHIPS,
+        r_affected_options=family_module.AFFECTED_OPTIONS,
+        r_linkable_patients=family_module.list_patients_for_linking(),
+        r_linked_variants=linked_variants,
     )
+
+
+@bp.route("/patients/<int:patient_id>/family/members", methods=["POST"])
+def patient_family_member_add(patient_id):
+    patient = patients.get_patient(patient_id)
+    if patient is None:
+        abort(404)
+    _member, error = family_module.add_family_member(
+        patient_id,
+        request.form.get("relationship"),
+        request.form.get("display_name"),
+        request.form.get("affected"),
+        request.form.get("medical_history"),
+        request.form.get("linked_patient_id"),
+    )
+    flash(error or "Family member added.", "error" if error else "success")
+    return redirect(url_for("expertboard.patient_detail", patient_id=patient_id))
+
+
+@bp.route("/patients/<int:patient_id>/family/members/<int:member_id>/remove", methods=["POST"])
+def patient_family_member_remove(patient_id, member_id):
+    patient = patients.get_patient(patient_id)
+    if patient is None:
+        abort(404)
+    if family_module.remove_family_member(patient_id, member_id):
+        flash("Family member removed.", "success")
+    else:
+        flash("Family member not found.", "error")
+    return redirect(url_for("expertboard.patient_detail", patient_id=patient_id))
 
 
 @bp.route("/patients/<int:patient_id>/family", methods=["POST"])

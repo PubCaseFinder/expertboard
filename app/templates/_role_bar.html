@@ -1,5 +1,10 @@
-{# Top-bar role switcher (hackathon mock, no real auth). #}
-<div class="role-bar">
+{# Top-bar role switcher (hackathon mock, no real auth). Click to expand. #}
+<details class="role-bar">
+    <summary class="role-bar-toggle">
+        <span class="role-toggle-icon" aria-hidden="true">☰</span>
+        <span>Role: <strong>{{ role_labels.get(current_role, current_role) }}</strong></span>
+        <span class="role-toggle-hint">click to switch</span>
+    </summary>
     <div class="role-bar-inner">
         <div class="role-switch">
             <span class="role-switch-label">Switch role</span>
@@ -33,4 +38,4 @@
             </div>
         </div>
     </div>
-</div>
+</details>
