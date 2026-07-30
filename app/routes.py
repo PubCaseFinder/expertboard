@@ -1,6 +1,7 @@
 from flask import Blueprint
 from flask import abort
 from flask import flash
+from flask import jsonify
 from flask import redirect
 from flask import render_template
 from flask import request
@@ -12,6 +13,7 @@ from app import patients
 from app import admin
 from app import panel
 from app import family as family_module
+from app import togovar_client
 
 
 bp = Blueprint("expertboard", __name__)
@@ -301,6 +303,32 @@ def admin_remove_board_member(member_id):
         flash("Board member not found.", "error")
     return redirect(url_for("expertboard.admin_panel"))
 
+
+# ── TogoVar API proxy ──────────────────────────────────────────────────────────
+
+@bp.route("/api/togovar")
+def api_togovar():
+    """Server-side proxy: look up a variant in TogoVar and return JSON."""
+    chrom = (request.args.get("chrom") or "").strip()
+    pos   = (request.args.get("pos")   or "").strip()
+    ref   = (request.args.get("ref")   or "").strip()
+    alt   = (request.args.get("alt")   or "").strip()
+
+    if not (chrom and pos and ref and alt):
+        return jsonify({"error": "Missing chrom/pos/ref/alt"}), 400
+
+    try:
+        result = togovar_client.lookup_variant(chrom, pos, ref, alt)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 502
+
+    if result is None:
+        return jsonify({"found": False})
+
+    return jsonify({"found": True, **result})
+
+
+# ── Expert boards ──────────────────────────────────────────────────────────────
 
 @bp.route("/boards")
 def board_list():

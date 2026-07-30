@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ r_patient.display_name or r_patient.patient_code }} | ExpertBoard</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='expertboard.css', v='20260729t') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='expertboard.css', v='20260729v') }}">
 </head>
 <body>
     {% include "_role_bar.html" %}
@@ -187,6 +187,7 @@
                                     <th>DP</th>
                                     <th>Note</th>
                                     {% if r_linked_variants %}<th>Shared</th>{% endif %}
+                                    <th>JP DB</th>
                                 </tr>
                             </thead>
                             <tbody id="variant-tbody">
@@ -198,6 +199,7 @@
                                         data-type="{{ (v.variant_type or '')|lower }}"
                                         data-clnsig="{{ (v.clin_sig or '')|lower|replace(' ','_') }}"
                                         data-vkey="{{ v.chrom }}:{{ v.pos }}:{{ v.ref }}:{{ v.alt }}"
+                                        data-vid="{{ v.id }}"
                                     >
                                         <td><strong>{{ v.gene or "—" }}</strong></td>
                                         <td>{{ v.hgvs_c or "—" }}</td>
@@ -212,6 +214,16 @@
                                         {% if r_linked_variants %}
                                             <td>{% for label in shares %}<span class="shared-badge">{{ label }}</span>{% endfor %}</td>
                                         {% endif %}
+                                        <td class="togovar-cell" id="tv-{{ v.id }}">
+                                            <button class="tv-btn"
+                                                    data-chrom="{{ v.chrom }}"
+                                                    data-pos="{{ v.pos }}"
+                                                    data-ref="{{ v.ref }}"
+                                                    data-alt="{{ v.alt }}"
+                                                    data-cell="tv-{{ v.id }}"
+                                                    type="button"
+                                                    onclick="fetchTogoVar(this)">JP DB</button>
+                                        </td>
                                     </tr>
                                 {% endfor %}
                             </tbody>
@@ -244,6 +256,39 @@
                             document.querySelectorAll('#variant-tbody tr').forEach(function (row) {
                                 row.style.display = '';
                             });
+                        }
+                        function fetchTogoVar(btn) {
+                            const cell = document.getElementById(btn.dataset.cell);
+                            cell.innerHTML = '<span class="tv-loading">…</span>';
+                            const params = new URLSearchParams({
+                                chrom: btn.dataset.chrom,
+                                pos:   btn.dataset.pos,
+                                ref:   btn.dataset.ref,
+                                alt:   btn.dataset.alt,
+                            });
+                            fetch('/api/togovar?' + params)
+                                .then(function(r) { return r.json(); })
+                                .then(function(d) {
+                                    if (!d.found) { cell.innerHTML = '<span class="tv-notfound">—</span>'; return; }
+                                    let html = '';
+                                    if (d.top_interp) {
+                                        html += '<span class="tv-sig ' + d.top_interp_css + '">' + d.top_interp + '</span>';
+                                    }
+                                    if (d.gem_j_af !== null && d.gem_j_af !== undefined) {
+                                        html += '<span class="tv-af" title="GEM-J WGA AF">GEM-J ' + d.gem_j_af.toExponential(2) + '</span>';
+                                    }
+                                    if (d.tommo_af !== null && d.tommo_af !== undefined) {
+                                        html += '<span class="tv-af" title="ToMMo AF">ToMMo ' + d.tommo_af.toExponential(2) + '</span>';
+                                    }
+                                    if (d.alphamissense !== null && d.alphamissense !== undefined) {
+                                        html += '<span class="tv-am" title="AlphaMissense">AM ' + d.alphamissense.toFixed(3) + '</span>';
+                                    }
+                                    if (d.togovar_url) {
+                                        html += '<a class="tv-link" href="' + d.togovar_url + '" target="_blank" rel="noopener">↗</a>';
+                                    }
+                                    cell.innerHTML = html || '<span class="tv-notfound">no data</span>';
+                                })
+                                .catch(function() { cell.innerHTML = '<span class="tv-notfound">error</span>'; });
                         }
                     </script>
                 {% else %}
