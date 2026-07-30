@@ -81,6 +81,9 @@ def current_user_display():
         if user:
             return user.display_name
     return ROLE_LABELS.get(current_role(), current_role())
+
+
+def capabilities_for(role):
     return ROLE_CAPABILITIES.get(role, set())
 
 
