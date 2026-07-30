@@ -138,6 +138,9 @@ def patient_detail(patient_id):
         r_linkable_patients=family_module.list_patients_for_linking(),
         r_linked_variants=linked_variants,
         r_assessments=assessments_module.list_for_variants([v.id for v in proband_variants]),
+        r_cross_assessments=assessments_module.list_cross_patient_for_variants(
+            proband_variants, patient_id
+        ),
         r_classifications=assessments_module.CLASSIFICATIONS,
         r_evidence_levels=assessments_module.EVIDENCE_LEVELS,
     )

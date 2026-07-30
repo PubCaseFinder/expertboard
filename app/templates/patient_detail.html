@@ -159,36 +159,70 @@
                 <h2 class="section-title">VCF variants</h2>
                 {% if r_variants %}
                     <p class="section-copy">{{ r_variants|length }} variants parsed from the uploaded VCF.</p>
-                    <div class="vf-filters">
-                        <input class="vf-input" id="vf-gene" type="text" placeholder="Gene">
-                        <input class="vf-input" id="vf-type" type="text" placeholder="Type">
-                        <select class="vf-input" id="vf-clnsig">
-                            <option value="">All Clin. sig.</option>
-                            <option value="pathogenic">Pathogenic</option>
-                            <option value="likely_pathogenic">Likely pathogenic</option>
-                            <option value="vus">VUS</option>
-                            <option value="likely_benign">Likely benign</option>
-                            <option value="benign">Benign</option>
-                        </select>
-                        <button class="vf-clear" type="button" onclick="clearVfFilters()">Clear</button>
-                    </div>
                     <div class="table-wrap">
                         <table class="variant-table" id="variant-table">
                             <thead>
                                 <tr>
-                                    <th>Gene</th>
+                                    <th>
+                                        Gene
+                                        <button class="th-clear-btn" type="button"
+                                                onclick="clearVfFilters()" title="Clear all filters">✕</button>
+                                        <input class="th-filter" id="vf-gene" type="search" placeholder="filter…">
+                                    </th>
                                     <th>HGVS c.</th>
                                     <th>HGVS p.</th>
-                                    <th>Type</th>
+                                    <th>
+                                        Type
+                                        <input class="th-filter" id="vf-type" type="search" placeholder="filter…">
+                                    </th>
                                     <th>Locus</th>
                                     <th>REF/ALT</th>
-                                    <th>Clin. sig.</th>
+                                    <th>
+                                        Past
+                                        <select class="th-filter" id="vf-past">
+                                            <option value="">All</option>
+                                            <option value="pathogenic">Pathogenic</option>
+                                            <option value="likely_pathogenic">Likely pathogenic</option>
+                                            <option value="uncertain_significance">VUS</option>
+                                            <option value="likely_benign">Likely benign</option>
+                                            <option value="benign">Benign</option>
+                                            <option value="drug_response">Drug response</option>
+                                            <option value="risk_factor">Risk factor</option>
+                                            <option value="other">Other</option>
+                                        </select>
+                                    </th>
+                                    <th>
+                                        Assessed
+                                        <select class="th-filter" id="vf-assessed">
+                                            <option value="">All</option>
+                                            <option value="pathogenic">Pathogenic</option>
+                                            <option value="likely_pathogenic">Likely pathogenic</option>
+                                            <option value="uncertain_significance">VUS</option>
+                                            <option value="likely_benign">Likely benign</option>
+                                            <option value="benign">Benign</option>
+                                            <option value="drug_response">Drug response</option>
+                                            <option value="risk_factor">Risk factor</option>
+                                            <option value="other">Other</option>
+                                        </select>
+                                    </th>
+                                    <th>
+                                        Clin. sig.
+                                        <select class="th-filter" id="vf-clnsig">
+                                            <option value="">All</option>
+                                            <option value="pathogenic">Pathogenic</option>
+                                            <option value="likely_pathogenic">Likely pathogenic</option>
+                                            <option value="uncertain_significance">VUS</option>
+                                            <option value="likely_benign">Likely benign</option>
+                                            <option value="benign">Benign</option>
+                                        </select>
+                                    </th>
                                     <th>GT</th>
                                     <th>DP</th>
-                                    <th>Note</th>
+                                    <th>Note
+                                        <input class="th-filter" id="vf-note" type="search" placeholder="filter…">
+                                    </th>
                                     {% if r_linked_variants %}<th>Shared</th>{% endif %}
                                     <th>JP DB</th>
-                                    <th>Assessed</th>
                                 </tr>
                             </thead>
                             <tbody id="variant-tbody">
@@ -200,6 +234,9 @@
                                         data-gene="{{ (v.gene or '')|lower }}"
                                         data-type="{{ (v.variant_type or '')|lower }}"
                                         data-clnsig="{{ (v.clin_sig or '')|lower|replace(' ','_') }}"
+                                        data-note="{{ (v.note or '')|lower }}"
+                                        data-past="{% for e in r_cross_assessments.get(v.id, []) %}{{ e.assessment.classification|lower|replace(' ','_') }}{% if not loop.last %}|{% endif %}{% endfor %}"
+                                        data-assessed="{% for e in va_list %}{{ e.assessment.classification|lower|replace(' ','_') }}{% if not loop.last %}|{% endif %}{% endfor %}"
                                         data-vkey="{{ v.chrom }}:{{ v.pos }}:{{ v.ref }}:{{ v.alt }}"
                                         data-vid="{{ v.id }}"
                                     >
@@ -209,23 +246,23 @@
                                         <td>{{ v.variant_type or "—" }}</td>
                                         <td>{{ v.chrom }}:{{ v.pos }}</td>
                                         <td>{{ v.ref }}/{{ v.alt }}</td>
-                                        <td><span class="clnsig clnsig-{{ (v.clin_sig or 'unknown')|lower|replace('_','-') }}">{{ v.clin_sig or "—" }}</span></td>
-                                        <td>{{ v.genotype or "—" }}</td>
-                                        <td>{{ v.depth if v.depth is not none else "—" }}</td>
-                                        <td class="note-cell">{{ (v.note or "")|replace('_', ' ') }}</td>
-                                        {% if r_linked_variants %}
-                                            <td>{% for label in shares %}<span class="shared-badge">{{ label }}</span>{% endfor %}</td>
-                                        {% endif %}
-                                        <td class="togovar-cell" id="tv-{{ v.id }}">
-                                            <button class="tv-btn"
-                                                    data-chrom="{{ v.chrom }}"
-                                                    data-pos="{{ v.pos }}"
-                                                    data-ref="{{ v.ref }}"
-                                                    data-alt="{{ v.alt }}"
-                                                    data-cell="tv-{{ v.id }}"
-                                                    type="button"
-                                                    onclick="fetchTogoVar(this)">JP DB</button>
+                                        {# ── Past assessments (other patients, same variant) ── #}
+                                        <td class="assessment-cell">
+                                            {% for entry in r_cross_assessments.get(v.id, []) %}
+                                                {% set ts = entry.assessment.created_at|string %}
+                                                <span class="assess-badge assess-{{ entry.css }} assess-past"
+                                                      title="Read-only · {{ entry.patient.patient_code if entry.patient else '?' }} · {{ entry.assessment.assessed_by or '—' }} · {{ ts[:16] }}">
+                                                    <span class="assess-lock" aria-hidden="true">🔒</span>
+                                                    {%- if entry.group and entry.group.country -%}
+                                                        <span class="assess-country">{{ entry.group.country }}</span>
+                                                    {%- elif entry.group -%}
+                                                        <span class="assess-country">{{ entry.group.name }}</span>
+                                                    {%- endif -%}
+                                                    {{ entry.assessment.classification }}
+                                                </span>
+                                            {% endfor %}
                                         </td>
+                                        {# ── This patient's assessments ── #}
                                         <td class="assessment-cell">
                                             {% for entry in va_list %}
                                                 {% set ts = entry.assessment.created_at|string %}
@@ -247,6 +284,23 @@
                                             {% endfor %}
                                             <button class="assess-add-btn" type="button"
                                                     onclick="toggleAssessForm('af-{{ v.id }}')">+</button>
+                                        </td>
+                                        <td><span class="clnsig clnsig-{{ (v.clin_sig or 'unknown')|lower|replace('_','-') }}">{{ v.clin_sig or "—" }}</span></td>
+                                        <td>{{ v.genotype or "—" }}</td>
+                                        <td>{{ v.depth if v.depth is not none else "—" }}</td>
+                                        <td class="note-cell">{{ (v.note or "")|replace('_', ' ') }}</td>
+                                        {% if r_linked_variants %}
+                                            <td>{% for label in shares %}<span class="shared-badge">{{ label }}</span>{% endfor %}</td>
+                                        {% endif %}
+                                        <td class="togovar-cell" id="tv-{{ v.id }}">
+                                            <button class="tv-btn"
+                                                    data-chrom="{{ v.chrom }}"
+                                                    data-pos="{{ v.pos }}"
+                                                    data-ref="{{ v.ref }}"
+                                                    data-alt="{{ v.alt }}"
+                                                    data-cell="tv-{{ v.id }}"
+                                                    type="button"
+                                                    onclick="fetchTogoVar(this)">JP DB</button>
                                         </td>
                                     </tr>
                                     <tr id="af-{{ v.id }}" class="assessment-form-row" style="display:none">
@@ -285,22 +339,30 @@
                     </div>
                     <script>
                         (function () {
-                            // ── filter bar ────────────────────────────────
                             function applyFilters() {
-                                const gene = document.getElementById('vf-gene').value.trim().toLowerCase();
-                                const type = document.getElementById('vf-type').value.trim().toLowerCase();
-                                const clnsig = document.getElementById('vf-clnsig').value.toLowerCase();
+                                var gene     = document.getElementById('vf-gene').value.trim().toLowerCase();
+                                var type     = document.getElementById('vf-type').value.trim().toLowerCase();
+                                var clnsig   = document.getElementById('vf-clnsig').value.toLowerCase();
+                                var note     = document.getElementById('vf-note').value.trim().toLowerCase();
+                                var past     = document.getElementById('vf-past').value;
+                                var assessed = document.getElementById('vf-assessed').value;
                                 document.querySelectorAll('#variant-tbody tr:not(.assessment-form-row)').forEach(function (row) {
-                                    const match =
-                                        (!gene   || row.dataset.gene.includes(gene)) &&
-                                        (!type   || row.dataset.type.includes(type)) &&
-                                        (!clnsig || row.dataset.clnsig === clnsig);
+                                    var match =
+                                        (!gene     || row.dataset.gene.includes(gene)) &&
+                                        (!type     || row.dataset.type.includes(type)) &&
+                                        (!clnsig   || row.dataset.clnsig === clnsig) &&
+                                        (!note     || (row.dataset.note || '').includes(note)) &&
+                                        (!past     || ('|' + (row.dataset.past || '') + '|').includes('|' + past + '|')) &&
+                                        (!assessed || ('|' + (row.dataset.assessed || '') + '|').includes('|' + assessed + '|'));
                                     row.style.display = match ? '' : 'none';
                                 });
                             }
-                            ['vf-gene', 'vf-type', 'vf-clnsig'].forEach(function (id) {
-                                document.getElementById(id).addEventListener('input', applyFilters);
-                                document.getElementById(id).addEventListener('change', applyFilters);
+                            ['vf-gene', 'vf-type', 'vf-clnsig', 'vf-note', 'vf-past', 'vf-assessed'].forEach(function (id) {
+                                var el = document.getElementById(id);
+                                if (el) {
+                                    el.addEventListener('input', applyFilters);
+                                    el.addEventListener('change', applyFilters);
+                                }
                             });
 
                             // ── TogoVar auto-fetch for top 20 by pathogenicity ──
@@ -343,11 +405,15 @@
                         })();
 
                         function clearVfFilters() {
-                            ['vf-gene', 'vf-type'].forEach(function (id) {
-                                document.getElementById(id).value = '';
+                            ['vf-gene', 'vf-type', 'vf-note'].forEach(function (id) {
+                                var el = document.getElementById(id);
+                                if (el) el.value = '';
                             });
-                            document.getElementById('vf-clnsig').value = '';
-                            document.querySelectorAll('#variant-tbody tr').forEach(function (row) {
+                            ['vf-clnsig', 'vf-past', 'vf-assessed'].forEach(function (id) {
+                                var el = document.getElementById(id);
+                                if (el) el.value = '';
+                            });
+                            document.querySelectorAll('#variant-tbody tr:not(.assessment-form-row)').forEach(function (row) {
                                 row.style.display = '';
                             });
                         }
@@ -390,6 +456,21 @@
                                 })
                                 .catch(function() { cell.innerHTML = '<span class="tv-notfound">error</span>'; });
                         }
+
+                        // ── Scroll position preservation across form submissions ──
+                        (function () {
+                            var SK = 'expertboard_scrollY';
+                            // Restore scroll on load
+                            var saved = sessionStorage.getItem(SK);
+                            if (saved) {
+                                window.scrollTo(0, parseInt(saved, 10));
+                                sessionStorage.removeItem(SK);
+                            }
+                            // Save scroll position before any form submission
+                            document.addEventListener('submit', function () {
+                                sessionStorage.setItem(SK, window.scrollY);
+                            }, true);
+                        })();
                     </script>
                 {% else %}
                     <div class="empty">No variants imported for this patient.</div>

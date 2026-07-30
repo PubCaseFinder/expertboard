@@ -10,6 +10,8 @@ from sqlalchemy import asc
 
 from app.db import Session
 from app.models import ExpertGroup
+from app.models import Patient
+from app.models import Variant
 from app.models import VariantAssessment
 
 
@@ -107,3 +109,63 @@ def remove_assessment(assessment_id):
     session.delete(a)
     session.commit()
     return True
+
+
+def list_cross_patient_for_variants(proband_variants, patient_id):
+    """Find assessments of the same genomic variant recorded for other patients.
+
+    Returns {proband_variant_id: [{"assessment", "group", "patient", "css"}]}
+    keyed by the proband's variant ID so the template can do a simple lookup.
+    """
+    if not proband_variants:
+        return {}
+
+    session = Session()
+
+    # Map (chrom, pos, ref, alt) → proband variant ID for fast lookup
+    key_to_pvid = {
+        (v.chrom, v.pos, v.ref, v.alt): v.id for v in proband_variants
+    }
+    chroms = list({v.chrom for v in proband_variants})
+
+    # Fetch other patients' variants on the same chromosomes, then filter exactly
+    other_variants = (
+        session.query(Variant)
+        .filter(
+            Variant.patient_id != patient_id,
+            Variant.chrom.in_(chroms),
+        )
+        .all()
+    )
+
+    # variant_id → (proband_variant_id, other_patient_id)
+    ov_map = {}
+    for ov in other_variants:
+        k = (ov.chrom, ov.pos, ov.ref, ov.alt)
+        if k in key_to_pvid:
+            ov_map[ov.id] = (key_to_pvid[k], ov.patient_id)
+
+    if not ov_map:
+        return {}
+
+    assessment_rows = (
+        session.query(VariantAssessment)
+        .filter(VariantAssessment.variant_id.in_(list(ov_map.keys())))
+        .order_by(asc(VariantAssessment.id))
+        .all()
+    )
+
+    result = {}
+    for a in assessment_rows:
+        pvid, pat_id = ov_map[a.variant_id]
+        group = session.get(ExpertGroup, a.expert_group_id) if a.expert_group_id else None
+        patient = session.get(Patient, pat_id)
+        result.setdefault(pvid, []).append(
+            {
+                "assessment": a,
+                "group": group,
+                "patient": patient,
+                "css": CLASSIFICATION_CSS.get(a.classification, "other"),
+            }
+        )
+    return result
