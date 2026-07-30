@@ -2,7 +2,9 @@
 <details class="role-bar">
     <summary class="role-bar-toggle">
         <span class="role-toggle-icon" aria-hidden="true">☰</span>
-        <span>Role: <strong>{{ role_labels.get(current_role, current_role) }}</strong></span>
+        <span>Role: <strong>{{ role_labels.get(current_role, current_role) }}</strong>
+            {% if acting_user %} &middot; <strong>{{ acting_user.display_name }}</strong>{% endif %}
+        </span>
         <span class="role-toggle-hint">click to switch</span>
     </summary>
     <div class="role-bar-inner">
@@ -21,6 +23,24 @@
                     </form>
                 {% endfor %}
             </div>
+        </div>
+
+        <div class="role-switch">
+            <span class="role-switch-label">Acting as</span>
+            <form method="POST" action="{{ url_for('expertboard.switch_user') }}" class="inline-form">
+                <input type="hidden" name="next" value="{{ request.path }}">
+                <select name="user_id" class="inline-select role-user-select"
+                        onchange="this.form.submit()">
+                    <option value="">— Role only —</option>
+                    {% for user in all_users %}
+                        <option value="{{ user.id }}"
+                                {% if current_user_id and current_user_id == user.id %}selected{% endif %}>
+                            {{ user.display_name }}
+                            ({{ role_labels.get(user.role, user.role) }})
+                        </option>
+                    {% endfor %}
+                </select>
+            </form>
         </div>
 
         <div class="role-perms">

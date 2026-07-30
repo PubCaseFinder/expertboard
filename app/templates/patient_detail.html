@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ r_patient.display_name or r_patient.patient_code }} | ExpertBoard</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='expertboard.css', v='20260729w') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='expertboard.css', v='20260729v') }}">
 </head>
 <body>
     {% include "_role_bar.html" %}
@@ -228,13 +228,17 @@
                                         </td>
                                         <td class="assessment-cell">
                                             {% for entry in va_list %}
-                                                <span class="assess-badge assess-{{ entry.css }}" title="{{ entry.assessment.evidence_level or '' }}{% if entry.assessment.notes %} · {{ entry.assessment.notes }}{% endif %}">
+                                                {% set ts = entry.assessment.created_at|string %}
+                                                {% set by = entry.assessment.assessed_by or "—" %}
+                                                <span class="assess-badge assess-{{ entry.css }}"
+                                                      title="{{ by }} · {{ ts[:16] }}">
                                                     {%- if entry.group and entry.group.country -%}
                                                         <span class="assess-country">{{ entry.group.country }}</span>
                                                     {%- elif entry.group -%}
                                                         <span class="assess-country">{{ entry.group.name }}</span>
                                                     {%- endif -%}
                                                     {{ entry.assessment.classification }}
+                                                    <span class="assess-meta">{{ by }} · {{ ts[2:16] }}</span>
                                                     <form method="POST" style="display:inline"
                                                           action="{{ url_for('expertboard.patient_variant_assessment_remove', patient_id=r_patient.id, variant_id=v.id, assessment_id=entry.assessment.id) }}">
                                                         <button class="badge-remove" type="submit" title="Remove">×</button>
@@ -268,7 +272,6 @@
                                                         <option value="{{ key }}">{{ label }}</option>
                                                     {% endfor %}
                                                 </select>
-                                                <input class="vf-input" type="text" name="assessed_by" placeholder="Assessed by">
                                                 <input class="vf-input" type="text" name="notes" placeholder="Notes">
                                                 <button class="inline-button" type="submit">Save</button>
                                                 <button class="vf-clear" type="button"

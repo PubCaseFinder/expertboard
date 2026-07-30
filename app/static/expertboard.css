@@ -1695,6 +1695,19 @@ h1 {
 }
 .badge-remove:hover { opacity: 1; }
 
+.assess-meta {
+    font-weight: 400;
+    font-size: 9px;
+    opacity: 0.7;
+    margin-left: 3px;
+    white-space: nowrap;
+}
+
+.role-user-select {
+    flex: 1 1 200px;
+    max-width: 300px;
+}
+
 .assess-p     { background: #fde8e8; color: #b91c1c; border-color: #fca5a5; }
 .assess-lp    { background: #fff0e6; color: #c2410c; border-color: #fdba74; }
 .assess-vus   { background: #fef9c3; color: #854d0e; border-color: #fde68a; }

@@ -34,6 +34,16 @@ def switch_role():
     return redirect(url_for("expertboard.board_list"))
 
 
+@bp.route("/switch-user", methods=["POST"])
+def switch_user():
+    raw = (request.form.get("user_id") or "").strip()
+    auth.set_current_user(int(raw) if raw.isdigit() else None)
+    next_url = request.form.get("next")
+    if next_url and next_url.startswith("/"):
+        return redirect(next_url)
+    return redirect(url_for("expertboard.patient_queue"))
+
+
 @bp.route("/patients")
 def patient_list():
     return render_template(
@@ -144,7 +154,7 @@ def patient_variant_assessment_add(patient_id, variant_id):
         request.form.get("classification"),
         request.form.get("evidence_level"),
         request.form.get("notes"),
-        request.form.get("assessed_by"),
+        auth.current_user_display(),   # auto-stamped from session
     )
     flash(error or "Assessment saved.", "error" if error else "success")
     return redirect(url_for("expertboard.patient_detail", patient_id=patient_id))

@@ -56,7 +56,31 @@ def set_role(role):
     return False
 
 
-def capabilities_for(role):
+def current_user_id():
+    """Return the selected user id from the session, or None."""
+    raw = session.get("user_id")
+    return int(raw) if raw else None
+
+
+def set_current_user(user_id):
+    """Store the acting user id in the session."""
+    session["user_id"] = int(user_id) if user_id else None
+
+
+def current_user_display():
+    """Return a display label for the current acting user.
+
+    Used to auto-stamp assessments and other audit actions.
+    Falls back to the role label if no specific user is selected.
+    """
+    uid = current_user_id()
+    if uid:
+        from app.db import Session as DbSession  # lazy — avoids circular import
+        from app.models import User
+        user = DbSession().get(User, uid)
+        if user:
+            return user.display_name
+    return ROLE_LABELS.get(current_role(), current_role())
     return ROLE_CAPABILITIES.get(role, set())
 
 
@@ -71,6 +95,15 @@ def register_roles(app):
     @app.context_processor
     def _inject_roles():
         role = current_role()
+        uid = current_user_id()
+
+        # Lazy imports to avoid module-level circular dependencies
+        from app.db import Session as DbSession
+        from app.models import User
+        db_s = DbSession()
+        acting_user = db_s.get(User, uid) if uid else None
+        all_users = db_s.query(User).order_by(User.display_name).all()
+
         return {
             "current_role": role,
             "role_labels": ROLE_LABELS,
@@ -79,4 +112,7 @@ def register_roles(app):
             "capability_labels": CAPABILITY_LABELS,
             "role_capabilities": ROLE_CAPABILITIES,
             "has_capability": has_capability,
+            "current_user_id": uid,
+            "acting_user": acting_user,
+            "all_users": all_users,
         }
