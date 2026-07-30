@@ -69,6 +69,8 @@ class Variant(Base):
     quality: Mapped[str | None] = mapped_column(String(32), nullable=True)
     filter_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
     raw_info: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    llm_score: Mapped[int | None] = mapped_column(nullable=True)
+    llm_reason: Mapped[str | None] = mapped_column(Text(), nullable=True)
     created_at: Mapped[str] = mapped_column(TIMESTAMP(), nullable=False, server_default=func.current_timestamp())
 
 
@@ -263,3 +265,17 @@ class VariantAssessment(Base):
         TIMESTAMP(), nullable=False, server_default=func.current_timestamp()
     )
 
+
+class AppSetting(Base):
+    """Key-value store for application-wide settings such as external API credentials."""
+
+    __tablename__ = "app_settings"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    updated_at: Mapped[str] = mapped_column(
+        TIMESTAMP(),
+        nullable=False,
+        server_default=func.current_timestamp(),
+        onupdate=func.current_timestamp(),
+    )

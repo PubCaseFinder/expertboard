@@ -15,6 +15,7 @@ from app import panel
 from app import family as family_module
 from app import togovar_client
 from app import assessments as assessments_module
+from app import llm as llm_module
 
 
 bp = Blueprint("expertboard", __name__)
@@ -83,6 +84,20 @@ def patient_import():
     )
     flash(f"Imported {count} variants for {patient.patient_code}.", "success")
     return redirect(url_for("expertboard.patient_detail", patient_id=patient.id))
+
+
+@bp.route("/patients/<int:patient_id>/import-vcf", methods=["POST"])
+def patient_import_vcf(patient_id):
+    upload = request.files.get("vcf_file")
+    if upload is None or not upload.filename:
+        flash("VCFファイルを選択してください。", "error")
+        return redirect(url_for("expertboard.patient_detail", patient_id=patient_id))
+    if not patients.is_allowed_filename(upload.filename):
+        flash("Unsupported file type. Please upload a .vcf file.", "error")
+        return redirect(url_for("expertboard.patient_detail", patient_id=patient_id))
+    patient, count = patients.import_vcf_for_existing_patient(patient_id, upload)
+    flash(f"{count} variants imported from {upload.filename}.", "success")
+    return redirect(url_for("expertboard.patient_detail", patient_id=patient_id))
 
 
 @bp.route("/patients/<int:patient_id>")
@@ -304,6 +319,7 @@ def admin_panel():
         r_boards_with_members=admin.list_boards_with_members(),
         r_board_groups=admin.BOARD_GROUPS,
         r_member_candidates=admin.list_member_candidates(),
+        r_ollama=admin.get_ollama_settings(),
     )
 
 
@@ -352,7 +368,42 @@ def admin_remove_board_member(member_id):
     return redirect(url_for("expertboard.admin_panel"))
 
 
+@bp.route("/admin/ollama", methods=["POST"])
+def admin_save_ollama():
+    admin.set_setting(admin.OLLAMA_URL_KEY, (request.form.get("ollama_base_url") or "").strip())
+    admin.set_setting(admin.OLLAMA_MODEL_KEY, (request.form.get("ollama_model") or "").strip())
+    raw_key = (request.form.get("ollama_api_key") or "").strip()
+    if raw_key:
+        admin.set_setting(admin.OLLAMA_API_KEY_KEY, raw_key)
+    flash("Ollama settings saved.", "success")
+    return redirect(url_for("expertboard.admin_panel"))
+
+
 # ── TogoVar API proxy ──────────────────────────────────────────────────────────
+# ── LLM analysis ──────────────────────────────────────────────────
+
+@bp.route("/api/patient/<int:patient_id>/llm-analyze", methods=["POST"])
+def api_patient_llm_analyze(patient_id):
+    """Analyze this patient's variants against their clinical text using Ollama."""
+    if not llm_module.is_configured():
+        return jsonify({"error": "Ollama is not configured. Set the URL in Admin."}), 503
+
+    patient = patients.get_patient(patient_id)
+    if patient is None:
+        abort(404)
+
+    variant_list = patients.get_patient_variants(patient_id)
+    if not variant_list:
+        return jsonify({"error": "No variants for this patient."}), 400
+
+    result = llm_module.analyze_variants(patient.clinical_text, variant_list)
+    if "error" in result:
+        return jsonify({"error": result["error"]}), 502
+
+    # Persist scores back to DB
+    patients.save_llm_scores(patient_id, result)
+
+    return jsonify(result)
 
 @bp.route("/api/togovar")
 def api_togovar():

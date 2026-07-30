@@ -196,6 +196,32 @@ def get_patient_variants(patient_id):
     )
 
 
+def save_llm_scores(patient_id, result):
+    """Persist LLM analysis reasoning to variant rows.
+
+    ``result`` is a dict: {variant_id (int or str): {score, patient_symptoms, gene_diseases, ...}}
+    """
+    session = Session()
+    for vid_key, info in result.items():
+        vid = int(vid_key)
+        v = session.get(Variant, vid)
+        if v is None or v.patient_id != patient_id:
+            continue
+        v.llm_score = info.get("score")
+        # Store full reasoning as JSON string
+        import json as _json
+        v.llm_reason = _json.dumps({
+            "patient_symptoms": info.get("patient_symptoms", ""),
+            "gene_diseases": info.get("gene_diseases", ""),
+            "relevance": info.get("relevance", ""),
+            "family_history": info.get("family_history", ""),
+            "score_rationale": info.get("score_rationale", ""),
+            "suggested_acmg": info.get("suggested_acmg", []),
+            "missing_data": info.get("missing_data", []),
+        }, ensure_ascii=False)
+    session.commit()
+
+
 def _get_or_create_patient(session, patient_code, display_name, diagnosis_name, vcf_path):
     patient = (
         session.query(Patient).filter(Patient.patient_code == patient_code).first()
@@ -240,6 +266,28 @@ def import_uploaded_vcf(file_storage, patient_code, display_name, diagnosis_name
     count = import_variants_for_patient(
         session, patient.id, parse_vcf_records(lines)
     )
+    session.commit()
+    return patient, count
+
+
+def import_vcf_for_existing_patient(patient_id, file_storage):
+    """Replace variants for an already-registered patient from an uploaded VCF.
+
+    Returns ``(patient, variant_count)`` or raises ValueError if patient not found.
+    """
+    session = Session()
+    patient = session.get(Patient, patient_id)
+    if patient is None:
+        raise ValueError(f"Patient {patient_id} not found")
+
+    raw = file_storage.read()
+    content = raw.decode("utf-8", errors="replace")
+    lines = content.splitlines()
+
+    stored_path = _store_uploaded_file(patient.patient_code, file_storage, content)
+    patient.vcf_path = stored_path
+
+    count = import_variants_for_patient(session, patient.id, parse_vcf_records(lines))
     session.commit()
     return patient, count
 

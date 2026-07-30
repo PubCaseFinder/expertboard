@@ -16,14 +16,6 @@
             <a href="{{ url_for('expertboard.admin_panel') }}">Admin</a>
         </nav>
 
-        <section class="hero">
-            <div class="eyebrow">ExpertBoard</div>
-            <h1 class="landing-title">Patients &amp; VCF import</h1>
-            <p class="lede">
-                Upload a patient VCF file. Variant annotations are parsed and stored per patient.
-            </p>
-        </section>
-
         {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
                 <div class="flash-stack">
@@ -34,69 +26,73 @@
             {% endif %}
         {% endwith %}
 
-        <section class="workspace">
-            <article class="section">
-                <h2 class="section-title">Import VCF</h2>
-                <p class="section-copy">Provide a patient ID and choose a <code>.vcf</code> file to import its variants.</p>
-                <form class="import-form" method="POST"
+        <section class="workspace" style="display:block; padding: 0 24px;">
+
+            <article class="section" style="margin-bottom: 24px;">
+                <h2 class="section-title">Add Patient / Import VCF</h2>
+                <form class="import-form import-form-inline" method="POST"
                       action="{{ url_for('expertboard.patient_import') }}"
                       enctype="multipart/form-data">
-                    <label class="form-field">
+                    <label class="form-field-inline">
                         <span>Patient ID <em>*</em></span>
-                        <input type="text" name="patient_code" placeholder="e.g. SYN-PATIENT-88291" required>
+                        <input type="text" name="patient_code" placeholder="e.g. SYN-PATIENT-001" required>
                     </label>
-                    <label class="form-field">
+                    <label class="form-field-inline">
                         <span>Display name</span>
-                        <input type="text" name="display_name" placeholder="e.g. Synthetic HCM proband">
+                        <input type="text" name="display_name" placeholder="e.g. Proband A">
                     </label>
-                    <label class="form-field">
+                    <label class="form-field-inline">
                         <span>Diagnosis</span>
                         <input type="text" name="diagnosis_name" placeholder="e.g. Suspected HCM">
                     </label>
-                    <label class="form-field">
+                    <label class="form-field-inline">
                         <span>VCF file <em>*</em></span>
                         <input type="file" name="vcf_file" accept=".vcf,.txt" required>
                     </label>
-                    <button class="launch-button" type="submit">Import VCF</button>
+                    <button class="inline-button" type="submit" style="align-self:flex-end; margin-bottom:2px;">Import VCF</button>
                 </form>
             </article>
 
-            <aside class="section">
-                <h2 class="section-title">Patient list</h2>
+            <article class="section section-wide">
+                <h2 class="section-title">Patient list <span class="count-badge">{{ r_patients|length }}</span></h2>
                 {% if r_patients %}
-                    <div class="case-list">
-                        {% for row in r_patients %}
-                            <article class="case-card">
-                                <div class="case-top">
-                                    <h3 class="case-name">{{ row.patient.display_name or row.patient.patient_code }}</h3>
-                                    <span class="badge">{{ row.patient.patient_code }}</span>
-                                </div>
-                                <div class="status-line">
-                                    <span class="status-badge status-{{ row.patient.review_status }}">
-                                        {{ r_review_status_labels.get(row.patient.review_status, row.patient.review_status) }}
-                                    </span>
-                                </div>
-                                <div class="meta">
-                                    <div>
-                                        <span>Diagnosis</span>
-                                        <strong>{{ row.patient.diagnosis_name or "—" }}</strong>
-                                    </div>
-                                    <div>
-                                        <span>Variants</span>
-                                        <strong>{{ row.variant_count }}</strong>
-                                    </div>
-                                </div>
-                                <div class="actions">
-                                    <span class="meta-note">Imported from VCF</span>
-                                    <a class="link-button" href="{{ url_for('expertboard.patient_detail', patient_id=row.patient.id) }}">Open patient</a>
-                                </div>
-                            </article>
-                        {% endfor %}
+                    <div class="table-wrap">
+                        <table class="variant-table" id="patient-table">
+                            <thead>
+                                <tr>
+                                    <th>Patient ID</th>
+                                    <th>Display name</th>
+                                    <th>Diagnosis</th>
+                                    <th>Status</th>
+                                    <th>Variants</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for row in r_patients %}
+                                    <tr>
+                                        <td><code>{{ row.patient.patient_code }}</code></td>
+                                        <td>{{ row.patient.display_name or "—" }}</td>
+                                        <td>{{ row.patient.diagnosis_name or "—" }}</td>
+                                        <td>
+                                            <span class="status-badge status-{{ row.patient.review_status }}">
+                                                {{ r_review_status_labels.get(row.patient.review_status, row.patient.review_status) }}
+                                            </span>
+                                        </td>
+                                        <td style="text-align:right;">{{ row.variant_count }}</td>
+                                        <td>
+                                            <a class="inline-link" href="{{ url_for('expertboard.patient_detail', patient_id=row.patient.id) }}">Open →</a>
+                                        </td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
                     </div>
                 {% else %}
                     <div class="empty">No patients yet. Import a VCF to create the first one.</div>
                 {% endif %}
-            </aside>
+            </article>
+
         </section>
     </main>
 </body>

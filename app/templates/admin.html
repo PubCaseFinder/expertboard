@@ -237,6 +237,33 @@
                     </div>
                 {% endfor %}
             </article>
+
+            <article class="section">
+                <h2 class="section-title">Ollama settings</h2>
+                <p class="section-copy">Configure the Ollama endpoint used for LLM features (e.g. HPO extraction).</p>
+                <form class="admin-form" method="POST" action="{{ url_for('expertboard.admin_save_ollama') }}">
+                    <label class="form-field">
+                        <span>Base URL</span>
+                        <input type="url" name="ollama_base_url"
+                               value="{{ r_ollama.base_url }}"
+                               placeholder="https://your-ollama-host/api">
+                    </label>
+                    <label class="form-field">
+                        <span>Model</span>
+                        <input type="text" name="ollama_model"
+                               value="{{ r_ollama.model }}"
+                               placeholder="e.g. llama3, mistral">
+                    </label>
+                    <label class="form-field">
+                        <span>API Key <small style="font-weight:400">(leave blank if not required)</small></span>
+                        <input type="password" name="ollama_api_key"
+                               value="{{ r_ollama.api_key }}"
+                               placeholder="Bearer token / API key"
+                               autocomplete="new-password">
+                    </label>
+                    <button class="launch-button" type="submit">Save</button>
+                </form>
+            </article>
         </section>
     </main>
 </body>

@@ -12,6 +12,7 @@ from sqlalchemy.exc import OperationalError
 from app.auth import ROLES
 from app.auth import ROLE_LABELS
 from app.db import Session
+from app.models import AppSetting
 from app.models import ExpertBoard
 from app.models import ExpertBoardMember
 from app.models import User
@@ -26,8 +27,15 @@ KIND_USER = "user"
 KIND_GROUP = "group"
 
 
+OLLAMA_URL_KEY = "ollama_base_url"
+OLLAMA_MODEL_KEY = "ollama_model"
+OLLAMA_API_KEY_KEY = "ollama_api_key"
+
+DEFAULT_OLLAMA_MODEL = "llama3"
+
+
 def ensure_schema():
-    """Add columns introduced after the initial table creation."""
+    """Add columns and tables introduced after the initial table creation."""
     _add_member_column_if_missing("member_kind VARCHAR(16) NULL")
     _add_member_column_if_missing("ref_id INT NULL")
     _add_board_column_if_missing("country VARCHAR(64) NULL")
@@ -35,6 +43,9 @@ def ensure_schema():
     _add_table_column_if_missing("variant_assessments", "expert_board_id INT NULL")
     _add_table_column_if_missing("variant_assessments", "acmg_codes VARCHAR(255) NULL")
     _add_table_column_if_missing("patients", "requested_expert_board_id INT NULL")
+    _add_table_column_if_missing("variants", "llm_score INT NULL")
+    _add_table_column_if_missing("variants", "llm_reason TEXT NULL")
+    _create_app_settings_if_missing()
 
 
 def _add_member_column_if_missing(column_definition):
@@ -79,6 +90,52 @@ def _add_table_column_if_missing(table, column_definition):
     except OperationalError:
         session.rollback()
 
+
+def _create_app_settings_if_missing():
+    session = Session()
+    try:
+        session.execute(text(
+            "CREATE TABLE IF NOT EXISTS app_settings ("
+            "  `key` VARCHAR(64) NOT NULL PRIMARY KEY,"
+            "  `value` TEXT NULL,"
+            "  `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP"
+            "  ON UPDATE CURRENT_TIMESTAMP"
+            ")"
+        ))
+        session.commit()
+    except OperationalError:
+        session.rollback()
+
+
+# ---------------------------------------------------------------------------
+# App settings (key-value)
+# ---------------------------------------------------------------------------
+
+def get_setting(key, default=None):
+    session = Session()
+    row = session.get(AppSetting, key)
+    if row is None:
+        return default
+    return row.value if row.value is not None else default
+
+
+def set_setting(key, value):
+    session = Session()
+    row = session.get(AppSetting, key)
+    if row is None:
+        row = AppSetting(key=key, value=value)
+        session.add(row)
+    else:
+        row.value = value
+    session.commit()
+
+
+def get_ollama_settings():
+    return {
+        "base_url": get_setting(OLLAMA_URL_KEY, ""),
+        "model": get_setting(OLLAMA_MODEL_KEY, DEFAULT_OLLAMA_MODEL),
+        "api_key": get_setting(OLLAMA_API_KEY_KEY, ""),
+    }
 
 
 # ---------------------------------------------------------------------------

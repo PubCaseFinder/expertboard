@@ -159,6 +159,23 @@
 
             <article class="section section-wide">
                 <h2 class="section-title">VCF variants</h2>
+                <div class="vcf-toolbar">
+                    <form method="POST"
+                          action="{{ url_for('expertboard.patient_import_vcf', patient_id=r_patient.id) }}"
+                          enctype="multipart/form-data"
+                          class="vcf-upload-form">
+                        <input type="file" name="vcf_file" accept=".vcf" required class="vcf-file-input">
+                        <button type="submit" class="inline-button">{% if r_variants %}Re-import VCF{% else %}Import VCF{% endif %}</button>
+                    </form>
+                    {% if r_variants and r_patient.clinical_text %}
+                        <button class="inline-button ai-analyze-btn" type="button"
+                                data-url="{{ url_for('expertboard.api_patient_llm_analyze', patient_id=r_patient.id) }}"
+                                onclick="runLlmAnalysis(this)">
+                            ✦ Analyze with AI
+                        </button>
+                        <span class="ai-status" id="ai-status" style="display:none"></span>
+                    {% endif %}
+                </div>
                 {% if r_variants %}
                     <p class="section-copy">{{ r_variants|length }} variants parsed from the uploaded VCF.</p>
                     <div class="table-wrap">
@@ -225,6 +242,7 @@
                                     </th>
                                     {% if r_linked_variants %}<th>Shared</th>{% endif %}
                                     <th>JP DB</th>
+                                    <th class="ai-col-header" id="ai-col-header" {% if not r_variants|selectattr('llm_score')|list %}style="display:none"{% endif %}>AI</th>
                                 </tr>
                             </thead>
                             <tbody id="variant-tbody">
@@ -241,6 +259,8 @@
                                         data-assessed="{% for e in va_list %}{{ e.assessment.classification|lower|replace(' ','_') }}{% if not loop.last %}|{% endif %}{% endfor %}"
                                         data-vkey="{{ v.chrom }}:{{ v.pos }}:{{ v.ref }}:{{ v.alt }}"
                                         data-vid="{{ v.id }}"
+                                        data-ai-score="{{ v.llm_score if v.llm_score is not none else '' }}"
+                                        data-ai-reason="{{ v.llm_reason or '' }}"
                                     >
                                         <td><strong>{{ v.gene or "—" }}</strong></td>
                                         <td>{{ v.hgvs_c or "—" }}</td>
@@ -291,7 +311,7 @@
                                             {% endfor %}
                                             <button class="assess-add-btn" type="button"
                                                     data-action="{{ url_for('expertboard.patient_variant_assessment_add', patient_id=r_patient.id, variant_id=v.id) }}"
-                                                    onclick="openAssessModal(this.dataset.action)">+</button>
+                                                    onclick="openAssessModal(this.dataset.action, this.closest('tr'))">+</button>
                                         </td>
                                         <td><span class="clnsig clnsig-{{ (v.clin_sig or 'unknown')|lower|replace('_','-') }}">{{ v.clin_sig or "—" }}</span></td>
                                         <td>{{ v.genotype or "—" }}</td>
@@ -309,6 +329,12 @@
                                                     data-cell="tv-{{ v.id }}"
                                                     type="button"
                                                     onclick="fetchTogoVar(this)">JP DB</button>
+                                        </td>
+                                        <td class="ai-cell" id="ai-{{ v.id }}"
+                                            {% if not v.llm_score and v.llm_score != 0 %}style="display:none"{% endif %}>
+                                            {% if v.llm_score is not none %}
+                                                <span class="ai-badge" title="AI analysis available">✦</span>
+                                            {% endif %}
                                         </td>
                                     </tr>
                                 {% endfor %}
@@ -466,17 +492,69 @@
                         // ── Scroll position preservation across form submissions ──
                         (function () {
                             var SK = 'expertboard_scrollY';
-                            // Restore scroll on load
                             var saved = sessionStorage.getItem(SK);
                             if (saved) {
                                 window.scrollTo(0, parseInt(saved, 10));
                                 sessionStorage.removeItem(SK);
                             }
-                            // Save scroll position before any form submission
                             document.addEventListener('submit', function () {
                                 sessionStorage.setItem(SK, window.scrollY);
                             }, true);
                         })();
+
+                        // ── LLM variant analysis ──────────────────────────────
+                        function runLlmAnalysis(btn) {
+                            var url = btn.dataset.url;
+                            var statusEl = document.getElementById('ai-status');
+                            btn.disabled = true;
+                            btn.textContent = '✦ Analyzing…';
+                            statusEl.style.display = 'inline';
+                            statusEl.textContent = 'Sending to Ollama…';
+
+                            fetch(url, {method: 'POST', headers: {'X-Requested-With': 'XMLHttpRequest'}})
+                                .then(function(r) { return r.json(); })
+                                .then(function(data) {
+                                    if (data.error) {
+                                        statusEl.textContent = '✖ ' + data.error;
+                                        btn.disabled = false;
+                                        btn.textContent = '✦ Analyze with AI';
+                                        return;
+                                    }
+                                    // Show AI column header
+                                    document.getElementById('ai-col-header').style.display = '';
+                                    // Fill each row's AI cell
+                                    Object.entries(data).forEach(function(kv) {
+                                        var vid = kv[0], info = kv[1];
+                                        var cell = document.getElementById('ai-' + vid);
+                                        if (!cell) return;
+                                        cell.style.display = '';
+                                        cell.innerHTML = '<span class="ai-badge" title="AI analysis available">\u2726</span>';
+                                        // Store reasoning on the row for the modal
+                                        var tr = cell.closest('tr');
+                                        if (tr) {
+                                            tr.dataset.aiScore = info.score != null ? info.score : '';
+                                            var reasoning = JSON.stringify({
+                                                patient_symptoms: info.patient_symptoms || '',
+                                                gene_diseases: info.gene_diseases || '',
+                                                relevance: info.relevance || '',
+                                                family_history: info.family_history || '',
+                                                score_rationale: info.score_rationale || '',
+                                                suggested_acmg: info.suggested_acmg || [],
+                                                missing_data: info.missing_data || [],
+                                            });
+                                            tr.dataset.aiReason = reasoning;
+                                        }
+                                    });
+                                    statusEl.textContent = '✔ Analysis complete';
+                                    btn.textContent = '✦ Re-analyze';
+                                    btn.disabled = false;
+                                })
+                                .catch(function(err) {
+                                    statusEl.textContent = '✖ ' + err;
+                                    btn.disabled = false;
+                                    btn.textContent = '✦ Analyze with AI';
+                                });
+                        }
                     </script>
                 {% else %}
                     <div class="empty">No variants imported for this patient.</div>
@@ -606,6 +684,25 @@
                     <button type="button" class="acmg-modal-close" onclick="closeAssessModal()">&#x2715;</button>
                 </div>
                 <div class="acmg-modal-body">
+                    <div id="ai-suggestion-panel" class="ai-suggestion-panel" style="display:none">
+                        <div class="ai-suggestion-label">✦ AI Reasoning</div>
+                        <dl class="ai-reasoning-list">
+                            <dt>Patient symptoms</dt><dd id="ai-r-symptoms"></dd>
+                            <dt>Gene-associated diseases</dt><dd id="ai-r-gene"></dd>
+                            <dt>Relevance to patient</dt><dd id="ai-r-relevance"></dd>
+                            <dt>Family history</dt><dd id="ai-r-family"></dd>
+                            <dt>Assessment rationale</dt><dd id="ai-r-rationale"></dd>
+                        </dl>
+                        <div class="ai-acmg-suggest" id="ai-acmg-suggest" style="display:none">
+                            <span class="ai-acmg-suggest-label">Suggested criteria:</span>
+                            <span id="ai-acmg-badges"></span>
+                            <button type="button" class="ai-apply-btn" id="ai-apply-btn" onclick="applyAiAcmg()">Apply suggestions</button>
+                        </div>
+                        <div class="ai-missing-data" id="ai-missing-data" style="display:none">
+                            <span class="ai-missing-label">⚠ Missing annotation data:</span>
+                            <ul id="ai-missing-list" class="ai-missing-list"></ul>
+                        </div>
+                    </div>
                     <div class="acmg-meta-row">
                         <label class="acmg-meta-field">
                             <span>Classification *</span>
@@ -662,16 +759,73 @@
         </div>
     </div>
     <script>
-        function openAssessModal(actionUrl) {
+        function openAssessModal(actionUrl, trEl) {
             document.getElementById('assess-form').action = actionUrl;
             document.getElementById('assess-form').reset();
             document.querySelectorAll('#acmg-modal input[type=checkbox]').forEach(function(cb){ cb.checked = false; });
             document.getElementById('acmg-hidden-modal').value = '';
-            document.getElementById('acmg-preview').textContent = '— no ACMG criteria selected —';
+            document.getElementById('acmg-preview').textContent = '\u2014 no ACMG criteria selected \u2014';
+            // AI suggestion
+            var panel = document.getElementById('ai-suggestion-panel');
+            var aiScore = trEl ? trEl.dataset.aiScore : '';
+            var aiReason = trEl ? trEl.dataset.aiReason : '';
+            if (aiScore !== '' && aiReason) {
+                try {
+                    var r = JSON.parse(aiReason);
+                    document.getElementById('ai-r-symptoms').textContent  = r.patient_symptoms  || '—';
+                    document.getElementById('ai-r-gene').textContent      = r.gene_diseases      || '—';
+                    document.getElementById('ai-r-relevance').textContent = r.relevance          || '—';
+                    document.getElementById('ai-r-family').textContent    = r.family_history     || '—';
+                    document.getElementById('ai-r-rationale').textContent = r.score_rationale   || '—';
+                    // Suggested ACMG criteria
+                    var suggestPanel = document.getElementById('ai-acmg-suggest');
+                    var badges = document.getElementById('ai-acmg-badges');
+                    var suggested = r.suggested_acmg || [];
+                    if (suggested.length > 0) {
+                        badges.innerHTML = suggested.map(function(c) {
+                            return '<span class="acmg-suggest-chip">' + c + '</span>';
+                        }).join('');
+                        document.getElementById('ai-apply-btn').style.display = '';
+                        suggestPanel.dataset.codes = JSON.stringify(suggested);
+                    } else {
+                        badges.innerHTML = '<span class="ai-no-criteria">No applicable criteria found — manual selection required.</span>';
+                        document.getElementById('ai-apply-btn').style.display = 'none';
+                        suggestPanel.dataset.codes = '[]';
+                    }
+                    suggestPanel.style.display = 'flex';
+                    // Missing annotation data
+                    var missingPanel = document.getElementById('ai-missing-data');
+                    var missingList = document.getElementById('ai-missing-list');
+                    var missing = r.missing_data || [];
+                    if (missing.length > 0) {
+                        missingList.innerHTML = missing.map(function(m) {
+                            return '<li>' + m.replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</li>';
+                        }).join('');
+                        missingPanel.style.display = 'block';
+                    } else {
+                        missingPanel.style.display = 'none';
+                    }
+                    panel.style.display = 'block';
+                } catch(e) { panel.style.display = 'none'; }
+            } else {
+                panel.style.display = 'none';
+            }
             document.getElementById('acmg-modal').style.display = 'flex';
         }
         function closeAssessModal() {
             document.getElementById('acmg-modal').style.display = 'none';
+        }
+        function applyAiAcmg() {
+            var suggestPanel = document.getElementById('ai-acmg-suggest');
+            var codes = JSON.parse(suggestPanel.dataset.codes || '[]');
+            // Uncheck all first, then check suggested
+            document.querySelectorAll('#acmg-modal input[type=checkbox]').forEach(function(cb){
+                cb.checked = codes.indexOf(cb.value) !== -1;
+            });
+            // Trigger preview update
+            var event = new Event('change', {bubbles: true});
+            var firstCb = document.querySelector('#acmg-modal input[type=checkbox]');
+            if (firstCb) firstCb.dispatchEvent(event);
         }
         (function () {
             function updateAcmgPreview() {
