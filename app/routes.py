@@ -143,6 +143,7 @@ def patient_detail(patient_id):
         ),
         r_classifications=assessments_module.CLASSIFICATIONS,
         r_evidence_levels=assessments_module.EVIDENCE_LEVELS,
+        r_acmg_codes=assessments_module.ACMG_CODES,
     )
 
 
@@ -151,13 +152,16 @@ def patient_variant_assessment_add(patient_id, variant_id):
     patient = patients.get_patient(patient_id)
     if patient is None:
         abort(404)
+    raw_acmg = request.form.getlist("acmg_codes")
+    acmg_str = ", ".join(raw_acmg) if raw_acmg else None
     _a, error = assessments_module.add_assessment(
         variant_id,
-        request.form.get("expert_group_id"),
+        None,
         request.form.get("classification"),
         request.form.get("evidence_level"),
         request.form.get("notes"),
         auth.current_user_display(),   # auto-stamped from session
+        acmg_codes=acmg_str,
     )
     flash(error or "Assessment saved.", "error" if error else "success")
     return redirect(url_for("expertboard.patient_detail", patient_id=patient_id))
@@ -220,10 +224,10 @@ def patient_expert_group(patient_id):
     patient = patients.get_patient(patient_id)
     if patient is None:
         abort(404)
-    raw = (request.form.get("expert_group_id") or "").strip()
-    group_id = int(raw) if raw.isdigit() else None
-    patients.set_requested_expert_group(patient_id, group_id)
-    flash("Requested expert group updated.", "success")
+    raw = (request.form.get("expert_board_id") or "").strip()
+    board_id = int(raw) if raw.isdigit() else None
+    patients.set_requested_expert_group(patient_id, board_id)
+    flash("Requested expert board updated.", "success")
     return redirect(url_for("expertboard.patient_detail", patient_id=patient_id))
 
 
@@ -390,7 +394,11 @@ def board_detail(board_id):
     board_detail = cases.get_board(board_id)
     if board_detail is None:
         abort(404)
-    return render_template("board_detail.html", r_board_detail=board_detail)
+    return render_template(
+        "board_detail.html",
+        r_board_detail=board_detail,
+        r_waiting_patients=cases.list_waiting_patients(board_id),
+    )
 
 
 @bp.route("/boards/<int:board_id>/rooms/<int:room_id>")

@@ -35,8 +35,8 @@ class Patient(Base):
     clinical_text: Mapped[str | None] = mapped_column(Text(), nullable=True)
     summary: Mapped[str | None] = mapped_column(Text(), nullable=True)
     review_status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending_review")
-    requested_expert_group_id: Mapped[int | None] = mapped_column(
-        ForeignKey("expert_groups.id"), nullable=True
+    requested_expert_board_id: Mapped[int | None] = mapped_column(
+        ForeignKey("expert_boards.id"), nullable=True
     )
     created_at: Mapped[str] = mapped_column(TIMESTAMP(), nullable=False, server_default=func.current_timestamp())
     updated_at: Mapped[str] = mapped_column(
@@ -79,6 +79,8 @@ class ExpertBoard(Base):
     name: Mapped[str] = mapped_column(String(160), nullable=False, unique=True)
     scope_type: Mapped[str] = mapped_column(String(32), nullable=False)
     scope: Mapped[str] = mapped_column(String(160), nullable=False)
+    country: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    specialty: Mapped[str | None] = mapped_column(String(160), nullable=True)
     description: Mapped[str | None] = mapped_column(Text(), nullable=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
     created_at: Mapped[str] = mapped_column(TIMESTAMP(), nullable=False, server_default=func.current_timestamp())
@@ -249,11 +251,12 @@ class VariantAssessment(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     variant_id: Mapped[int] = mapped_column(ForeignKey("variants.id"), nullable=False)
-    expert_group_id: Mapped[int | None] = mapped_column(
-        ForeignKey("expert_groups.id"), nullable=True
+    expert_board_id: Mapped[int | None] = mapped_column(
+        ForeignKey("expert_boards.id"), nullable=True
     )
     classification: Mapped[str] = mapped_column(String(64), nullable=False)
     evidence_level: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    acmg_codes: Mapped[str | None] = mapped_column(String(255), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text(), nullable=True)
     assessed_by: Mapped[str | None] = mapped_column(String(120), nullable=True)
     created_at: Mapped[str] = mapped_column(

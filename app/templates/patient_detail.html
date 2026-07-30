@@ -47,18 +47,20 @@
                 </form>
                 <form class="inline-form" method="POST"
                       action="{{ url_for('expertboard.patient_expert_group', patient_id=r_patient.id) }}">
-                    <span class="inline-label">Expert group</span>
-                    <select class="inline-select" name="expert_group_id">
+                    <span class="inline-label">Expert board</span>
+                    <select class="inline-select" name="expert_board_id">
                         <option value="">— Not assigned —</option>
                         {% for group in r_expert_groups %}
                             <option value="{{ group.id }}"
-                                    {% if group.id == r_patient.requested_expert_group_id %}selected{% endif %}>
+                                    {% if group.id == r_patient.requested_expert_board_id %}selected{% endif %}>
                                 {{ group.name }}{% if group.specialty %} · {{ group.specialty }}{% endif %}
                             </option>
                         {% endfor %}
                     </select>
                     <button class="inline-button" type="submit">Save</button>
-                    <a class="inline-link" href="{{ url_for('expertboard.patient_panel', patient_id=r_patient.id) }}">Panel →</a>
+                    {% if r_patient.requested_expert_board_id %}
+                        <a class="inline-link" href="{{ url_for('expertboard.board_detail', board_id=r_patient.requested_expert_board_id) }}">Board →</a>
+                    {% endif %}
                 </form>
                 <p class="status-hint">{{ r_review_status_hints.get(r_patient.review_status, "") }}</p>
             </div>
@@ -178,7 +180,7 @@
                                     <th>Locus</th>
                                     <th>REF/ALT</th>
                                     <th>
-                                        Past
+                                        <abbr title="Same variant assessed in other patients registered in this system">Other pt. reviews</abbr>
                                         <select class="th-filter" id="vf-past">
                                             <option value="">All</option>
                                             <option value="pathogenic">Pathogenic</option>
@@ -246,12 +248,12 @@
                                         <td>{{ v.variant_type or "—" }}</td>
                                         <td>{{ v.chrom }}:{{ v.pos }}</td>
                                         <td>{{ v.ref }}/{{ v.alt }}</td>
-                                        {# ── Past assessments (other patients, same variant) ── #}
+                                        {# ── Same-variant assessments from other patients ── #}
                                         <td class="assessment-cell">
                                             {% for entry in r_cross_assessments.get(v.id, []) %}
                                                 {% set ts = entry.assessment.created_at|string %}
                                                 <span class="assess-badge assess-{{ entry.css }} assess-past"
-                                                      title="Read-only · {{ entry.patient.patient_code if entry.patient else '?' }} · {{ entry.assessment.assessed_by or '—' }} · {{ ts[:16] }}">
+                                                      title="Other patient: {{ entry.patient.patient_code if entry.patient else '?' }} · {{ entry.assessment.assessed_by or '—' }} · {{ ts[:16] }} (read-only)">
                                                     <span class="assess-lock" aria-hidden="true">🔒</span>
                                                     {%- if entry.group and entry.group.country -%}
                                                         <span class="assess-country">{{ entry.group.country }}</span>
@@ -259,6 +261,9 @@
                                                         <span class="assess-country">{{ entry.group.name }}</span>
                                                     {%- endif -%}
                                                     {{ entry.assessment.classification }}
+                                                    {%- if entry.assessment.acmg_codes -%}
+                                                        <span class="acmg-code-badge">{{ entry.assessment.acmg_codes }}</span>
+                                                    {%- endif -%}
                                                 </span>
                                             {% endfor %}
                                         </td>
@@ -268,14 +273,16 @@
                                                 {% set ts = entry.assessment.created_at|string %}
                                                 {% set by = entry.assessment.assessed_by or "—" %}
                                                 <span class="assess-badge assess-{{ entry.css }}"
-                                                      title="{{ by }} · {{ ts[:16] }}">
+                                                      title="{{ by }} · {{ ts[:16] }}{% if entry.assessment.notes %} · {{ entry.assessment.notes }}{% endif %}{% if entry.assessment.acmg_codes %} [{{ entry.assessment.acmg_codes }}]{% endif %}">
                                                     {%- if entry.group and entry.group.country -%}
                                                         <span class="assess-country">{{ entry.group.country }}</span>
                                                     {%- elif entry.group -%}
                                                         <span class="assess-country">{{ entry.group.name }}</span>
                                                     {%- endif -%}
                                                     {{ entry.assessment.classification }}
-                                                    <span class="assess-meta">{{ by }} · {{ ts[2:16] }}</span>
+                                                    {%- if entry.assessment.acmg_codes -%}
+                                                        <span class="acmg-code-badge">{{ entry.assessment.acmg_codes }}</span>
+                                                    {%- endif -%}
                                                     <form method="POST" style="display:inline"
                                                           action="{{ url_for('expertboard.patient_variant_assessment_remove', patient_id=r_patient.id, variant_id=v.id, assessment_id=entry.assessment.id) }}">
                                                         <button class="badge-remove" type="submit" title="Remove">×</button>
@@ -283,7 +290,8 @@
                                                 </span>
                                             {% endfor %}
                                             <button class="assess-add-btn" type="button"
-                                                    onclick="toggleAssessForm('af-{{ v.id }}')">+</button>
+                                                    data-action="{{ url_for('expertboard.patient_variant_assessment_add', patient_id=r_patient.id, variant_id=v.id) }}"
+                                                    onclick="openAssessModal(this.dataset.action)">+</button>
                                         </td>
                                         <td><span class="clnsig clnsig-{{ (v.clin_sig or 'unknown')|lower|replace('_','-') }}">{{ v.clin_sig or "—" }}</span></td>
                                         <td>{{ v.genotype or "—" }}</td>
@@ -301,36 +309,6 @@
                                                     data-cell="tv-{{ v.id }}"
                                                     type="button"
                                                     onclick="fetchTogoVar(this)">JP DB</button>
-                                        </td>
-                                    </tr>
-                                    <tr id="af-{{ v.id }}" class="assessment-form-row" style="display:none">
-                                        <td colspan="99">
-                                            <form class="assessment-inline-form" method="POST"
-                                                  action="{{ url_for('expertboard.patient_variant_assessment_add', patient_id=r_patient.id, variant_id=v.id) }}">
-                                                <select class="vf-input" name="expert_group_id" required>
-                                                    <option value="" disabled selected>Expert group *</option>
-                                                    {% for group in r_expert_groups %}
-                                                        <option value="{{ group.id }}">
-                                                            {{ group.name }}{% if group.country %} ({{ group.country }}){% endif %}
-                                                        </option>
-                                                    {% endfor %}
-                                                </select>
-                                                <select class="vf-input" name="classification" required>
-                                                    <option value="" disabled selected>Classification *</option>
-                                                    {% for key, label in r_classifications %}
-                                                        <option value="{{ key }}">{{ label }}</option>
-                                                    {% endfor %}
-                                                </select>
-                                                <select class="vf-input" name="evidence_level">
-                                                    {% for key, label in r_evidence_levels %}
-                                                        <option value="{{ key }}">{{ label }}</option>
-                                                    {% endfor %}
-                                                </select>
-                                                <input class="vf-input" type="text" name="notes" placeholder="Notes">
-                                                <button class="inline-button" type="submit">Save</button>
-                                                <button class="vf-clear" type="button"
-                                                        onclick="toggleAssessForm('af-{{ v.id }}')">Cancel</button>
-                                            </form>
                                         </td>
                                     </tr>
                                 {% endfor %}
@@ -390,14 +368,42 @@
                                 if (v.includes('uncertain') || v.includes('vus')) return 3;
                                 return 0;
                             }
+                            // Return the highest pathogenicity rank among pipe-separated values
+                            function maxRankFromPipe(val) {
+                                if (!val) return -1;
+                                var parts = val.split('|').filter(Boolean);
+                                if (!parts.length) return -1;
+                                return Math.max.apply(null, parts.map(clnsigRank));
+                            }
+
                             document.addEventListener('DOMContentLoaded', function () {
-                                var rows = Array.from(document.querySelectorAll('#variant-tbody tr'));
-                                // sort descending by pathogenicity rank
-                                rows.sort(function(a, b) {
-                                    return clnsigRank(b.dataset.clnsig) - clnsigRank(a.dataset.clnsig);
+                                var tbody = document.getElementById('variant-tbody');
+                                // Only data rows (not form rows)
+                                var dataRows = Array.from(
+                                    document.querySelectorAll('#variant-tbody tr:not(.assessment-form-row)')
+                                );
+
+                                // Sort: 1) Clin. sig.  2) Other pt. reviews  3) Assessed
+                                dataRows.sort(function(a, b) {
+                                    var diff = clnsigRank(b.dataset.clnsig) - clnsigRank(a.dataset.clnsig);
+                                    if (diff !== 0) return diff;
+                                    diff = maxRankFromPipe(b.dataset.past) - maxRankFromPipe(a.dataset.past);
+                                    if (diff !== 0) return diff;
+                                    return maxRankFromPipe(b.dataset.assessed) - maxRankFromPipe(a.dataset.assessed);
                                 });
+
+                                // Re-append each data row immediately followed by its inline form row
+                                dataRows.forEach(function(row) {
+                                    tbody.appendChild(row);
+                                    var vid = row.dataset.vid;
+                                    if (vid) {
+                                        var formRow = document.getElementById('af-' + vid);
+                                        if (formRow) tbody.appendChild(formRow);
+                                    }
+                                });
+
                                 // auto-fetch top 20 that have a JP DB button
-                                rows.slice(0, 20).forEach(function (row) {
+                                dataRows.slice(0, 20).forEach(function(row) {
                                     var btn = row.querySelector('.tv-btn');
                                     if (btn) fetchTogoVar(btn);
                                 });
@@ -590,5 +596,169 @@
             {% endif %}
         </section>
     </main>
+
+    {# ── Assessment + ACMG popup modal (shared, one per page) ── #}
+    <div id="acmg-modal" class="acmg-modal-overlay" style="display:none" onclick="if(event.target===this)closeAssessModal()">
+        <div class="acmg-modal-box">
+            <form id="assess-form" method="POST" action="">
+                <div class="acmg-modal-header">
+                    <h3>Add Assessment</h3>
+                    <button type="button" class="acmg-modal-close" onclick="closeAssessModal()">&#x2715;</button>
+                </div>
+                <div class="acmg-modal-body">
+                    <div class="acmg-meta-row">
+                        <label class="acmg-meta-field">
+                            <span>Classification *</span>
+                            <select name="classification" required>
+                                <option value="" disabled selected>Select…</option>
+                                {% for key, label in r_classifications %}
+                                    <option value="{{ key }}">{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                        </label>
+                        <label class="acmg-meta-field">
+                            <span>Evidence level</span>
+                            <select name="evidence_level">
+                                {% for key, label in r_evidence_levels %}
+                                    <option value="{{ key }}">{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                        </label>
+                    </div>
+                    <div class="acmg-group">
+                        <h4 class="acmg-group-title acmg-path">Pathogenic criteria</h4>
+                        <div class="acmg-criteria-grid">
+                            {% for code, label in r_acmg_codes if code[0] not in ('B',) %}
+                                <label class="acmg-cb">
+                                    <input type="checkbox" value="{{ code }}"> {{ label }}
+                                </label>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    <div class="acmg-group">
+                        <h4 class="acmg-group-title acmg-benign">Benign criteria</h4>
+                        <div class="acmg-criteria-grid">
+                            {% for code, label in r_acmg_codes if code[0] == 'B' %}
+                                <label class="acmg-cb">
+                                    <input type="checkbox" value="{{ code }}"> {{ label }}
+                                </label>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    <div class="acmg-notes-row">
+                        <label>
+                            <span>Notes</span>
+                            <textarea name="notes" rows="2" placeholder="Free-text evidence notes…"></textarea>
+                        </label>
+                    </div>
+                </div>
+                <input type="hidden" name="acmg_codes" id="acmg-hidden-modal">
+                <div class="acmg-modal-footer">
+                    <span class="acmg-selected-preview" id="acmg-preview">— no ACMG criteria selected —</span>
+                    <button type="submit" class="inline-button">Save</button>
+                    <button type="button" class="vf-clear" onclick="closeAssessModal()">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    <script>
+        function openAssessModal(actionUrl) {
+            document.getElementById('assess-form').action = actionUrl;
+            document.getElementById('assess-form').reset();
+            document.querySelectorAll('#acmg-modal input[type=checkbox]').forEach(function(cb){ cb.checked = false; });
+            document.getElementById('acmg-hidden-modal').value = '';
+            document.getElementById('acmg-preview').textContent = '— no ACMG criteria selected —';
+            document.getElementById('acmg-modal').style.display = 'flex';
+        }
+        function closeAssessModal() {
+            document.getElementById('acmg-modal').style.display = 'none';
+        }
+        (function () {
+            function updateAcmgPreview() {
+                var checked = Array.from(
+                    document.querySelectorAll('#acmg-modal input[type=checkbox]:checked')
+                ).map(function(cb){ return cb.value; });
+                document.getElementById('acmg-hidden-modal').value = checked.join(', ');
+                document.getElementById('acmg-preview').textContent =
+                    checked.length ? checked.join(', ') : '— no ACMG criteria selected —';
+                autoClassify(checked);
+            }
+
+            function autoClassify(checked) {
+                if (!checked || checked.length === 0) return;
+
+                var pvs = checked.filter(function(c){ return c === 'PVS1'; }).length;
+                var ps  = checked.filter(function(c){ return /^PS/.test(c); }).length;
+                var pm  = checked.filter(function(c){ return /^PM/.test(c); }).length;
+                var pp  = checked.filter(function(c){ return /^PP/.test(c); }).length;
+                var ba  = checked.filter(function(c){ return c === 'BA1'; }).length;
+                var bs  = checked.filter(function(c){ return /^BS/.test(c); }).length;
+                var bp  = checked.filter(function(c){ return /^BP/.test(c); }).length;
+
+                var cls = '';
+
+                // ── Pathogenic ──
+                if (
+                    (pvs && ps >= 1) ||
+                    (pvs && pm >= 2) ||
+                    (pvs && pm >= 1 && pp >= 1) ||
+                    (pvs && pp >= 2) ||
+                    ps >= 2 ||
+                    (ps >= 1 && pm >= 3) ||
+                    (ps >= 1 && pm >= 2 && pp >= 2) ||
+                    (ps >= 1 && pm >= 1 && pp >= 4)
+                ) {
+                    cls = 'Pathogenic';
+                }
+                // ── Likely pathogenic ──
+                else if (
+                    (pvs && pm >= 1) ||
+                    (ps >= 1 && pm >= 1) ||   // 1 PS + 1-2 PM (≥3 PM case already Pathogenic above)
+                    (ps >= 1 && pp >= 2) ||
+                    pm >= 3 ||
+                    (pm >= 2 && pp >= 2) ||
+                    (pm >= 1 && pp >= 4)
+                ) {
+                    cls = 'Likely pathogenic';
+                }
+                // ── Benign ──
+                else if (ba >= 1 || bs >= 2) {
+                    cls = 'Benign';
+                }
+                // ── Likely benign ──
+                else if ((bs >= 1 && bp >= 1) || bp >= 2) {
+                    cls = 'Likely benign';
+                }
+                // ── VUS (criteria present but insufficient for above) ──
+                else {
+                    cls = 'Uncertain significance';
+                }
+
+                var sel = document.querySelector('#assess-form [name=classification]');
+                if (sel && cls) {
+                    sel.value = cls;
+                    sel.style.outline = '2px solid #6366f1';
+                    setTimeout(function(){ sel.style.outline = ''; }, 1200);
+                }
+
+                // Auto-set evidence level
+                var evMap = {
+                    'Pathogenic':             'strong',
+                    'Likely pathogenic':      'moderate',
+                    'Benign':                 'strong',
+                    'Likely benign':          'moderate',
+                    'Uncertain significance': 'supporting',
+                };
+                var evSel = document.querySelector('#assess-form [name=evidence_level]');
+                if (evSel && evMap[cls]) {
+                    evSel.value = evMap[cls];
+                }
+            }
+
+            document.querySelectorAll('#acmg-modal input[type=checkbox]').forEach(function(cb){
+                cb.addEventListener('change', updateAcmgPreview);
+            });
+        })();
+    </script>
 </body>
 </html>

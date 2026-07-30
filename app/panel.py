@@ -9,7 +9,6 @@ from sqlalchemy import asc
 from app.db import Session
 from app.models import ExpertBoard
 from app.models import ExpertBoardMember
-from app.models import ExpertGroup
 from app.models import PanelParticipant
 
 
@@ -26,14 +25,14 @@ def list_candidates():
     session = Session()
     candidates = []
 
-    groups = session.query(ExpertGroup).order_by(asc(ExpertGroup.name)).all()
+    groups = session.query(ExpertBoard).order_by(asc(ExpertBoard.name)).all()
     for group in groups:
         candidates.append(
             {
                 "token": f"{KIND_GROUP}:{group.id}",
                 "kind": KIND_GROUP,
                 "name": group.name,
-                "detail": group.specialty or "Expert group",
+                "detail": group.specialty or group.country or "Expert board",
             }
         )
 
@@ -76,10 +75,10 @@ def _resolve_token(session, token):
     ref_id = int(raw_id)
 
     if kind == KIND_GROUP:
-        group = session.get(ExpertGroup, ref_id)
+        group = session.get(ExpertBoard, ref_id)
         if group is None:
             return None
-        return kind, ref_id, group.name, group.specialty or "Expert group"
+        return kind, ref_id, group.name, group.specialty or group.country or "Expert board"
 
     if kind == KIND_INDIVIDUAL:
         member = session.get(ExpertBoardMember, ref_id)

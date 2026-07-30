@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin | ExpertBoard</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='expertboard.css', v='20260729x') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='expertboard.css', v='20260729t') }}">
 </head>
 <body>
     {% include "_role_bar.html" %}
@@ -91,14 +91,14 @@
                 {% endif %}
             </article>
 
-            <!-- Add expert group -->
+            <!-- Add expert board -->
             <article class="section section-wide">
-                <h2 class="section-title">Add expert group</h2>
-                <p class="section-copy">Create a specialist group that patients can be referred to.</p>
+                <h2 class="section-title">Add expert board</h2>
+                <p class="section-copy">Create an expert board that patients can be referred to and that stamps variant assessments.</p>
                 <form class="admin-form" method="POST" action="{{ url_for('expertboard.admin_create_expert_group') }}">
                     <div class="admin-form-grid">
                         <label class="form-field">
-                            <span>Group name <em>*</em></span>
+                            <span>Board name <em>*</em></span>
                             <input type="text" name="name" placeholder="e.g. Cardiac genetics panel" required>
                         </label>
                         <label class="form-field">
@@ -112,9 +112,9 @@
                     </div>
                     <label class="form-field">
                         <span>Description</span>
-                        <textarea name="description" rows="3" placeholder="What this group reviews..."></textarea>
+                        <textarea name="description" rows="3" placeholder="What this board reviews..."></textarea>
                     </label>
-                    <button class="launch-button" type="submit">Add expert group</button>
+                    <button class="launch-button" type="submit">Add expert board</button>
                 </form>
 
                 {% if r_expert_groups %}
@@ -124,20 +124,20 @@
                                 <tr><th>Name</th><th>Country</th><th>Specialty</th><th>Description</th><th>Status</th></tr>
                             </thead>
                             <tbody>
-                                {% for group in r_expert_groups %}
+                                {% for board in r_expert_groups %}
                                     <tr>
-                                        <td>{{ group.name }}</td>
-                                        <td>{{ group.country or "—" }}</td>
-                                        <td>{{ group.specialty or "—" }}</td>
-                                        <td class="note-cell">{{ group.description or "—" }}</td>
-                                        <td>{{ group.status }}</td>
+                                        <td>{{ board.name }}</td>
+                                        <td>{{ board.country or "—" }}</td>
+                                        <td>{{ board.specialty or "—" }}</td>
+                                        <td class="note-cell">{{ board.description or "—" }}</td>
+                                        <td>{{ board.status }}</td>
                                     </tr>
                                 {% endfor %}
                             </tbody>
                         </table>
                     </div>
                 {% else %}
-                    <div class="empty">No expert groups yet.</div>
+                    <div class="empty">No expert boards yet.</div>
                 {% endif %}
             </article>
 

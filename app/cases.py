@@ -317,10 +317,24 @@ def list_boards():
                     .count()
                 ),
                 "room_count": session.query(Case).filter(Case.board_id == board.id).count(),
+                "waiting_count": session.query(Patient).filter(
+                    Patient.requested_expert_board_id == board.id
+                ).count(),
                 "summary": _short_text(board.description),
             }
             for board in boards
         ]
+
+
+def list_waiting_patients(board_id):
+    """Return patients whose requested_expert_board_id matches board_id."""
+    with Session() as session:
+        return (
+            session.query(Patient)
+            .filter(Patient.requested_expert_board_id == board_id)
+            .order_by(Patient.patient_code)
+            .all()
+        )
 
 
 def get_board(board_id):

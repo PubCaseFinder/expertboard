@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ r_board_detail.board.name }} | ExpertBoard</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='expertboard.css', v='20260729x') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='expertboard.css', v='20260729t') }}">
 </head>
 <body>
     {% include "_role_bar.html" %}
@@ -34,6 +34,33 @@
         </section>
 
         <section class="workspace">
+            <article class="section">
+                <h2 class="section-title">Waiting List</h2>
+                <p class="section-copy">Patients referred to this board and awaiting review.</p>
+                {% if r_waiting_patients %}
+                    <div class="case-list">
+                        {% for patient in r_waiting_patients %}
+                            <article class="case-card">
+                                <div class="case-top">
+                                    <h3 class="case-name">{{ patient.patient_code }}{% if patient.display_name %} &middot; {{ patient.display_name }}{% endif %}</h3>
+                                    <span class="badge">{{ patient.review_status|replace('_',' ')|title }}</span>
+                                </div>
+                                <div class="meta">
+                                    {% if patient.diagnosis_name %}
+                                        <div><span>Diagnosis</span><strong>{{ patient.diagnosis_name }}</strong></div>
+                                    {% endif %}
+                                </div>
+                                <div class="actions">
+                                    <a class="link-button" href="{{ url_for('expertboard.patient_detail', patient_id=patient.id) }}">Open patient &rarr;</a>
+                                </div>
+                            </article>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <div class="empty">No patients are currently waiting for this board.</div>
+                {% endif %}
+            </article>
+
             <article class="section">
                 <h2 class="section-title">Case Review Rooms</h2>
                 <p class="section-copy">Each room belongs to this fixed expert board and represents one case review.</p>

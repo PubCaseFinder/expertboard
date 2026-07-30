@@ -14,7 +14,6 @@ from app.auth import ROLE_LABELS
 from app.db import Session
 from app.models import ExpertBoard
 from app.models import ExpertBoardMember
-from app.models import ExpertGroup
 from app.models import User
 
 
@@ -31,7 +30,11 @@ def ensure_schema():
     """Add columns introduced after the initial table creation."""
     _add_member_column_if_missing("member_kind VARCHAR(16) NULL")
     _add_member_column_if_missing("ref_id INT NULL")
-    _add_group_column_if_missing("country VARCHAR(64) NULL")
+    _add_board_column_if_missing("country VARCHAR(64) NULL")
+    _add_board_column_if_missing("specialty VARCHAR(160) NULL")
+    _add_table_column_if_missing("variant_assessments", "expert_board_id INT NULL")
+    _add_table_column_if_missing("variant_assessments", "acmg_codes VARCHAR(255) NULL")
+    _add_table_column_if_missing("patients", "requested_expert_board_id INT NULL")
 
 
 def _add_member_column_if_missing(column_definition):
@@ -45,12 +48,33 @@ def _add_member_column_if_missing(column_definition):
         session.rollback()
 
 
+def _add_board_column_if_missing(column_definition):
+    session = Session()
+    try:
+        session.execute(
+            text(f"ALTER TABLE expert_boards ADD COLUMN {column_definition}")
+        )
+        session.commit()
+    except OperationalError:
+        session.rollback()
+
+
 def _add_group_column_if_missing(column_definition):
+    """Legacy helper kept for compatibility — no-op if expert_groups exists."""
     session = Session()
     try:
         session.execute(
             text(f"ALTER TABLE expert_groups ADD COLUMN {column_definition}")
         )
+        session.commit()
+    except OperationalError:
+        session.rollback()
+
+
+def _add_table_column_if_missing(table, column_definition):
+    session = Session()
+    try:
+        session.execute(text(f"ALTER TABLE {table} ADD COLUMN {column_definition}"))
         session.commit()
     except OperationalError:
         session.rollback()
@@ -96,15 +120,15 @@ def create_user(username, display_name, role):
 
 
 # ---------------------------------------------------------------------------
-# Expert groups
+# Expert boards (unified — former ExpertGroup merged here)
 # ---------------------------------------------------------------------------
 def list_expert_groups():
-    session = Session()
-    return session.query(ExpertGroup).order_by(asc(ExpertGroup.name)).all()
+    """Alias kept for template/route compatibility — returns all ExpertBoards."""
+    return list_boards()
 
 
 def create_expert_group(name, specialty, description, country=None):
-    """Create a specialist group. Returns (group, error_message)."""
+    """Create an ExpertBoard (the ExpertGroup concept is now merged into Board)."""
     name = (name or "").strip()
     specialty = (specialty or "").strip()
     description = (description or "").strip()
@@ -114,20 +138,22 @@ def create_expert_group(name, specialty, description, country=None):
         return None, "Group name is required."
 
     session = Session()
-    existing = session.query(ExpertGroup).filter(ExpertGroup.name == name).first()
+    existing = session.query(ExpertBoard).filter(ExpertBoard.name == name).first()
     if existing is not None:
-        return None, f"Expert group '{name}' already exists."
+        return None, f"Expert board '{name}' already exists."
 
-    group = ExpertGroup(
+    board = ExpertBoard(
         name=name,
+        scope_type="specialty",
+        scope=specialty or name,
         country=country or None,
         specialty=specialty or None,
         description=description or None,
         status="active",
     )
-    session.add(group)
+    session.add(board)
     session.commit()
-    return group, None
+    return board, None
 
 
 # ---------------------------------------------------------------------------
@@ -173,14 +199,14 @@ def list_member_candidates():
             }
         )
 
-    groups = session.query(ExpertGroup).order_by(asc(ExpertGroup.name)).all()
+    groups = session.query(ExpertBoard).order_by(asc(ExpertBoard.name)).all()
     for group in groups:
         candidates.append(
             {
                 "token": f"{KIND_GROUP}:{group.id}",
                 "kind": KIND_GROUP,
                 "name": group.name,
-                "detail": group.specialty or "Expert group",
+                "detail": group.specialty or group.country or "Expert board",
             }
         )
 
@@ -203,10 +229,10 @@ def _resolve_member_token(session, token):
         return kind, ref_id, user.display_name, ROLE_LABELS.get(user.role, user.role)
 
     if kind == KIND_GROUP:
-        group = session.get(ExpertGroup, ref_id)
+        group = session.get(ExpertBoard, ref_id)
         if group is None:
             return None
-        return kind, ref_id, group.name, group.specialty or "Expert group"
+        return kind, ref_id, group.name, group.specialty or group.country or "Expert board"
 
     return None
 

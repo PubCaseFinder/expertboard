@@ -58,7 +58,7 @@ def ensure_schema():
     _add_column_if_missing(
         "review_status VARCHAR(32) NOT NULL DEFAULT 'pending_review'"
     )
-    _add_column_if_missing("requested_expert_group_id INT NULL")
+    _add_column_if_missing("requested_expert_board_id INT NULL")
     _add_column_if_missing("family_id VARCHAR(64) NULL")
     _add_column_if_missing("family_history TEXT NULL")
 
@@ -175,13 +175,13 @@ def set_review_status(patient_id, status):
     return patient
 
 
-def set_requested_expert_group(patient_id, expert_group_id):
-    """Assign (or clear) the expert group a patient is referred to. Returns the patient."""
+def set_requested_expert_group(patient_id, expert_board_id):
+    """Assign (or clear) the expert board a patient is referred to. Returns the patient."""
     session = Session()
     patient = session.get(Patient, patient_id)
     if patient is None:
         return None
-    patient.requested_expert_group_id = expert_group_id or None
+    patient.requested_expert_board_id = expert_board_id or None
     session.commit()
     return patient
 

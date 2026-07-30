@@ -9,7 +9,7 @@ country/group comparison on the patient detail page.
 from sqlalchemy import asc
 
 from app.db import Session
-from app.models import ExpertGroup
+from app.models import ExpertBoard
 from app.models import Patient
 from app.models import Variant
 from app.models import VariantAssessment
@@ -32,6 +32,39 @@ EVIDENCE_LEVELS = [
     ("strong",      "Strong"),
     ("moderate",    "Moderate"),
     ("supporting",  "Supporting"),
+]
+
+ACMG_CODES = [
+    # Pathogenic criteria
+    ("PVS1", "PVS1 (Very strong: Null variant)"),
+    ("PS1",  "PS1 (Strong: Same amino acid change)"),
+    ("PS2",  "PS2 (Strong: De novo confirmed)"),
+    ("PS3",  "PS3 (Strong: Functional study)"),
+    ("PS4",  "PS4 (Strong: Prevalence in affected)"),
+    ("PM1",  "PM1 (Moderate: Mutational hot spot)"),
+    ("PM2",  "PM2 (Moderate: Absent/low in control DB)"),
+    ("PM3",  "PM3 (Moderate: In trans with pathogenic)"),
+    ("PM4",  "PM4 (Moderate: Protein length change)"),
+    ("PM5",  "PM5 (Moderate: Novel missense at same AA)"),
+    ("PM6",  "PM6 (Moderate: De novo assumed)"),
+    ("PP1",  "PP1 (Supporting: Co-segregation)"),
+    ("PP2",  "PP2 (Supporting: Missense in constrained gene)"),
+    ("PP3",  "PP3 (Supporting: Multiple computational evidence)"),
+    ("PP4",  "PP4 (Supporting: Specific phenotype fit)"),
+    ("PP5",  "PP5 (Supporting: Reputable source)"),
+    # Benign criteria
+    ("BA1",  "BA1 (Stand-alone: High allele frequency >5%)"),
+    ("BS1",  "BS1 (Strong: Allele frequency > expected)"),
+    ("BS2",  "BS2 (Strong: Observed in healthy)"),
+    ("BS3",  "BS3 (Strong: Functional study non-pathogenic)"),
+    ("BS4",  "BS4 (Strong: Lack of segregation)"),
+    ("BP1",  "BP1 (Supporting: Non-deleterious missense)"),
+    ("BP2",  "BP2 (Supporting: In trans with dominant / cis)"),
+    ("BP3",  "BP3 (Supporting: In-frame indel in repeat)"),
+    ("BP4",  "BP4 (Supporting: Computational prediction benign)"),
+    ("BP5",  "BP5 (Supporting: Alternate cause found)"),
+    ("BP6",  "BP6 (Supporting: Reputable source benign)"),
+    ("BP7",  "BP7 (Supporting: Silent/synonymous no splice effect)"),
 ]
 
 # CSS suffix used in template: assess-<key>
@@ -61,7 +94,7 @@ def list_for_variants(variant_ids):
     )
     result = {}
     for a in rows:
-        group = session.get(ExpertGroup, a.expert_group_id) if a.expert_group_id else None
+        group = session.get(ExpertBoard, a.expert_board_id) if a.expert_board_id else None
         result.setdefault(a.variant_id, []).append(
             {
                 "assessment": a,
@@ -72,26 +105,27 @@ def list_for_variants(variant_ids):
     return result
 
 
-def add_assessment(variant_id, expert_group_id, classification, evidence_level, notes, assessed_by):
+def add_assessment(variant_id, expert_board_id, classification, evidence_level, notes, assessed_by, acmg_codes=None):
     """Create an assessment. Returns (assessment, error)."""
     classification = (classification or "").strip()
     valid = {k for k, _ in CLASSIFICATIONS}
     if classification not in valid:
         return None, "Please choose a valid classification."
 
-    raw_gid = str(expert_group_id or "").strip()
+    raw_gid = str(expert_board_id or "").strip()
     gid = int(raw_gid) if raw_gid.isdigit() else None
 
     session = Session()
     if gid:
-        if session.get(ExpertGroup, gid) is None:
-            return None, "Expert group not found."
+        if session.get(ExpertBoard, gid) is None:
+            return None, "Expert board not found."
 
     a = VariantAssessment(
         variant_id=int(variant_id),
-        expert_group_id=gid,
+        expert_board_id=gid,
         classification=classification,
         evidence_level=(evidence_level or "").strip() or None,
+        acmg_codes=(acmg_codes or "").strip() or None,
         notes=(notes or "").strip() or None,
         assessed_by=(assessed_by or "").strip() or None,
     )
@@ -158,7 +192,7 @@ def list_cross_patient_for_variants(proband_variants, patient_id):
     result = {}
     for a in assessment_rows:
         pvid, pat_id = ov_map[a.variant_id]
-        group = session.get(ExpertGroup, a.expert_group_id) if a.expert_group_id else None
+        group = session.get(ExpertBoard, a.expert_board_id) if a.expert_board_id else None
         patient = session.get(Patient, pat_id)
         result.setdefault(pvid, []).append(
             {
