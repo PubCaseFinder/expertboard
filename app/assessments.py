@@ -1,3 +1,4 @@
+## To do: adjust criteria combination as right now 1PS + 1PP shows up as likely benign
 """Variant assessment CRUD.
 
 Each assessment records one expert group's classification of a single variant.
@@ -20,11 +21,7 @@ CLASSIFICATIONS = [
     ("Likely pathogenic",     "Likely pathogenic"),
     ("Uncertain significance","Uncertain significance (VUS)"),
     ("Likely benign",         "Likely benign"),
-    ("Benign",                "Benign"),
-    ("Drug response",         "Drug response"),
-    ("Risk factor",           "Risk factor"),
-    ("Protective",            "Protective"),
-    ("Other",                 "Other"),
+    ("Benign",                "Benign")
 ]
 
 EVIDENCE_LEVELS = [
@@ -42,7 +39,9 @@ ACMG_CODES = [
     ("PS3",  "PS3 (Strong: Functional study)"),
     ("PS4",  "PS4 (Strong: Prevalence in affected)"),
     ("PM1",  "PM1 (Moderate: Mutational hot spot)"),
-    ("PM2",  "PM2 (Moderate: Absent/low in control DB)"),
+    # The ClinGen Sequence Variant Interpretation (SVI) Working Group has re-adjusted PM2 to be supporting level as of 2020 \
+    # (https://www.clinicalgenome.org/site/assets/files/5182/pm2_-_svi_recommendation_-_approved_sept2020.pdf)
+    ("PM2",  "PM2 (Supporting: Absent/low in control DB)"), 
     ("PM3",  "PM3 (Moderate: In trans with pathogenic)"),
     ("PM4",  "PM4 (Moderate: Protein length change)"),
     ("PM5",  "PM5 (Moderate: Novel missense at same AA)"),
@@ -67,6 +66,126 @@ ACMG_CODES = [
     ("BP7",  "BP7 (Supporting: Silent/synonymous no splice effect)"),
 ]
 
+ACMG_DEFAULT_WEIGHTS = {
+    "PVS1": "VeryStrong",
+    "PS1": "Strong",
+    "PS2": "Strong",
+    "PS3": "Strong",
+    "PS4": "Strong",
+    "PM1": "Moderate",
+    "PM2": "Supporting",
+    "PM3": "Moderate",
+    "PM4": "Moderate",
+    "PM5": "Moderate",
+    "PM6": "Moderate",
+    "PP1": "Supporting",
+    "PP2": "Supporting",
+    "PP3": "Supporting",
+    "PP4": "Supporting",
+    "PP5": "Supporting",
+    "BA1": "StandAlone",
+    "BS1": "Strong",
+    "BS2": "Strong",
+    "BS3": "Strong",
+    "BS4": "Strong",
+    "BP1": "Supporting",
+    "BP2": "Supporting",
+    "BP3": "Supporting",
+    "BP4": "Supporting",
+    "BP5": "Supporting",
+    "BP6": "Supporting",
+    "BP7": "Supporting",
+}
+
+ACMG_WEIGHT_OPTIONS = {
+    "PVS1": [
+        ("", "Very Strong"),
+        ("Strong", "Strong"),
+        ("Moderate", "Moderate"),
+        ("Supporting", "Supporting"),
+    ],
+    "PS1": [
+        ("", "Strong"),
+        ("Moderate", "Moderate"),
+        ("Supporting", "Supporting"),
+    ],
+    "PS2": [
+        ("", "Strong"),
+        ("VeryStrong", "Very Strong"),
+        ("Moderate", "Moderate"),
+        ("Supporting", "Supporting")
+    ],
+    "PS3": [
+        ("", "Strong"),
+        ("Moderate", "Moderate"),
+        ("Supporting", "Supporting"),
+    ],
+    "PS4": [
+        ("", "Strong"),
+        ("Moderate", "Moderate"),
+        ("Supporting", "Supporting"),
+    ],
+    "PM1": [
+        ("", "Moderate"),
+        ("Strong", "Strong"),
+        ("Supporting", "Supporting"),
+    ],
+    "PM2": [
+        ("Supporting", "Supporting"),
+        ("Moderate", "Moderate"),
+        ("Strong", "Strong"),
+        ("VeryStrong", "Very Strong")
+    ],
+    "PM3": [
+        ("", "Moderate"),
+        ("VeryStrong", "Very Strong"),
+    ],
+    "PM4": [
+        ("", "Moderate"),
+        ("Strong", "Strong"),
+        ("Supporting", "Supporting"),
+    ],
+    "PM5": [
+        ("", "Moderate"),
+        ("Strong", "Strong"),
+        ("Supporting", "Supporting"),
+    ],
+    "PM6": [
+        ("", "Moderate"),
+        ("Strong", "Strong"),
+        ("VeryStrong", "Very Strong"),
+    ],
+    "PP1": [("", "Supporting"), ("Moderate","Moderate"), ("Strong", "Strong")],
+    "PP2": [("", "Supporting")],
+    "PP3": [("", "Supporting"), ("Moderate","Moderate"), ("Strong", "Strong")],
+    "PP4": [("", "Supporting"), ("Moderate","Moderate"), ("Strong", "Strong")],
+    "PP5": [("", "Supporting")],
+    "BA1": [("", "StandAlone")],
+    "BS1": [
+        ("", "Strong"),
+        ("Supporting", "Supporting"),
+    ],
+    "BS2": [
+        ("", "Strong"),
+        ("Supporting", "Supporting"),
+    ],
+    "BS3": [
+        ("", "Strong"),
+        ("Supporting", "Supporting"),
+    ],
+    "BS4": [
+        ("", "Strong"),
+        ("Supporting", "Supporting"),
+    ],
+    "BP1": [("", "Supporting")],
+    "BP2": [("", "Supporting")],
+    "BP3": [("", "Supporting")],
+    "BP4": [("", "Supporting"), ("Moderate","Moderate"), ("Strong", "Strong")],
+    "BP5": [("", "Supporting")],
+    "BP6": [("", "Supporting")],
+    "BP7": [("", "Supporting"), ("Strong", "Strong")],
+}
+
 # CSS suffix used in template: assess-<key>
 CLASSIFICATION_CSS = {
     "Pathogenic":             "p",
@@ -74,9 +193,6 @@ CLASSIFICATION_CSS = {
     "Uncertain significance": "vus",
     "Likely benign":          "lb",
     "Benign":                 "b",
-    "Drug response":          "dr",
-    "Risk factor":            "rf",
-    "Protective":             "prot",
     "Other":                  "other",
 }
 

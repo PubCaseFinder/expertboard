@@ -138,6 +138,7 @@ def patient_detail(patient_id):
     return render_template(
         "patient_detail.html",
         r_patient=patient,
+        r_llm_configured=llm_module.is_configured(),
         r_variants=proband_variants,
         r_variant_shares=variant_shares,
         r_proband_vkeys=list(proband_key_map.keys()),
@@ -159,6 +160,8 @@ def patient_detail(patient_id):
         r_classifications=assessments_module.CLASSIFICATIONS,
         r_evidence_levels=assessments_module.EVIDENCE_LEVELS,
         r_acmg_codes=assessments_module.ACMG_CODES,
+        r_acmg_weight_options=assessments_module.ACMG_WEIGHT_OPTIONS,
+        r_acmg_default_weights=assessments_module.ACMG_DEFAULT_WEIGHTS,
     )
 
 
@@ -168,7 +171,13 @@ def patient_variant_assessment_add(patient_id, variant_id):
     if patient is None:
         abort(404)
     raw_acmg = request.form.getlist("acmg_codes")
-    acmg_str = ", ".join(raw_acmg) if raw_acmg else None
+    acmg_tokens = []
+    for item in raw_acmg:
+        for token in (item or "").split(","):
+            token = token.strip()
+            if token:
+                acmg_tokens.append(token)
+    acmg_str = ", ".join(dict.fromkeys(acmg_tokens)) if acmg_tokens else None
     _a, error = assessments_module.add_assessment(
         variant_id,
         None,
@@ -375,7 +384,7 @@ def admin_save_ollama():
     raw_key = (request.form.get("ollama_api_key") or "").strip()
     if raw_key:
         admin.set_setting(admin.OLLAMA_API_KEY_KEY, raw_key)
-    flash("Ollama settings saved.", "success")
+    flash("LLM settings saved.", "success")
     return redirect(url_for("expertboard.admin_panel"))
 
 

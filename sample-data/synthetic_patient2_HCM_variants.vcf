@@ -1,0 +1,43 @@
+##fileformat=VCFv4.2
+##fileDate=20260729
+##source=SyntheticDataGenerator_v1
+##reference=GRCh38
+##comment=ENTIRELY SYNTHETIC DATA - fictional patient, fictional variants, for demonstration/testing purposes only. Not derived from any real individual or real ClinVar submission.
+##INFO=<ID=GENE,Number=1,Type=String,Description="Gene symbol">
+##INFO=<ID=HGVSC,Number=1,Type=String,Description="HGVS coding sequence notation">
+##INFO=<ID=HGVSP,Number=1,Type=String,Description="HGVS protein notation">
+##INFO=<ID=CLNSIG,Number=1,Type=String,Description="Clinical significance (synthetic classification)">
+##INFO=<ID=NOTE,Number=.,Type=String,Description="Free-text annotation note">
+##FILTER=<ID=PASS,Description="All filters passed">
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Read depth">
+##FORMAT=<ID=GQ,Number=1,Type=Integer,Description="Genotype quality">
+##INFO=<ID=gnomAD_AF,Number=1,Type=Float,Description="Synthetic gnomAD genome/exome allele frequency">
+##INFO=<ID=gnomAD_AF_POPMAX,Number=1,Type=Float,Description="Synthetic maximum continental allele frequency">
+##INFO=<ID=LOEUF,Number=1,Type=Float,Description="Synthetic LOEUF score">
+##INFO=<ID=pLI,Number=1,Type=Float,Description="Synthetic probability of loss-of-function intolerance">
+##INFO=<ID=SpliceAI_AG,Number=1,Type=Float,Description="Synthetic SpliceAI acceptor gain delta score">
+##INFO=<ID=SpliceAI_AL,Number=1,Type=Float,Description="Synthetic SpliceAI acceptor loss delta score">
+##INFO=<ID=SpliceAI_DG,Number=1,Type=Float,Description="Synthetic SpliceAI donor gain delta score">
+##INFO=<ID=SpliceAI_DL,Number=1,Type=Float,Description="Synthetic SpliceAI donor loss delta score">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	SYN-PATIENT-88292
+14	23429581	syn001	G	A	99	PASS	GENE=MYH7;HGVSC=c.1988G>A;HGVSP=p.Arg663His;CLNSIG=Pathogenic;REVEL=0.96;CADD_PHRED=33.4;gnomAD_AF=0;gnomAD_AF_POPMAX=0;LOEUF=0.12;pLI=1.000;SpliceAI_AG=0.00;SpliceAI_AL=0.01;SpliceAI_DG=0.00;SpliceAI_DL=0.01;NOTE=Classic_HCM_hotspot_residue	GT:DP:GQ	0/1:62:99
+11	47339251	syn002	C	T	99	PASS	GENE=MYBPC3;HGVSC=c.2827C>T;HGVSP=p.Arg943Ter;CLNSIG=Pathogenic;REVEL=.;CADD_PHRED=41.2;gnomAD_AF=0;gnomAD_AF_POPMAX=0;LOEUF=0.17;pLI=1.000;SpliceAI_AG=0.01;SpliceAI_AL=0.02;SpliceAI_DG=0.01;SpliceAI_DL=0.04;NOTE=Premature_stop_established_allele	GT:DP:GQ	0/1:58:99
+1	201365984	syn003	C	T	97	PASS	GENE=TNNT2;HGVSC=c.421C>T;HGVSP=p.Arg141Trp;CLNSIG=Likely_pathogenic;REVEL=0.91;CADD_PHRED=29.7;gnomAD_AF=0.000003;gnomAD_AF_POPMAX=0.000005;LOEUF=0.19;pLI=1.000;SpliceAI_AG=0.00;SpliceAI_AL=0.01;SpliceAI_DG=0.00;SpliceAI_DL=0.02;NOTE=Segregation_reported_similar_families	GT:DP:GQ	0/1:54:96
+19	55663415	syn004	G	A	91	PASS	GENE=TNNI3;HGVSC=c.575G>A;HGVSP=p.Arg192His;CLNSIG=VUS;REVEL=0.63;CADD_PHRED=24.5;gnomAD_AF=0.000018;gnomAD_AF_POPMAX=0.000027;LOEUF=0.24;pLI=0.999;SpliceAI_AG=0.01;SpliceAI_AL=0.03;SpliceAI_DG=0.00;SpliceAI_DL=0.02;NOTE=Conflicting_functional_data	GT:DP:GQ	0/1:49:90
+12	111350628	syn005	G	A	88	PASS	GENE=MYL2;HGVSC=c.64G>A;HGVSP=p.Glu22Lys;CLNSIG=VUS;REVEL=0.82;CADD_PHRED=27.8;gnomAD_AF=0;gnomAD_AF_POPMAX=0;LOEUF=0.42;pLI=0.995;SpliceAI_AG=0.00;SpliceAI_AL=0.01;SpliceAI_DG=0.00;SpliceAI_DL=0.01;NOTE=Rare_absent_population_databases	GT:DP:GQ	0/1:45:88
+15	35081627	syn006	G	A	90	PASS	GENE=ACTC1;HGVSC=c.301G>A;HGVSP=p.Glu101Lys;CLNSIG=VUS;REVEL=0.88;CADD_PHRED=30.5;gnomAD_AF=0.000011;gnomAD_AF_POPMAX=0.000017;LOEUF=0.15;pLI=1.000;SpliceAI_AG=0.00;SpliceAI_AL=0.01;SpliceAI_DG=0.00;SpliceAI_DL=0.01;NOTE=Predicted_damaging_in_silico_no_segregation	GT:DP:GQ	0/1:47:89
+15	63354245	syn007	C	T	95	PASS	GENE=TPM1;HGVSC=c.500C>T;HGVSP=p.Ala167Val;CLNSIG=Likely_benign;REVEL=0.14;CADD_PHRED=12.3;gnomAD_AF=0.0038;gnomAD_AF_POPMAX=0.0056;LOEUF=0.28;pLI=0.999;SpliceAI_AG=0.00;SpliceAI_AL=0.00;SpliceAI_DG=0.00;SpliceAI_DL=0.00;NOTE=Seen_in_unaffected_relatives	GT:DP:GQ	0/1:60:95
+11	47332415	syn008	A	AA	93	PASS	GENE=MYBPC3;HGVSC=c.3624dupA;HGVSP=p.fs;CLNSIG=Pathogenic;REVEL=.;CADD_PHRED=35.9;gnomAD_AF=0;gnomAD_AF_POPMAX=0;LOEUF=0.17;pLI=1.000;SpliceAI_AG=0.00;SpliceAI_AL=0.02;SpliceAI_DG=0.00;SpliceAI_DL=0.02;NOTE=Frameshift_truncating	GT:DP:GQ	0/1:51:93
+7	151546980	syn009	G	A	85	PASS	GENE=PRKAG2;HGVSC=c.905G>A;HGVSP=p.Arg302Gln;CLNSIG=VUS;REVEL=0.55;CADD_PHRED=23.2;gnomAD_AF=0.000081;gnomAD_AF_POPMAX=0.000110;LOEUF=0.61;pLI=0.983;SpliceAI_AG=0.00;SpliceAI_AL=0.01;SpliceAI_DG=0.00;SpliceAI_DL=0.01;NOTE=Overlap_phenotype_gene_unclear_penetrance	GT:DP:GQ	0/1:42:85
+X	101397459	syn010	G	T	80	PASS	GENE=GLA;HGVSC=c.937G>T;HGVSP=p.Asp313Tyr;CLNSIG=Benign;REVEL=0.07;CADD_PHRED=8.4;gnomAD_AF=0.0127;gnomAD_AF_POPMAX=0.0185;LOEUF=0.47;pLI=0.991;SpliceAI_AG=0.00;SpliceAI_AL=0.00;SpliceAI_DG=0.00;SpliceAI_DL=0.00;NOTE=Common_low_penetrance_polymorphism	GT:DP:GQ	1:55:80
+X	119571089	syn011	A	G	83	PASS	GENE=LAMP2;HGVSC=c.1000A>G;HGVSP=p.Met334Val;CLNSIG=VUS;REVEL=0.48;CADD_PHRED=21.7;gnomAD_AF=0.000022;gnomAD_AF_POPMAX=0.000031;LOEUF=0.09;pLI=1.000;SpliceAI_AG=0.00;SpliceAI_AL=0.01;SpliceAI_DG=0.01;SpliceAI_DL=0.02;NOTE=Insufficient_case_data	GT:DP:GQ	0/1:44:83
+14	23412897	syn012	G	A	78	PASS	GENE=MYH7;HGVSC=c.5135G>A;HGVSP=p.Arg1712Gln;CLNSIG=VUS;REVEL=0.74;CADD_PHRED=26.3;gnomAD_AF=0;gnomAD_AF_POPMAX=0;LOEUF=0.12;pLI=1.000;SpliceAI_AG=0.00;SpliceAI_AL=0.00;SpliceAI_DG=0.01;SpliceAI_DL=0.01;NOTE=Novel_not_previously_reported	GT:DP:GQ	0/1:39:78
+2	178562438	syn013	G	A	96	PASS	GENE=TTN;HGVSC=c.29470G>A;HGVSP=p.Ala9824Thr;CLNSIG=Likely_benign;REVEL=0.09;CADD_PHRED=10.6;gnomAD_AF=0.0042;gnomAD_AF_POPMAX=0.0065;LOEUF=0.98;pLI=0.000;SpliceAI_AG=0.00;SpliceAI_AL=0.00;SpliceAI_DG=0.00;SpliceAI_DL=0.00;NOTE=Common_missense_nontruncating_region	GT:DP:GQ	0/1:63:96
+2	219420854	syn014	C	T	87	PASS	GENE=DES;HGVSC=c.1195C>T;HGVSP=p.Arg399Cys;CLNSIG=VUS;REVEL=0.69;CADD_PHRED=25.8;gnomAD_AF=0.000009;gnomAD_AF_POPMAX=0.000014;LOEUF=0.33;pLI=0.999;SpliceAI_AG=0.00;SpliceAI_AL=0.01;SpliceAI_DG=0.00;SpliceAI_DL=0.02;NOTE=Associated_more_with_skeletal_myopathy	GT:DP:GQ	0/1:46:87
+11	19203368	syn015	C	T	92	PASS	GENE=CSRP3;HGVSC=c.170C>T;HGVSP=p.Ser57Leu;CLNSIG=Likely_pathogenic;REVEL=0.93;CADD_PHRED=31.1;gnomAD_AF=0.000002;gnomAD_AF_POPMAX=0.000004;LOEUF=0.22;pLI=1.000;SpliceAI_AG=0.00;SpliceAI_AL=0.01;SpliceAI_DG=0.00;SpliceAI_DL=0.01;NOTE=Reported_in_HCM_cohort_functional_pending	GT:DP:GQ	0/1:52:92
+6	118880281	syn016	CAGA	C	99	PASS	GENE=PLN;HGVSC=c.40_42delAGA;HGVSP=p.Arg14del;CLNSIG=Pathogenic;REVEL=.;CADD_PHRED=34.8;gnomAD_AF=0.000001;gnomAD_AF_POPMAX=0.000002;LOEUF=0.31;pLI=0.998;SpliceAI_AG=0.00;SpliceAI_AL=0.03;SpliceAI_DG=0.00;SpliceAI_DL=0.02;NOTE=Well_established_cardiomyopathy_variant	GT:DP:GQ	0/1:65:99
+20	42893117	syn017	C	T	82	PASS	GENE=JPH2;HGVSC=c.797C>T;HGVSP=p.Ser266Phe;CLNSIG=VUS;REVEL=0.57;CADD_PHRED=22.4;gnomAD_AF=0.000062;gnomAD_AF_POPMAX=0.000091;LOEUF=0.44;pLI=0.996;SpliceAI_AG=0.00;SpliceAI_AL=0.01;SpliceAI_DG=0.00;SpliceAI_DL=0.01;NOTE=Limited_case_reports	GT:DP:GQ	0/1:41:82
+10	92673415	syn018	C	T	94	PASS	GENE=ANKRD1;HGVSC=c.169C>T;HGVSP=p.Pro57Ser;CLNSIG=Benign;REVEL=0.05;CADD_PHRED=7.9;gnomAD_AF=0.0245;gnomAD_AF_POPMAX=0.0318;LOEUF=0.73;pLI=0.124;SpliceAI_AG=0.00;SpliceAI_AL=0.00;SpliceAI_DG=0.00;SpliceAI_DL=0.00;NOTE=Common_population_variant_MAF_gt_2pct	GT:DP:GQ	0/1:58:94
+7	128480246	syn019	C	T	84	PASS	GENE=FLNC;HGVSC=c.6478C>T;HGVSP=p.Arg2160Trp;CLNSIG=VUS;REVEL=0.79;CADD_PHRED=28.1;gnomAD_AF=0.000004;gnomAD_AF_POPMAX=0.000007;LOEUF=0.10;pLI=1.000;SpliceAI_AG=0.00;SpliceAI_AL=0.01;SpliceAI_DG=0.00;SpliceAI_DL=0.01;NOTE=Emerging_candidate_gene_limited_evidence	GT:DP:GQ	0/1:43:84
+4	120214897	syn020	C	T	89	PASS	GENE=MYOZ2;HGVSC=c.856C>T;HGVSP=p.Gln286Ter;CLNSIG=Likely_pathogenic;REVEL=.;CADD_PHRED=37.4;gnomAD_AF=0;gnomAD_AF_POPMAX=0;LOEUF=0.18;pLI=1.000;SpliceAI_AG=0.01;SpliceAI_AL=0.03;SpliceAI_DG=0.01;SpliceAI_DL=0.05;NOTE=Truncating_gene_dosage_sensitive	GT:DP:GQ	0/1:48:89

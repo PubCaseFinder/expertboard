@@ -167,13 +167,19 @@
                         <input type="file" name="vcf_file" accept=".vcf" required class="vcf-file-input">
                         <button type="submit" class="inline-button">{% if r_variants %}Re-import VCF{% else %}Import VCF{% endif %}</button>
                     </form>
-                    {% if r_variants and r_patient.clinical_text %}
+                    {% if not r_llm_configured %}
+                        <span class="status-hint">Configure LLM Base URL and model in Admin to enable Analyze with AI.</span>
+                    {% elif r_variants and r_patient.clinical_text %}
                         <button class="inline-button ai-analyze-btn" type="button"
                                 data-url="{{ url_for('expertboard.api_patient_llm_analyze', patient_id=r_patient.id) }}"
                                 onclick="runLlmAnalysis(this)">
                             ✦ Analyze with AI
                         </button>
                         <span class="ai-status" id="ai-status" style="display:none"></span>
+                    {% elif r_variants and not r_patient.clinical_text %}
+                        <span class="status-hint">Add and save Clinical summary above to enable Analyze with AI.</span>
+                    {% else %}
+                        <span class="status-hint">Import a VCF file to enable Analyze with AI.</span>
                     {% endif %}
                 </div>
                 {% if r_variants %}
@@ -205,8 +211,6 @@
                                             <option value="uncertain_significance">VUS</option>
                                             <option value="likely_benign">Likely benign</option>
                                             <option value="benign">Benign</option>
-                                            <option value="drug_response">Drug response</option>
-                                            <option value="risk_factor">Risk factor</option>
                                             <option value="other">Other</option>
                                         </select>
                                     </th>
@@ -219,8 +223,6 @@
                                             <option value="uncertain_significance">VUS</option>
                                             <option value="likely_benign">Likely benign</option>
                                             <option value="benign">Benign</option>
-                                            <option value="drug_response">Drug response</option>
-                                            <option value="risk_factor">Risk factor</option>
                                             <option value="other">Other</option>
                                         </select>
                                     </th>
@@ -374,14 +376,12 @@
                                 'pathogenic': 9,
                                 'pathogenic/likely_pathogenic': 8,
                                 'likely_pathogenic': 7,
-                                'drug_response': 6,
-                                'risk_factor': 5,
-                                'association': 4,
-                                'uncertain_significance': 3,
-                                'vus': 3,
-                                'likely_benign': 2,
-                                'benign/likely_benign': 1,
-                                'benign': 1,
+                                'association': 6,
+                                'uncertain_significance': 5,
+                                'vus': 5,
+                                'likely_benign': 4,
+                                'benign/likely_benign': 3,
+                                'benign': 3,
                                 'not_provided': 0,
                                 'other': 0,
                             };
@@ -537,6 +537,8 @@
                                                 patient_symptoms: info.patient_symptoms || '',
                                                 gene_diseases: info.gene_diseases || '',
                                                 relevance: info.relevance || '',
+                                                population_frequency: info.population_frequency || '',
+                                                in_silico_predictions: info.in_silico_predictions || '',
                                                 family_history: info.family_history || '',
                                                 score_rationale: info.score_rationale || '',
                                                 suggested_acmg: info.suggested_acmg || [],
@@ -690,6 +692,8 @@
                             <dt>Patient symptoms</dt><dd id="ai-r-symptoms"></dd>
                             <dt>Gene-associated diseases</dt><dd id="ai-r-gene"></dd>
                             <dt>Relevance to patient</dt><dd id="ai-r-relevance"></dd>
+                            <dt>Population frequency</dt><dd id="ai-r-popfreq"></dd>
+                            <dt>In silico predictions</dt><dd id="ai-r-insilico"></dd>
                             <dt>Family history</dt><dd id="ai-r-family"></dd>
                             <dt>Assessment rationale</dt><dd id="ai-r-rationale"></dd>
                         </dl>
@@ -726,8 +730,16 @@
                         <h4 class="acmg-group-title acmg-path">Pathogenic criteria</h4>
                         <div class="acmg-criteria-grid">
                             {% for code, label in r_acmg_codes if code[0] not in ('B',) %}
-                                <label class="acmg-cb">
-                                    <input type="checkbox" value="{{ code }}"> {{ label }}
+                                <label class="acmg-cb" data-code="{{ code }}">
+                                    <span class="acmg-cb-main">
+                                        <input type="checkbox" value="{{ code }}">
+                                        <span>{{ label }}</span>
+                                    </span>
+                                    <select class="acmg-weight-select" aria-label="{{ code }} weight" disabled>
+                                        {% for weight_key, weight_label in r_acmg_weight_options[code] %}
+                                            <option value="{{ weight_key }}">{{ weight_label }}</option>
+                                        {% endfor %}
+                                    </select>
                                 </label>
                             {% endfor %}
                         </div>
@@ -736,8 +748,16 @@
                         <h4 class="acmg-group-title acmg-benign">Benign criteria</h4>
                         <div class="acmg-criteria-grid">
                             {% for code, label in r_acmg_codes if code[0] == 'B' %}
-                                <label class="acmg-cb">
-                                    <input type="checkbox" value="{{ code }}"> {{ label }}
+                                <label class="acmg-cb" data-code="{{ code }}">
+                                    <span class="acmg-cb-main">
+                                        <input type="checkbox" value="{{ code }}">
+                                        <span>{{ label }}</span>
+                                    </span>
+                                    <select class="acmg-weight-select" aria-label="{{ code }} weight" disabled>
+                                        {% for weight_key, weight_label in r_acmg_weight_options[code] %}
+                                            <option value="{{ weight_key }}">{{ weight_label }}</option>
+                                        {% endfor %}
+                                    </select>
                                 </label>
                             {% endfor %}
                         </div>
@@ -759,13 +779,180 @@
         </div>
     </div>
     <script>
+        var acmgDefaultWeights = {{ r_acmg_default_weights|tojson }};
+
+        function normalizeAcmgWeight(weight) {
+            var raw = (weight || '').toString().replace(/\s+/g, '').toLowerCase();
+            if (raw === 'verystrong') return 'VeryStrong';
+            if (raw === 'strong') return 'Strong';
+            if (raw === 'moderate') return 'Moderate';
+            if (raw === 'supporting') return 'Supporting';
+            if (raw === 'standalone') return 'StandAlone';
+            return weight || '';
+        }
+
+        function syncAcmgRowState(row) {
+            var cb = row.querySelector('input[type=checkbox]');
+            var sel = row.querySelector('select');
+            if (!cb || !sel) {
+                return;
+            }
+            sel.disabled = !cb.checked;
+            row.classList.toggle('is-selected', cb.checked);
+        }
+
+        function acmgTokenFromRow(row) {
+            var cb = row.querySelector('input[type=checkbox]');
+            if (!cb || !cb.checked) {
+                return null;
+            }
+            var sel = row.querySelector('select');
+            var weight = sel ? (sel.value || '') : '';
+            return weight ? (cb.value + '_' + weight) : cb.value;
+        }
+
+        function tokenStrength(token) {
+            var parts = token.split('_');
+            var code = parts[0];
+            var explicit = parts.length > 1 ? parts.slice(1).join('_') : '';
+            return normalizeAcmgWeight(explicit || acmgDefaultWeights[code] || 'Supporting');
+        }
+
+        function tokenSide(token) {
+            return token && token.charAt(0) === 'B' ? 'benign' : 'pathogenic';
+        }
+
+        function autoClassify(checked) {
+            if (!checked || checked.length === 0) return;
+
+            var counts = {
+                pathogenic: {
+                    VeryStrong: 0,
+                    Strong: 0,
+                    Moderate: 0,
+                    Supporting: 0,
+                },
+                benign: {
+                    StandAlone: 0,
+                    Strong: 0,
+                    Moderate: 0,
+                    Supporting: 0,
+                },
+            };
+
+            checked.forEach(function(token) {
+                var strength = tokenStrength(token);
+                var side = tokenSide(token);
+                var bucket = counts[side];
+                if (!bucket) {
+                    return;
+                }
+                if (side === 'benign' && strength === 'StandAlone') bucket.StandAlone += 1;
+                else if (strength === 'VeryStrong') bucket.VeryStrong += 1;
+                else if (strength === 'Strong') bucket.Strong += 1;
+                else if (strength === 'Moderate') bucket.Moderate += 1;
+                else bucket.Supporting += 1;
+            });
+
+            var path = counts.pathogenic;
+            var benign = counts.benign;
+            var hasPathogenicEvidence = path.VeryStrong + path.Strong + path.Moderate + path.Supporting > 0;
+            var hasBenignEvidence = benign.StandAlone + benign.Strong + benign.Moderate + benign.Supporting > 0;
+
+            function classifyPathogenic() {
+                if (
+                    (path.VeryStrong >= 1 && path.Strong >= 1) ||
+                    (path.VeryStrong >= 1 && path.Moderate >= 2) ||
+                    (path.VeryStrong >= 1 && path.Moderate >= 1 && path.Supporting >= 1) ||
+                    (path.VeryStrong >= 1 && path.Supporting >= 2) ||
+                    path.Strong >= 2 ||
+                    (path.Strong >= 1 && path.Moderate >= 3) ||
+                    (path.Strong >= 1 && path.Moderate >= 2 && path.Supporting >= 2) ||
+                    (path.Strong >= 1 && path.Moderate >= 1 && path.Supporting >= 4)
+                ) {
+                    return 'Pathogenic';
+                }
+                if (
+                    (path.VeryStrong >= 1 && path.Moderate >= 1) ||
+                    (path.Strong >= 1 && path.Moderate >= 1) ||
+                    (path.Strong >= 1 && path.Supporting >= 2) ||
+                    path.Moderate >= 3 ||
+                    (path.Moderate >= 2 && path.Supporting >= 2) ||
+                    (path.Moderate >= 1 && path.Supporting >= 4)
+                ) {
+                    return 'Likely pathogenic';
+                }
+                return 'Uncertain significance';
+            }
+
+            function classifyBenign() {
+                if (benign.StandAlone >= 1 || benign.Strong >= 2) {
+                    return 'Benign';
+                }
+                if ((benign.Strong >= 1 && benign.Supporting >= 1) || benign.Supporting >= 2) {
+                    return 'Likely benign';
+                }
+                return 'Uncertain significance';
+            }
+
+            var cls = '';
+
+            if (hasPathogenicEvidence && hasBenignEvidence) {
+                cls = 'Uncertain significance';
+            }
+            else if (hasPathogenicEvidence) {
+                cls = classifyPathogenic();
+            }
+            else if (hasBenignEvidence) {
+                cls = classifyBenign();
+            }
+            else {
+                cls = 'Uncertain significance';
+            }
+
+            var sel = document.querySelector('#assess-form [name=classification]');
+            if (sel && cls) {
+                sel.value = cls;
+                sel.style.outline = '2px solid #6366f1';
+                setTimeout(function(){ sel.style.outline = ''; }, 1200);
+            }
+
+            var evMap = {
+                'Pathogenic':             'Strong',
+                'Likely pathogenic':      'Moderate',
+                'Benign':                 'Strong',
+                'Likely benign':          'Moderate',
+                'Uncertain significance': 'Supporting',
+            };
+            var evSel = document.querySelector('#assess-form [name=evidence_level]');
+            if (evSel && evMap[cls]) {
+                evSel.value = evMap[cls];
+            }
+        }
+
+        function updateAcmgPreview() {
+            var checked = Array.from(document.querySelectorAll('#acmg-modal .acmg-cb'))
+                .map(acmgTokenFromRow)
+                .filter(Boolean);
+            document.getElementById('acmg-hidden-modal').value = checked.join(', ');
+            document.getElementById('acmg-preview').textContent =
+                checked.length ? checked.join(', ') : '\u2014 no ACMG criteria selected \u2014';
+            autoClassify(checked);
+        }
+
         function openAssessModal(actionUrl, trEl) {
             document.getElementById('assess-form').action = actionUrl;
             document.getElementById('assess-form').reset();
-            document.querySelectorAll('#acmg-modal input[type=checkbox]').forEach(function(cb){ cb.checked = false; });
+            document.querySelectorAll('#acmg-modal .acmg-cb').forEach(function(row){
+                var cb = row.querySelector('input[type=checkbox]');
+                var sel = row.querySelector('select');
+                if (cb) cb.checked = false;
+                if (sel) sel.disabled = true;
+                row.classList.remove('is-selected');
+            });
             document.getElementById('acmg-hidden-modal').value = '';
             document.getElementById('acmg-preview').textContent = '\u2014 no ACMG criteria selected \u2014';
-            // AI suggestion
+
             var panel = document.getElementById('ai-suggestion-panel');
             var aiScore = trEl ? trEl.dataset.aiScore : '';
             var aiReason = trEl ? trEl.dataset.aiReason : '';
@@ -775,9 +962,11 @@
                     document.getElementById('ai-r-symptoms').textContent  = r.patient_symptoms  || '—';
                     document.getElementById('ai-r-gene').textContent      = r.gene_diseases      || '—';
                     document.getElementById('ai-r-relevance').textContent = r.relevance          || '—';
+                    document.getElementById('ai-r-popfreq').textContent   = r.population_frequency || '—';
+                    document.getElementById('ai-r-insilico').textContent = r.in_silico_predictions || '—';
                     document.getElementById('ai-r-family').textContent    = r.family_history     || '—';
-                    document.getElementById('ai-r-rationale').textContent = r.score_rationale   || '—';
-                    // Suggested ACMG criteria
+                    document.getElementById('ai-r-rationale').textContent = r.score_rationale    || '—';
+
                     var suggestPanel = document.getElementById('ai-acmg-suggest');
                     var badges = document.getElementById('ai-acmg-badges');
                     var suggested = r.suggested_acmg || [];
@@ -793,7 +982,7 @@
                         suggestPanel.dataset.codes = '[]';
                     }
                     suggestPanel.style.display = 'flex';
-                    // Missing annotation data
+
                     var missingPanel = document.getElementById('ai-missing-data');
                     var missingList = document.getElementById('ai-missing-list');
                     var missing = r.missing_data || [];
@@ -806,113 +995,59 @@
                         missingPanel.style.display = 'none';
                     }
                     panel.style.display = 'block';
-                } catch(e) { panel.style.display = 'none'; }
+                } catch(e) {
+                    panel.style.display = 'none';
+                }
             } else {
                 panel.style.display = 'none';
             }
+
             document.getElementById('acmg-modal').style.display = 'flex';
         }
+
         function closeAssessModal() {
             document.getElementById('acmg-modal').style.display = 'none';
         }
+
         function applyAiAcmg() {
             var suggestPanel = document.getElementById('ai-acmg-suggest');
             var codes = JSON.parse(suggestPanel.dataset.codes || '[]');
-            // Uncheck all first, then check suggested
-            document.querySelectorAll('#acmg-modal input[type=checkbox]').forEach(function(cb){
-                cb.checked = codes.indexOf(cb.value) !== -1;
+            document.querySelectorAll('#acmg-modal .acmg-cb').forEach(function(row){
+                var cb = row.querySelector('input[type=checkbox]');
+                var sel = row.querySelector('select');
+                if (!cb || !sel) {
+                    return;
+                }
+                var match = codes.find(function(code) {
+                    return code === cb.value || code.indexOf(cb.value + '_') === 0;
+                });
+                if (match) {
+                    cb.checked = true;
+                    var suffix = match.indexOf('_') !== -1 ? match.split('_').slice(1).join('_') : '';
+                    if (suffix) {
+                        sel.value = suffix;
+                    }
+                    sel.disabled = false;
+                    row.classList.add('is-selected');
+                }
             });
-            // Trigger preview update
-            var event = new Event('change', {bubbles: true});
-            var firstCb = document.querySelector('#acmg-modal input[type=checkbox]');
-            if (firstCb) firstCb.dispatchEvent(event);
+            updateAcmgPreview();
         }
-        (function () {
-            function updateAcmgPreview() {
-                var checked = Array.from(
-                    document.querySelectorAll('#acmg-modal input[type=checkbox]:checked')
-                ).map(function(cb){ return cb.value; });
-                document.getElementById('acmg-hidden-modal').value = checked.join(', ');
-                document.getElementById('acmg-preview').textContent =
-                    checked.length ? checked.join(', ') : '— no ACMG criteria selected —';
-                autoClassify(checked);
+
+        document.querySelectorAll('#acmg-modal .acmg-cb').forEach(function(row){
+            var cb = row.querySelector('input[type=checkbox]');
+            var sel = row.querySelector('select');
+            if (cb) {
+                cb.addEventListener('change', function(){
+                    syncAcmgRowState(row);
+                    updateAcmgPreview();
+                });
             }
-
-            function autoClassify(checked) {
-                if (!checked || checked.length === 0) return;
-
-                var pvs = checked.filter(function(c){ return c === 'PVS1'; }).length;
-                var ps  = checked.filter(function(c){ return /^PS/.test(c); }).length;
-                var pm  = checked.filter(function(c){ return /^PM/.test(c); }).length;
-                var pp  = checked.filter(function(c){ return /^PP/.test(c); }).length;
-                var ba  = checked.filter(function(c){ return c === 'BA1'; }).length;
-                var bs  = checked.filter(function(c){ return /^BS/.test(c); }).length;
-                var bp  = checked.filter(function(c){ return /^BP/.test(c); }).length;
-
-                var cls = '';
-
-                // ── Pathogenic ──
-                if (
-                    (pvs && ps >= 1) ||
-                    (pvs && pm >= 2) ||
-                    (pvs && pm >= 1 && pp >= 1) ||
-                    (pvs && pp >= 2) ||
-                    ps >= 2 ||
-                    (ps >= 1 && pm >= 3) ||
-                    (ps >= 1 && pm >= 2 && pp >= 2) ||
-                    (ps >= 1 && pm >= 1 && pp >= 4)
-                ) {
-                    cls = 'Pathogenic';
-                }
-                // ── Likely pathogenic ──
-                else if (
-                    (pvs && pm >= 1) ||
-                    (ps >= 1 && pm >= 1) ||   // 1 PS + 1-2 PM (≥3 PM case already Pathogenic above)
-                    (ps >= 1 && pp >= 2) ||
-                    pm >= 3 ||
-                    (pm >= 2 && pp >= 2) ||
-                    (pm >= 1 && pp >= 4)
-                ) {
-                    cls = 'Likely pathogenic';
-                }
-                // ── Benign ──
-                else if (ba >= 1 || bs >= 2) {
-                    cls = 'Benign';
-                }
-                // ── Likely benign ──
-                else if ((bs >= 1 && bp >= 1) || bp >= 2) {
-                    cls = 'Likely benign';
-                }
-                // ── VUS (criteria present but insufficient for above) ──
-                else {
-                    cls = 'Uncertain significance';
-                }
-
-                var sel = document.querySelector('#assess-form [name=classification]');
-                if (sel && cls) {
-                    sel.value = cls;
-                    sel.style.outline = '2px solid #6366f1';
-                    setTimeout(function(){ sel.style.outline = ''; }, 1200);
-                }
-
-                // Auto-set evidence level
-                var evMap = {
-                    'Pathogenic':             'strong',
-                    'Likely pathogenic':      'moderate',
-                    'Benign':                 'strong',
-                    'Likely benign':          'moderate',
-                    'Uncertain significance': 'supporting',
-                };
-                var evSel = document.querySelector('#assess-form [name=evidence_level]');
-                if (evSel && evMap[cls]) {
-                    evSel.value = evMap[cls];
-                }
+            if (sel) {
+                sel.addEventListener('change', updateAcmgPreview);
             }
-
-            document.querySelectorAll('#acmg-modal input[type=checkbox]').forEach(function(cb){
-                cb.addEventListener('change', updateAcmgPreview);
-            });
-        })();
+            syncAcmgRowState(row);
+        });
     </script>
 </body>
 </html>

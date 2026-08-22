@@ -6,6 +6,28 @@ ExpertBoard is an experimental, standalone prototype for AI-assisted complex cas
 
 ---
 
+## Change Log
+
+### 09/08/2026
+
+Changes were made to criteria assignment so that it is more aligned to current ACMG/AMP recommendations (latest update: July 2025), [see here](https://www.clinicalgenome.org/tools/clingen-variant-classification-guidance/).
+
+- Added modifiable ACMG scores as dropdown options - this is based on ClinGen's [*Guidance on how to rename criteria codes when strength of evidence is modified*](https://www.clinicalgenome.org/docs/clingen-sequence-variant-interpretation-working-group-recommendations-for-acmg-amp-guideline-criteria-code-modifications/).
+
+  - By default, PM2 is now set at a supporting level of evidence as its weight was downgraded - see [*ClinGen PM2 Recommendation for Absence Rarity*](https://www.clinicalgenome.org/docs/pm2-recommendation-for-absence-rarity/).
+
+![image](expertboard_acmg_score_weights.png)
+
+- Removed `drug response` and `risk factors` labels from classification groups to keep the scope aligned with ACMG nomenclature.
+
+- Added additional evidence (population frequency and in silico predictions) to the LLM review panel in `patients.py`. This is an illustrative example to allow the human reviewer to see the AI's decision-making at greater detail.
+
+- Added a second dummy VCF with additional simulated annotation metadata, including *in silico* prediction scores and population frequencies. This VCF can be found in `/sample-data`.
+
+- Adjusted LLM prompt to categorize each ACMG criteria for better context and understanding - this is still limited by the model of choice.
+
+---
+
 ## Key Features (MedHackathonAsia 2026-07-29/30)
 
 ### Patient & Variant Management
@@ -24,8 +46,18 @@ ExpertBoard is an experimental, standalone prototype for AI-assisted complex cas
 - Cross-patient review tracking ("Other pt. reviews" column, read-only)
 - Composite sort: Clin. sig. > Other pt. reviews > Assessed
 
-### AI-Assisted Analysis (Ollama)
-- Configure Ollama endpoint (URL, model, API key) via **Admin → Ollama settings**
+### AI-Assisted Analysis (Ollama / cloud-compatible)
+- Configure the endpoint (URL, model, API key) via **Admin → LLM settings**
+- Base URL should be a host/base path, not a full chat endpoint:
+  - Local Ollama: `http://localhost:11434`
+  - Ollama Cloud: `https://ollama.com/api`
+  - OpenAI-compatible gateway: `https://your-host/v1`
+  - If `/api/chat`, `/api`, or `/chat/completions` is pasted by mistake, ExpertBoard normalizes it automatically.
+- Model should match the provider's published model name (example: `llama3.2`)
+- The **"✦ Analyze with AI"** button appears only when:
+  - LLM settings are saved in Admin
+  - The patient has at least one imported variant
+  - Clinical text is entered and saved for that patient
 - **"✦ Analyze with AI"** — sends clinical text + VCF INFO fields to LLM
 - Per-variant structured reasoning displayed in the assessment modal:
   - Patient symptoms summary
@@ -51,7 +83,7 @@ ExpertBoard is an experimental, standalone prototype for AI-assisted complex cas
 | Backend | Python 3.12, Flask 3.0.3 |
 | ORM | SQLAlchemy 2.0 |
 | Database | MySQL 8.4 (Docker) |
-| LLM | Ollama (OpenAI-compatible API) |
+| LLM | Ollama local/cloud API or OpenAI-compatible API |
 | Frontend | Vanilla HTML/CSS/JS |
 | Container | Docker Compose |
 

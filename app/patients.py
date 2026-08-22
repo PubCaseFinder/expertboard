@@ -214,6 +214,8 @@ def save_llm_scores(patient_id, result):
             "patient_symptoms": info.get("patient_symptoms", ""),
             "gene_diseases": info.get("gene_diseases", ""),
             "relevance": info.get("relevance", ""),
+            "population_frequency": info.get("population_frequency", ""),
+            "in_silico_predictions": info.get("in_silico_predictions", ""),
             "family_history": info.get("family_history", ""),
             "score_rationale": info.get("score_rationale", ""),
             "suggested_acmg": info.get("suggested_acmg", []),

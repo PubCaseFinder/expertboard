@@ -23,8 +23,6 @@ _PATHOGENICITY_RANK = {
     "pathogenic": 7,
     "likely pathogenic": 6,
     "pathogenic/likely pathogenic": 6,
-    "drug response": 5,
-    "risk factor": 4,
     "uncertain significance": 3,
     "likely benign": 2,
     "benign": 1,
@@ -40,8 +38,6 @@ _INTERP_CSS = {
     "likely benign":                "togovar-lb",
     "benign":                       "togovar-b",
     "benign/likely benign":         "togovar-b",
-    "drug response":                "togovar-dr",
-    "risk factor":                  "togovar-rf",
 }
 
 
