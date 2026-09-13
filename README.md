@@ -1,5 +1,7 @@
 # ExpertBoard
 
+**This build is a branch of the [llm-integration](https://github.com/PubCaseFinder/expertboard/tree/feature/llm-integration) feature from ExpertBoard.**
+
 A web application for expert panel review of undiagnosed disease cases, built during the **MedHack 2026-07-29** hackathon.
 
 ExpertBoard is an experimental, standalone prototype for AI-assisted complex case review. It explores reusable expert boards organized by gene, disease, or clinical domain, with ACMG-based variant assessment and Ollama LLM integration.
@@ -20,11 +22,13 @@ Changes were made to criteria assignment so that it is more aligned to current A
 
 - Removed `drug response` and `risk factors` labels from classification groups to keep the scope aligned with ACMG nomenclature.
 
-- Added additional evidence (population frequency and in silico predictions) to the LLM review panel in `patients.py`. This is an illustrative example to allow the human reviewer to see the AI's decision-making at greater detail.
+- Added additional evidence (e.g., population frequency and in silico predictions) to the LLM review panel in `patients.py`. This is an illustrative example to allow the user to review the AI's decision-making for automatable ACMG criteria.
 
-- Added a second dummy VCF with additional simulated annotation metadata, including *in silico* prediction scores and population frequencies. This VCF can be found in `/sample-data`.
+- Added a second dummy VCF with additional simulated annotation metadata which includes *in silico* prediction scores and population frequencies. This VCF can be found in `/sample-data`.
 
-- Adjusted LLM prompt to categorize each ACMG criteria for better context and understanding - this is still limited by the model of choice.
+- Adjusted the LLM prompt in `llm.py` to *try* and categorize each ACMG criteria for better context and understanding (performance will still limited by the model of choice). This is somewhat achievable for PP3 and PM2 using llama 3.2 @ 32k context size.
+
+![image](ai_reasoning_updated.png)
 
 ---
 
