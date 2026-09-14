@@ -115,7 +115,7 @@ def import_variants_for_patient(session, patient_id, records):
 
     Returns the number of variants imported.
     """
-    session.query(Variant).filter(Variant.patient_id == patient_id).delete()
+    session.query(Variant).filter(Variant.patient_id == patient_id).delete(synchronize_session=False)
 
     count = 0
     for record in records:

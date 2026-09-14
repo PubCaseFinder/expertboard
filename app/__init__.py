@@ -9,6 +9,7 @@ from flask import url_for
 from werkzeug.exceptions import RequestEntityTooLarge
 
 from app.auth import register_roles
+from app.db import Session
 from app.db import init_db
 from app.patients import ensure_schema
 from app.admin import ensure_schema as ensure_admin_schema
@@ -26,6 +27,10 @@ def create_app():
     init_db()
     ensure_schema()
     ensure_admin_schema()
+
+    @app.teardown_appcontext
+    def _remove_session(_exc):
+        Session.remove()
 
     register_roles(app)
     app.register_blueprint(bp)
