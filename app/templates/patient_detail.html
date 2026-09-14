@@ -214,6 +214,7 @@
                                             <option value="other">Other</option>
                                         </select>
                                     </th>
+                                    <th class="ai-col-header" id="ai-col-header" {% if not r_variants|selectattr('llm_score')|list %}style="display:none"{% endif %}>AI</th>
                                     <th>
                                         Assessed
                                         <select class="th-filter" id="vf-assessed">
@@ -244,7 +245,6 @@
                                     </th>
                                     {% if r_linked_variants %}<th>Shared</th>{% endif %}
                                     <th>JP DB</th>
-                                    <th class="ai-col-header" id="ai-col-header" {% if not r_variants|selectattr('llm_score')|list %}style="display:none"{% endif %}>AI</th>
                                 </tr>
                             </thead>
                             <tbody id="variant-tbody">
@@ -289,6 +289,12 @@
                                                 </span>
                                             {% endfor %}
                                         </td>
+                                        <td class="ai-cell" id="ai-{{ v.id }}"
+                                            {% if not v.llm_score and v.llm_score != 0 %}style="display:none"{% endif %}>
+                                            {% if v.llm_score is not none %}
+                                                <span class="ai-badge" title="AI analysis available">✦</span>
+                                            {% endif %}
+                                        </td>
                                         {# ── This patient's assessments ── #}
                                         <td class="assessment-cell">
                                             {% for entry in va_list %}
@@ -331,12 +337,6 @@
                                                     data-cell="tv-{{ v.id }}"
                                                     type="button"
                                                     onclick="fetchTogoVar(this)">JP DB</button>
-                                        </td>
-                                        <td class="ai-cell" id="ai-{{ v.id }}"
-                                            {% if not v.llm_score and v.llm_score != 0 %}style="display:none"{% endif %}>
-                                            {% if v.llm_score is not none %}
-                                                <span class="ai-badge" title="AI analysis available">✦</span>
-                                            {% endif %}
                                         </td>
                                     </tr>
                                 {% endfor %}
