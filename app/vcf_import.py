@@ -8,7 +8,13 @@ standard 8 fixed columns (CHROM, POS, ID, REF, ALT, QUAL, FILTER, INFO) plus an
 optional FORMAT column and a single sample column.
 """
 
+import re
+from urllib.parse import unquote
+
 from app.models import Variant
+
+
+CSQ_FORMAT_RE = re.compile(r"Format:\s*([^\"]+)")
 
 
 def _classify_variant_type(ref, alt):
@@ -51,6 +57,33 @@ def _parse_sample(format_field, sample_field):
     return dict(zip(keys, values))
 
 
+def _parse_csq_fields(header_line):
+    """Return the ordered field names from a VEP CSQ INFO header."""
+    if "ID=CSQ" not in header_line:
+        return None
+    match = CSQ_FORMAT_RE.search(header_line)
+    if not match:
+        return None
+    return [field.strip().rstrip(">") for field in match.group(1).split("|")]
+
+
+def _mane_annotation(info, csq_fields):
+    """Select the MANE transcript from VEP CSQ annotations."""
+    if not csq_fields or not info.get("CSQ"):
+        return {}
+
+    annotations = []
+    for value in str(info["CSQ"]).split(","):
+        fields = value.split("|")
+        annotations.append(dict(zip(csq_fields, fields)))
+
+    for mane_key in ("MANE_SELECT", "MANE_PLUS_CLINICAL"):
+        for annotation in annotations:
+            if annotation.get(mane_key):
+                return annotation
+    return {}
+
+
 def _to_int(value):
     try:
         return int(value)
@@ -65,9 +98,15 @@ def parse_vcf_records(lines):
     produced from an uploaded file), so the same parser works for on-disk files
     and browser uploads.
     """
+    csq_fields = None
     for raw_line in lines:
         line = raw_line.rstrip("\n")
-        if not line or line.startswith("##"):
+        if not line:
+            continue
+        if line.startswith("##"):
+            parsed_fields = _parse_csq_fields(line)
+            if parsed_fields:
+                csq_fields = parsed_fields
             continue
         if line.startswith("#"):
             continue
@@ -82,6 +121,7 @@ def parse_vcf_records(lines):
 
         info = _parse_info(info_field)
         sample = _parse_sample(format_field, sample_field)
+        mane = _mane_annotation(info, csq_fields)
 
         yield {
             "chrom": chrom,
@@ -89,9 +129,9 @@ def parse_vcf_records(lines):
             "variant_ext_id": None if ext_id == "." else ext_id,
             "ref": ref,
             "alt": alt,
-            "gene": info.get("GENE"),
-            "hgvs_c": info.get("HGVSC"),
-            "hgvs_p": info.get("HGVSP"),
+            "gene": mane.get("SYMBOL") or info.get("GENE"),
+            "hgvs_c": unquote(mane.get("HGVSc") or info.get("HGVSC") or "") or None,
+            "hgvs_p": unquote(mane.get("HGVSp") or info.get("HGVSP") or "") or None,
             "variant_type": _classify_variant_type(ref, alt),
             "clin_sig": info.get("CLNSIG"),
             "note": info.get("NOTE"),

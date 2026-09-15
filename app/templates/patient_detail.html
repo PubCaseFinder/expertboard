@@ -194,14 +194,17 @@
                                                 onclick="clearVfFilters()" title="Clear all filters">✕</button>
                                         <input class="th-filter" id="vf-gene" type="search" placeholder="filter…">
                                     </th>
-                                    <th>HGVS c.</th>
-                                    <th>HGVS p.</th>
+                                    <th>MANE HGVS c.</th>
+                                    <th>MANE HGVS p.</th>
+                                    <th>Chr</th>
+                                    <th>POS</th>
+                                    <th>rsID</th>
+                                    <th>REF</th>
+                                    <th>ALT</th>
                                     <th>
                                         Type
                                         <input class="th-filter" id="vf-type" type="search" placeholder="filter…">
                                     </th>
-                                    <th>Locus</th>
-                                    <th>REF/ALT</th>
                                     <th>
                                         <abbr title="Same variant assessed in other patients registered in this system">Other pt. reviews</abbr>
                                         <select class="th-filter" id="vf-past">
@@ -267,9 +270,12 @@
                                         <td><strong>{{ v.gene or "—" }}</strong></td>
                                         <td>{{ v.hgvs_c or "—" }}</td>
                                         <td>{{ v.hgvs_p or "—" }}</td>
+                                        <td>{{ v.chrom }}</td>
+                                        <td>{{ v.pos }}</td>
+                                        <td>{{ v.variant_ext_id or "—" }}</td>
+                                        <td>{{ v.ref }}</td>
+                                        <td>{{ v.alt }}</td>
                                         <td>{{ v.variant_type or "—" }}</td>
-                                        <td>{{ v.chrom }}:{{ v.pos }}</td>
-                                        <td>{{ v.ref }}/{{ v.alt }}</td>
                                         {# ── Same-variant assessments from other patients ── #}
                                         <td class="assessment-cell">
                                             {% for entry in r_cross_assessments.get(v.id, []) %}
