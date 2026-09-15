@@ -50,7 +50,6 @@ ACMG_CODES = [
     ("PP2",  "PP2 (Supporting: Missense in constrained gene)"),
     ("PP3",  "PP3 (Supporting: Multiple computational evidence)"),
     ("PP4",  "PP4 (Supporting: Specific phenotype fit)"),
-    ("PP5",  "PP5 (Supporting: Reputable source)"),
     # Benign criteria
     ("BA1",  "BA1 (Stand-alone: High allele frequency >5%)"),
     ("BS1",  "BS1 (Strong: Allele frequency > expected)"),
@@ -62,7 +61,6 @@ ACMG_CODES = [
     ("BP3",  "BP3 (Supporting: In-frame indel in repeat)"),
     ("BP4",  "BP4 (Supporting: Computational prediction benign)"),
     ("BP5",  "BP5 (Supporting: Alternate cause found)"),
-    ("BP6",  "BP6 (Supporting: Reputable source benign)"),
     ("BP7",  "BP7 (Supporting: Silent/synonymous no splice effect)"),
 ]
 
@@ -82,7 +80,6 @@ ACMG_DEFAULT_WEIGHTS = {
     "PP2": "Supporting",
     "PP3": "Supporting",
     "PP4": "Supporting",
-    "PP5": "Supporting",
     "BA1": "StandAlone",
     "BS1": "Strong",
     "BS2": "Strong",
@@ -93,7 +90,6 @@ ACMG_DEFAULT_WEIGHTS = {
     "BP3": "Supporting",
     "BP4": "Supporting",
     "BP5": "Supporting",
-    "BP6": "Supporting",
     "BP7": "Supporting",
 }
 
@@ -159,7 +155,6 @@ ACMG_WEIGHT_OPTIONS = {
     "PP2": [("", "Supporting")],
     "PP3": [("", "Supporting"), ("Moderate","Moderate"), ("Strong", "Strong")],
     "PP4": [("", "Supporting"), ("Moderate","Moderate"), ("Strong", "Strong")],
-    "PP5": [("", "Supporting")],
     "BA1": [("", "StandAlone")],
     "BS1": [
         ("", "Strong"),
@@ -182,7 +177,6 @@ ACMG_WEIGHT_OPTIONS = {
     "BP3": [("", "Supporting")],
     "BP4": [("", "Supporting"), ("Moderate","Moderate"), ("Strong", "Strong")],
     "BP5": [("", "Supporting")],
-    "BP6": [("", "Supporting")],
     "BP7": [("", "Supporting"), ("Strong", "Strong")],
 }
 

@@ -647,12 +647,14 @@
                         {% endfor %}
                     </div>
 
+                    <script type="application/json" id="compare-shared-vkeys">{{ r_shared_vkeys | tojson }}</script>
+                    <script type="application/json" id="compare-proband-vkeys">{{ r_proband_vkeys | tojson }}</script>
                     <script>
                         (function () {
                             // Keys shared between proband and ≥1 linked patient
-                            var sharedKeys  = new Set({{ r_shared_vkeys  | tojson }});
+                            var sharedKeys = new Set(JSON.parse(document.getElementById('compare-shared-vkeys').textContent));
                             // All proband keys (for highlighting matching rows in linked columns)
-                            var probandKeys = new Set({{ r_proband_vkeys | tojson }});
+                            var probandKeys = new Set(JSON.parse(document.getElementById('compare-proband-vkeys').textContent));
 
                             // Proband column: highlight rows that appear in a linked patient
                             document.querySelectorAll('.compare-table[data-col="proband"] tbody tr').forEach(function (row) {
@@ -778,8 +780,9 @@
             </form>
         </div>
     </div>
+    <script type="application/json" id="acmg-default-weights">{{ r_acmg_default_weights|tojson|safe }}</script>
     <script>
-        var acmgDefaultWeights = {{ r_acmg_default_weights|tojson }};
+        var acmgDefaultWeights = JSON.parse(document.getElementById('acmg-default-weights').textContent);
 
         function normalizeAcmgWeight(weight) {
             var raw = (weight || '').toString().replace(/\s+/g, '').toLowerCase();

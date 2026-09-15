@@ -26,13 +26,17 @@ def _normalize_base_url(raw_url):
     """
     base_url = (raw_url or "").strip().rstrip("/")
     if base_url.endswith("/api/chat"):
-        return base_url[: -len("/api/chat")]
-    if base_url.endswith("/api"):
-        return base_url
-    if base_url.endswith("/v1/chat/completions"):
-        return base_url[: -len("/chat/completions")]
-    if base_url.endswith("/chat/completions") and "/v1" in base_url:
-        return base_url[: -len("/chat/completions")]
+        base_url = base_url[: -len("/api/chat")]
+    elif base_url.endswith("/v1/chat/completions"):
+        base_url = base_url[: -len("/chat/completions")]
+    elif base_url.endswith("/chat/completions") and "/v1" in base_url:
+        base_url = base_url[: -len("/chat/completions")]
+
+    parsed = urlparse(base_url)
+    if parsed.netloc.lower().endswith("ollama.com"):
+        # Ollama Cloud only serves HTTPS on the /api path; plain http:// hangs until timeout.
+        path = parsed.path if parsed.path not in ("", "/") else "/api"
+        base_url = f"https://{parsed.netloc}{path}".rstrip("/")
     return base_url
 
 
@@ -74,7 +78,18 @@ def _chat(messages, base_url, model, api_key):
         try:
             resp = requests.post(url, headers=headers, json=payload, timeout=_TIMEOUT)
             resp.raise_for_status()
-            return resp.json()["choices"][0]["message"]["content"]
+            try:
+                return resp.json()["choices"][0]["message"]["content"]
+            except (json.JSONDecodeError, KeyError, IndexError, TypeError) as exc:
+                log.error(
+                    f"Failed to parse OpenAI-compatible response from {url}. "
+                    f"Status: {resp.status_code}. Response: {resp.text[:500]}"
+                )
+                raise RuntimeError(
+                    f"Invalid response from LLM server at {url}: {type(exc).__name__}. "
+                    f"Server may not be running or endpoint may be incorrect. "
+                    f"Response started with: {resp.text[:100]}"
+                ) from exc
         except requests.HTTPError as exc:
             status = getattr(exc.response, "status_code", None)
             if status == 403 and _is_ollama_cloud(base_url):
@@ -82,6 +97,9 @@ def _chat(messages, base_url, model, api_key):
                     "Ollama Cloud returned 403 Forbidden. Check that the API key is valid, "
                     "the model name is available to your account, and the base URL is https://ollama.com/api."
                 ) from exc
+            log.error(
+                f"HTTP error from {url}: {status}. Response: {exc.response.text[:500]}"
+            )
             raise
     else:
         if base_url.endswith("/api"):
@@ -92,7 +110,18 @@ def _chat(messages, base_url, model, api_key):
         try:
             resp = requests.post(url, headers=headers, json=payload, timeout=_TIMEOUT)
             resp.raise_for_status()
-            return resp.json()["message"]["content"]
+            try:
+                return resp.json()["message"]["content"]
+            except (json.JSONDecodeError, KeyError, TypeError) as exc:
+                log.error(
+                    f"Failed to parse Ollama response from {url}. "
+                    f"Status: {resp.status_code}. Response: {resp.text[:500]}"
+                )
+                raise RuntimeError(
+                    f"Invalid response from LLM server at {url}: {type(exc).__name__}. "
+                    f"Server may not be running or endpoint may be incorrect. "
+                    f"Response started with: {resp.text[:100]}"
+                ) from exc
         except requests.HTTPError as exc:
             status = getattr(exc.response, "status_code", None)
             if status == 403 and _is_ollama_cloud(base_url):
@@ -100,6 +129,9 @@ def _chat(messages, base_url, model, api_key):
                     "Ollama Cloud returned 403 Forbidden. Check that the API key is valid, "
                     "the model name is available to your account, and the base URL is https://ollama.com/api."
                 ) from exc
+            log.error(
+                f"HTTP error from {url}: {status}. Response: {exc.response.text[:500]}"
+            )
             raise
 
 
@@ -173,7 +205,7 @@ Common examples:
 - PM3 / BP2:
   Phase information (cis/trans) and genotype of the second allele.
 
-- PS1 / PP5 / BP6:
+- PS1:
   Expert-reviewed clinical classification (e.g. ClinVar with review status or ClinGen Variant Curation Expert Panel).
 
 == Output format ==
