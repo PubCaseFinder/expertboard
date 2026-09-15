@@ -12,6 +12,7 @@ import re
 from urllib.parse import unquote
 
 from app.models import Variant
+from app.models import VariantAssessment
 
 
 CSQ_FORMAT_RE = re.compile(r"Format:\s*([^\"]+)")
@@ -59,7 +60,7 @@ def _parse_sample(format_field, sample_field):
 
 def _parse_csq_fields(header_line):
     """Return the ordered field names from a VEP CSQ INFO header."""
-    if "ID=CSQ" not in header_line:
+    if "ID=CSQ" not in header_line and "ID=VEP_CSQ" not in header_line:
         return None
     match = CSQ_FORMAT_RE.search(header_line)
     if not match:
@@ -69,11 +70,12 @@ def _parse_csq_fields(header_line):
 
 def _mane_annotation(info, csq_fields):
     """Select the MANE transcript from VEP CSQ annotations."""
-    if not csq_fields or not info.get("CSQ"):
+    csq_value = info.get("CSQ") or info.get("VEP_CSQ")
+    if not csq_fields or not csq_value:
         return {}
 
     annotations = []
-    for value in str(info["CSQ"]).split(","):
+    for value in str(csq_value).split(","):
         fields = value.split("|")
         annotations.append(dict(zip(csq_fields, fields)))
 
@@ -126,12 +128,24 @@ def parse_vcf_records(lines):
         yield {
             "chrom": chrom,
             "pos": _to_int(pos) or 0,
-            "variant_ext_id": None if ext_id == "." else ext_id,
+            "variant_ext_id": info.get("RSID") or (None if ext_id == "." else ext_id),
             "ref": ref,
             "alt": alt,
             "gene": mane.get("SYMBOL") or info.get("GENE"),
-            "hgvs_c": unquote(mane.get("HGVSc") or info.get("HGVSC") or "") or None,
-            "hgvs_p": unquote(mane.get("HGVSp") or info.get("HGVSP") or "") or None,
+            "hgvs_c": unquote(
+                info.get("MANE_HGVSC")
+                or mane.get("HGVSc")
+                or info.get("VEP_HGVSC")
+                or info.get("HGVSC")
+                or ""
+            ) or None,
+            "hgvs_p": unquote(
+                info.get("MANE_HGVSP")
+                or mane.get("HGVSp")
+                or info.get("VEP_HGVSP")
+                or info.get("HGVSP")
+                or ""
+            ) or None,
             "variant_type": _classify_variant_type(ref, alt),
             "clin_sig": info.get("CLNSIG"),
             "note": info.get("NOTE"),
@@ -153,14 +167,39 @@ def parse_vcf(path):
 def import_variants_for_patient(session, patient_id, records):
     """Replace the variant rows for ``patient_id`` with ``records``.
 
+    Existing rows with the same chromosome, position, REF, and ALT are updated
+    in place so their assessments remain attached.
+
     Returns the number of variants imported.
     """
-    session.query(Variant).filter(Variant.patient_id == patient_id).delete(synchronize_session=False)
+    existing = session.query(Variant).filter(Variant.patient_id == patient_id).all()
+    existing_by_key = {
+        (variant.chrom, variant.pos, variant.ref, variant.alt): variant
+        for variant in existing
+    }
+    retained_ids = set()
 
     count = 0
     for record in records:
-        session.add(Variant(patient_id=patient_id, **record))
+        key = (record["chrom"], record["pos"], record["ref"], record["alt"])
+        variant = existing_by_key.get(key)
+        if variant is None:
+            variant = Variant(patient_id=patient_id)
+            session.add(variant)
+        else:
+            retained_ids.add(variant.id)
+        for field, value in record.items():
+            setattr(variant, field, value)
         count += 1
+
+    stale_ids = [variant.id for variant in existing if variant.id not in retained_ids]
+    if stale_ids:
+        session.query(VariantAssessment).filter(
+            VariantAssessment.variant_id.in_(stale_ids)
+        ).delete(synchronize_session=False)
+        session.query(Variant).filter(Variant.id.in_(stale_ids)).delete(
+            synchronize_session=False
+        )
 
     session.flush()
     return count
