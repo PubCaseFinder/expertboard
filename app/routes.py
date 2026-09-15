@@ -178,7 +178,7 @@ def patient_variant_assessment_add(patient_id, variant_id):
             if token:
                 acmg_tokens.append(token)
     acmg_str = ", ".join(dict.fromkeys(acmg_tokens)) if acmg_tokens else None
-    _a, error = assessments_module.add_assessment(
+    assessment, error = assessments_module.add_assessment(
         variant_id,
         None,
         request.form.get("classification"),
@@ -186,9 +186,22 @@ def patient_variant_assessment_add(patient_id, variant_id):
         request.form.get("notes"),
         auth.current_user_display(),   # auto-stamped from session
         acmg_codes=acmg_str,
+        reviewer_override=request.form.get("reviewer_override_lb_threshold") == "1",
     )
+    if request.accept_mimetypes.best == "application/json":
+        if error:
+            return jsonify({"error": error}), 400
+        return jsonify(assessments_module.assessment_payload(assessment)), 201
     flash(error or "Assessment saved.", "error" if error else "success")
     return redirect(url_for("expertboard.patient_detail", patient_id=patient_id))
+
+
+@bp.route("/api/assessments/<int:assessment_id>")
+def api_assessment(assessment_id):
+    assessment = assessments_module.get_assessment(assessment_id)
+    if assessment is None:
+        return jsonify({"error": "Assessment not found."}), 404
+    return jsonify(assessments_module.assessment_payload(assessment))
 
 
 @bp.route("/patients/<int:patient_id>/variants/<int:variant_id>/assessments/<int:assessment_id>/remove", methods=["POST"])

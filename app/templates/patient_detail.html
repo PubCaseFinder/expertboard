@@ -260,8 +260,8 @@
                                         data-type="{{ (v.variant_type or '')|lower }}"
                                         data-clnsig="{{ (v.clin_sig or '')|lower|replace(' ','_') }}"
                                         data-note="{{ (v.note or '')|lower }}"
-                                        data-past="{% for e in r_cross_assessments.get(v.id, []) %}{{ e.assessment.classification|lower|replace(' ','_') }}{% if not loop.last %}|{% endif %}{% endfor %}"
-                                        data-assessed="{% for e in va_list %}{{ e.assessment.classification|lower|replace(' ','_') }}{% if not loop.last %}|{% endif %}{% endfor %}"
+                                        data-past="{% for e in r_cross_assessments.get(v.id, []) %}{{ e.score.classification|lower|replace(' ','_') }}{% if not loop.last %}|{% endif %}{% endfor %}"
+                                        data-assessed="{% for e in va_list %}{{ e.score.classification|lower|replace(' ','_') }}{% if not loop.last %}|{% endif %}{% endfor %}"
                                         data-vkey="{{ v.chrom }}:{{ v.pos }}:{{ v.ref }}:{{ v.alt }}"
                                         data-vid="{{ v.id }}"
                                         data-ai-score="{{ v.llm_score if v.llm_score is not none else '' }}"
@@ -288,7 +288,8 @@
                                                     {%- elif entry.group -%}
                                                         <span class="assess-country">{{ entry.group.name }}</span>
                                                     {%- endif -%}
-                                                    {{ entry.assessment.classification }}
+                                                    {{ entry.score.classification }}
+                                                    <span class="acmg-score-badge">{{ entry.score.total_score }} pt · {{ "%.1f"|format(entry.score.posterior_probability * 100) }}%</span>
                                                     {%- if entry.assessment.acmg_codes -%}
                                                         <span class="acmg-code-badge">{{ entry.assessment.acmg_codes }}</span>
                                                     {%- endif -%}
@@ -313,7 +314,8 @@
                                                     {%- elif entry.group -%}
                                                         <span class="assess-country">{{ entry.group.name }}</span>
                                                     {%- endif -%}
-                                                    {{ entry.assessment.classification }}
+                                                    {{ entry.score.classification }}
+                                                    <span class="acmg-score-badge">{{ entry.score.total_score }} pt · {{ "%.1f"|format(entry.score.posterior_probability * 100) }}%</span>
                                                     {%- if entry.assessment.acmg_codes -%}
                                                         <span class="acmg-code-badge">{{ entry.assessment.acmg_codes }}</span>
                                                     {%- endif -%}
@@ -715,23 +717,13 @@
                             <ul id="ai-missing-list" class="ai-missing-list"></ul>
                         </div>
                     </div>
-                    <div class="acmg-meta-row">
-                        <label class="acmg-meta-field">
-                            <span>Classification *</span>
-                            <select name="classification" required>
-                                <option value="" disabled selected>Select…</option>
-                                {% for key, label in r_classifications %}
-                                    <option value="{{ key }}">{{ label }}</option>
-                                {% endfor %}
-                            </select>
-                        </label>
-                        <label class="acmg-meta-field">
-                            <span>Evidence level</span>
-                            <select name="evidence_level">
-                                {% for key, label in r_evidence_levels %}
-                                    <option value="{{ key }}">{{ label }}</option>
-                                {% endfor %}
-                            </select>
+                    <div class="acmg-score-summary" aria-live="polite">
+                        <div><span>Total score</span><strong id="acmg-total-score">0</strong></div>
+                        <div><span>Posterior probability</span><strong id="acmg-posterior">10.2%</strong></div>
+                        <div><span>Classification</span><strong id="acmg-classification">Uncertain significance</strong></div>
+                        <label class="acmg-override-field">
+                            <input type="checkbox" name="reviewer_override_lb_threshold" value="1">
+                            <span>Use reviewer LB threshold (-2)</span>
                         </label>
                     </div>
                     <div class="acmg-group">
@@ -789,6 +781,16 @@
     <script type="application/json" id="acmg-default-weights">{{ r_acmg_default_weights|tojson|safe }}</script>
     <script>
         var acmgDefaultWeights = JSON.parse(document.getElementById('acmg-default-weights').textContent);
+        var acmgStrengthPoints = {
+            VeryStrong: 8,
+            Strong: 4,
+            Moderate: 2,
+            Supporting: 1,
+            Indeterminate: 0,
+            StandAlone: 8
+        };
+        var acmgPriorProbability = 0.102;
+        var acmgEvidenceStrengthUnit = 2.0801;
 
         function normalizeAcmgWeight(weight) {
             var raw = (weight || '').toString().replace(/\s+/g, '').toLowerCase();
@@ -796,6 +798,7 @@
             if (raw === 'strong') return 'Strong';
             if (raw === 'moderate') return 'Moderate';
             if (raw === 'supporting') return 'Supporting';
+            if (raw === 'indeterminate') return 'Indeterminate';
             if (raw === 'standalone') return 'StandAlone';
             return weight || '';
         }
@@ -832,111 +835,28 @@
         }
 
         function autoClassify(checked) {
-            if (!checked || checked.length === 0) return;
+            var total = (checked || []).reduce(function(sum, token) {
+                var points = acmgStrengthPoints[tokenStrength(token)] || 0;
+                return sum + (tokenSide(token) === 'benign' ? -points : points);
+            }, 0);
+            var odds = Math.pow(acmgEvidenceStrengthUnit, total);
+            var posterior = (odds * acmgPriorProbability) /
+                (odds * acmgPriorProbability - acmgPriorProbability + 1);
+            var reviewerOverride = document.querySelector(
+                '#assess-form [name=reviewer_override_lb_threshold]'
+            ).checked;
+            var classification;
+            if (total >= 10) classification = 'Pathogenic';
+            else if (total >= 6) classification = 'Likely pathogenic';
+            else if (total >= 0) classification = 'Uncertain significance';
+            else if (reviewerOverride && total > -2) classification = 'Uncertain significance';
+            else if (total >= -6) classification = 'Likely benign';
+            else classification = 'Benign';
 
-            var counts = {
-                pathogenic: {
-                    VeryStrong: 0,
-                    Strong: 0,
-                    Moderate: 0,
-                    Supporting: 0,
-                },
-                benign: {
-                    StandAlone: 0,
-                    Strong: 0,
-                    Moderate: 0,
-                    Supporting: 0,
-                },
-            };
-
-            checked.forEach(function(token) {
-                var strength = tokenStrength(token);
-                var side = tokenSide(token);
-                var bucket = counts[side];
-                if (!bucket) {
-                    return;
-                }
-                if (side === 'benign' && strength === 'StandAlone') bucket.StandAlone += 1;
-                else if (strength === 'VeryStrong') bucket.VeryStrong += 1;
-                else if (strength === 'Strong') bucket.Strong += 1;
-                else if (strength === 'Moderate') bucket.Moderate += 1;
-                else bucket.Supporting += 1;
-            });
-
-            var path = counts.pathogenic;
-            var benign = counts.benign;
-            var hasPathogenicEvidence = path.VeryStrong + path.Strong + path.Moderate + path.Supporting > 0;
-            var hasBenignEvidence = benign.StandAlone + benign.Strong + benign.Moderate + benign.Supporting > 0;
-
-            function classifyPathogenic() {
-                if (
-                    (path.VeryStrong >= 1 && path.Strong >= 1) ||
-                    (path.VeryStrong >= 1 && path.Moderate >= 2) ||
-                    (path.VeryStrong >= 1 && path.Moderate >= 1 && path.Supporting >= 1) ||
-                    (path.VeryStrong >= 1 && path.Supporting >= 2) ||
-                    path.Strong >= 2 ||
-                    (path.Strong >= 1 && path.Moderate >= 3) ||
-                    (path.Strong >= 1 && path.Moderate >= 2 && path.Supporting >= 2) ||
-                    (path.Strong >= 1 && path.Moderate >= 1 && path.Supporting >= 4)
-                ) {
-                    return 'Pathogenic';
-                }
-                if (
-                    (path.VeryStrong >= 1 && path.Moderate >= 1) ||
-                    (path.Strong >= 1 && path.Moderate >= 1) ||
-                    (path.Strong >= 1 && path.Supporting >= 2) ||
-                    path.Moderate >= 3 ||
-                    (path.Moderate >= 2 && path.Supporting >= 2) ||
-                    (path.Moderate >= 1 && path.Supporting >= 4)
-                ) {
-                    return 'Likely pathogenic';
-                }
-                return 'Uncertain significance';
-            }
-
-            function classifyBenign() {
-                if (benign.StandAlone >= 1 || benign.Strong >= 2) {
-                    return 'Benign';
-                }
-                if ((benign.Strong >= 1 && benign.Supporting >= 1) || benign.Supporting >= 2) {
-                    return 'Likely benign';
-                }
-                return 'Uncertain significance';
-            }
-
-            var cls = '';
-
-            if (hasPathogenicEvidence && hasBenignEvidence) {
-                cls = 'Uncertain significance';
-            }
-            else if (hasPathogenicEvidence) {
-                cls = classifyPathogenic();
-            }
-            else if (hasBenignEvidence) {
-                cls = classifyBenign();
-            }
-            else {
-                cls = 'Uncertain significance';
-            }
-
-            var sel = document.querySelector('#assess-form [name=classification]');
-            if (sel && cls) {
-                sel.value = cls;
-                sel.style.outline = '2px solid #6366f1';
-                setTimeout(function(){ sel.style.outline = ''; }, 1200);
-            }
-
-            var evMap = {
-                'Pathogenic':             'Strong',
-                'Likely pathogenic':      'Moderate',
-                'Benign':                 'Strong',
-                'Likely benign':          'Moderate',
-                'Uncertain significance': 'Supporting',
-            };
-            var evSel = document.querySelector('#assess-form [name=evidence_level]');
-            if (evSel && evMap[cls]) {
-                evSel.value = evMap[cls];
-            }
+            document.getElementById('acmg-total-score').textContent = total;
+            document.getElementById('acmg-posterior').textContent =
+                (posterior * 100).toFixed(2) + '%';
+            document.getElementById('acmg-classification').textContent = classification;
         }
 
         function updateAcmgPreview() {
@@ -945,7 +865,11 @@
                 .filter(Boolean);
             document.getElementById('acmg-hidden-modal').value = checked.join(', ');
             document.getElementById('acmg-preview').textContent =
-                checked.length ? checked.join(', ') : '\u2014 no ACMG criteria selected \u2014';
+                checked.length ? checked.map(function(token) {
+                    var points = acmgStrengthPoints[tokenStrength(token)] || 0;
+                    var signedPoints = tokenSide(token) === 'benign' ? -points : points;
+                    return token + ' (' + (signedPoints > 0 ? '+' : '') + signedPoints + ')';
+                }).join(', ') : '\u2014 no ACMG criteria selected \u2014';
             autoClassify(checked);
         }
 
@@ -961,6 +885,7 @@
             });
             document.getElementById('acmg-hidden-modal').value = '';
             document.getElementById('acmg-preview').textContent = '\u2014 no ACMG criteria selected \u2014';
+            autoClassify([]);
 
             var panel = document.getElementById('ai-suggestion-panel');
             var aiScore = trEl ? trEl.dataset.aiScore : '';
@@ -1057,6 +982,8 @@
             }
             syncAcmgRowState(row);
         });
+        document.querySelector('#assess-form [name=reviewer_override_lb_threshold]')
+            .addEventListener('change', updateAcmgPreview);
     </script>
 </body>
 </html>

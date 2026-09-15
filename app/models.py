@@ -1,4 +1,6 @@
 from sqlalchemy import ForeignKey
+from sqlalchemy import Boolean
+from sqlalchemy import Float
 from sqlalchemy import Text
 from sqlalchemy import func
 from sqlalchemy.orm import Mapped
@@ -259,6 +261,12 @@ class VariantAssessment(Base):
     classification: Mapped[str] = mapped_column(String(64), nullable=False)
     evidence_level: Mapped[str | None] = mapped_column(String(32), nullable=True)
     acmg_codes: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    evidence_points: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    total_score: Mapped[float | None] = mapped_column(Float(), nullable=True)
+    posterior_probability: Mapped[float | None] = mapped_column(Float(), nullable=True)
+    reviewer_override_lb_threshold: Mapped[bool] = mapped_column(
+        Boolean(), nullable=False, default=False
+    )
     notes: Mapped[str | None] = mapped_column(Text(), nullable=True)
     assessed_by: Mapped[str | None] = mapped_column(String(120), nullable=True)
     created_at: Mapped[str] = mapped_column(

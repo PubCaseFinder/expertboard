@@ -42,6 +42,13 @@ def ensure_schema():
     _add_board_column_if_missing("specialty VARCHAR(160) NULL")
     _add_table_column_if_missing("variant_assessments", "expert_board_id INT NULL")
     _add_table_column_if_missing("variant_assessments", "acmg_codes VARCHAR(255) NULL")
+    _add_table_column_if_missing("variant_assessments", "evidence_points TEXT NULL")
+    _add_table_column_if_missing("variant_assessments", "total_score DOUBLE NULL")
+    _add_table_column_if_missing("variant_assessments", "posterior_probability DOUBLE NULL")
+    _add_table_column_if_missing(
+        "variant_assessments",
+        "reviewer_override_lb_threshold BOOLEAN NOT NULL DEFAULT 0",
+    )
     _add_table_column_if_missing("patients", "requested_expert_board_id INT NULL")
     _add_table_column_if_missing("variants", "llm_score INT NULL")
     _add_table_column_if_missing("variants", "llm_reason TEXT NULL")

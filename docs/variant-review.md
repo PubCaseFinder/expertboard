@@ -6,7 +6,43 @@ Variant Review in ExpertBoard is an ACMG-style evidence workbench for a pre-filt
 
 ExpertBoard is not intended to perform primary variant calling, genome-wide filtering, or full variant discovery. The expected input is a short VCF containing approximately 10-20 candidate variants that have already passed an upstream filtering step.
 
-The goal is to help reviewers prioritize, annotate, discuss, and decide which evidence items should be accepted, rejected, or kept pending in the clinical context of the case.
+The goal is to help reviewers prioritize, annotate, discuss, and decide which evidence items should be accepted, rejected, or kept pending in the clinical context of the case. The accepted criteria are classified with the Tavtigian et al. (2020) Bayesian point system.
+
+## Bayesian ACMG/AMP point system
+
+Each accepted criterion is stored with its individual strength and signed point value. Pathogenic evidence is positive and benign evidence is negative.
+
+| Strength | Pathogenic | Benign |
+|---|---:|---:|
+| Very Strong | +8 | -8 |
+| Strong | +4 | -4 |
+| Moderate | +2 | -2 |
+| Supporting | +1 | -1 |
+| Indeterminate | 0 | 0 |
+
+The total score is the sum of all accepted evidence points. Conflicting evidence therefore offsets directly. Classification is recalculated from the stored evidence whenever an assessment is read.
+
+| Total score | Classification |
+|---:|---|
+| 10 or more | Pathogenic |
+| 6 to 9 | Likely pathogenic |
+| 0 to 5 | Uncertain significance (VUS) |
+| -1 to -6 | Likely benign |
+| -7 or less | Benign |
+
+The optional reviewer override changes the Likely Benign threshold to -2, making a score of -1 VUS. It does not alter any evidence points.
+
+Posterior probability uses prior probability $P_1 = 0.102$ and evidence strength unit $OPSu = 2.0801$:
+
+$$
+OP = OPSu^{TotalScore}
+$$
+
+$$
+P_2 = \frac{OP \times P_1}{OP \times P_1 - P_1 + 1}
+$$
+
+Assessment API responses include `total_score`, `posterior_probability`, `classification`, the override state, and the individual evidence list.
 
 ## Input assumption
 
@@ -41,7 +77,7 @@ sample-data/synthetic_patient_HCM_variants.vcf
 |---|---|
 | Primary variant discovery | The VCF is already pre-filtered |
 | Raw VCF filtering from thousands of variants | Too broad for the hackathon MVP |
-| Fully automated ACMG classification | Many criteria require clinical judgment |
+| Fully automated evidence acceptance | Many criteria require clinical judgment; the system classifies only reviewer-accepted evidence |
 | Replacing expert review | ExpertBoard is designed for human-governed decisions |
 | Replacing tools such as Franklin | ExpertBoard can use variant interpretation outputs as evidence inputs |
 

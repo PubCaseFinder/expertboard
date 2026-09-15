@@ -2002,6 +2002,26 @@ h1 {
 .acmg-meta-field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; min-width: 180px; }
 .acmg-meta-field select { font-size: 13px; padding: 5px 8px; border: 1px solid #d1d5db; border-radius: 5px; }
 
+.acmg-score-summary {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(130px, 1fr));
+    gap: 10px;
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    background: #f8fafc;
+}
+.acmg-score-summary div { display: flex; flex-direction: column; gap: 2px; }
+.acmg-score-summary span { color: #64748b; font-size: 11px; }
+.acmg-score-summary strong { color: #111827; font-size: 14px; }
+.acmg-override-field { display: flex; align-items: center; gap: 6px; grid-column: 1 / -1; }
+.acmg-score-badge { display: block; margin-top: 2px; font-size: 10px; font-weight: 600; opacity: .8; }
+
+@media (max-width: 640px) {
+    .acmg-score-summary { grid-template-columns: 1fr; }
+}
+
 /* ACMG popup button */
 .acmg-open-btn {
     background: #f0f4ff;
