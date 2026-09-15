@@ -16,6 +16,24 @@ from app.admin import ensure_schema as ensure_admin_schema
 from app.routes import bp
 
 
+class _ScriptNameMiddleware:
+    """Apply the SCRIPT_NAME env var to each request's WSGI environ.
+
+    Werkzeug's dev server hardcodes SCRIPT_NAME to "" and never reads the
+    process environment, so url_for() would otherwise ignore a reverse-proxy
+    path prefix (e.g. nginx serving the app under /expertboard/).
+    """
+
+    def __init__(self, wsgi_app, script_name):
+        self.wsgi_app = wsgi_app
+        self.script_name = script_name
+
+    def __call__(self, environ, start_response):
+        if self.script_name and not environ.get("SCRIPT_NAME"):
+            environ["SCRIPT_NAME"] = self.script_name
+        return self.wsgi_app(environ, start_response)
+
+
 def create_app():
     load_dotenv()
 
@@ -34,6 +52,10 @@ def create_app():
 
     register_roles(app)
     app.register_blueprint(bp)
+
+    script_name = os.environ.get("SCRIPT_NAME", "")
+    if script_name:
+        app.wsgi_app = _ScriptNameMiddleware(app.wsgi_app, script_name)
 
     @app.errorhandler(RequestEntityTooLarge)
     def _too_large(_error):
