@@ -2248,6 +2248,9 @@ h1 {
 .acmg-modal-footer {
     border-top: 1px solid #e5e7eb;
     padding: 10px 18px;
+    background: #fff;
+}
+.acmg-footer-actions {
     display: flex;
     align-items: center;
     gap: 10px;
@@ -2257,6 +2260,23 @@ h1 {
     font-size: 12px;
     color: #374151;
     font-style: italic;
+}
+.va-spec-preview {
+    margin-top: 10px;
+    border-top: 1px solid #e5e7eb;
+    padding-top: 8px;
+}
+.va-spec-preview summary {
+    cursor: pointer;
+    color: #374151;
+    font-size: 12px;
+    font-weight: 700;
+}
+.va-spec-preview .va-json {
+    max-height: 210px;
+    margin: 8px 0 0;
+    overflow: auto;
+    white-space: pre;
 }
 
 .assess-add-btn {

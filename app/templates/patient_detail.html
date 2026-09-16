@@ -812,9 +812,15 @@
                 <input type="hidden" name="acmg_codes" id="acmg-hidden-modal">
                 <input type="hidden" name="criterion_comments" id="criterion-comments-modal" value="{}">
                 <div class="acmg-modal-footer">
-                    <span class="acmg-selected-preview" id="acmg-preview">— no ACMG criteria selected —</span>
-                    <button type="submit" class="inline-button">Save</button>
-                    <button type="button" class="vf-clear" onclick="closeAssessModal()">Cancel</button>
+                    <div class="acmg-footer-actions">
+                        <span class="acmg-selected-preview" id="acmg-preview">— no ACMG criteria selected —</span>
+                        <button type="submit" class="inline-button">Save</button>
+                        <button type="button" class="vf-clear" onclick="closeAssessModal()">Cancel</button>
+                    </div>
+                    <details class="va-spec-preview" open>
+                        <summary>VA-Spec JSON preview</summary>
+                        <pre id="va-spec-json" class="va-json" aria-live="polite"></pre>
+                    </details>
                 </div>
             </form>
         </div>
@@ -822,6 +828,11 @@
     <script type="application/json" id="acmg-default-weights">{{ r_acmg_default_weights|tojson|safe }}</script>
     <script>
         var currentAssessmentRow = null;
+        var vaSpecContext = {{ {
+            "reviewer": r_current_user_display,
+            "patientId": r_patient.id,
+            "condition": r_patient.diagnosis_name
+        }|tojson|safe }};
 
         function setVariantAnnotationError(elementId, message) {
             var element = document.getElementById(elementId);
@@ -841,6 +852,7 @@
                 ? JSON.stringify(data.vep, null, 2) : '';
             setVariantAnnotationError('va-vrs-error', data.vrs_error);
             setVariantAnnotationError('va-vep-error', data.vep_error);
+            updateVaSpecPreview();
         }
 
         function fetchVariantAnnotation(button) {
@@ -1037,7 +1049,7 @@
             return token && token.charAt(0) === 'B' ? 'benign' : 'pathogenic';
         }
 
-        function autoClassify(checked) {
+        function calculateAcmgAssessment(checked) {
             var total = (checked || []).reduce(function(sum, token) {
                 var points = acmgStrengthPoints[tokenStrength(token)] || 0;
                 return sum + (tokenSide(token) === 'benign' ? -points : points);
@@ -1056,10 +1068,184 @@
             else if (total >= -6) classification = 'Likely benign';
             else classification = 'Benign';
 
-            document.getElementById('acmg-total-score').textContent = total;
+            return {
+                total: total,
+                posterior: posterior,
+                classification: classification,
+                reviewerOverride: reviewerOverride
+            };
+        }
+
+        function autoClassify(checked) {
+            var assessment = calculateAcmgAssessment(checked);
+
+            document.getElementById('acmg-total-score').textContent = assessment.total;
             document.getElementById('acmg-posterior').textContent =
-                (posterior * 100).toFixed(2) + '%';
-            document.getElementById('acmg-classification').textContent = classification;
+                (assessment.posterior * 100).toFixed(2) + '%';
+            document.getElementById('acmg-classification').textContent = assessment.classification;
+        }
+
+        function vaSpecStrength(strength) {
+            return {
+                VeryStrong: 'very strong',
+                StandAlone: 'stand alone',
+                Strong: 'strong',
+                Moderate: 'moderate',
+                Supporting: 'supporting'
+            }[strength] || null;
+        }
+
+        function vaSpecDirection(classification) {
+            if (classification === 'Pathogenic' || classification === 'Likely pathogenic') return 'supports';
+            if (classification === 'Benign' || classification === 'Likely benign') return 'disputes';
+            return 'neutral';
+        }
+
+        function vaSpecEvidenceOutcome(code, strength) {
+            var standardDefaults = {
+                PVS1: 'VeryStrong', PS1: 'Strong', PS2: 'Strong', PS3: 'Strong', PS4: 'Strong',
+                PM1: 'Moderate', PM2: 'Moderate', PM3: 'Moderate', PM4: 'Moderate',
+                PM5: 'Moderate', PM6: 'Moderate', PP1: 'Supporting', PP2: 'Supporting',
+                PP3: 'Supporting', PP4: 'Supporting', BA1: 'StandAlone', BS1: 'Strong',
+                BS2: 'Strong', BS3: 'Strong', BS4: 'Strong', BP1: 'Supporting',
+                BP2: 'Supporting', BP3: 'Supporting', BP4: 'Supporting',
+                BP5: 'Supporting', BP7: 'Supporting'
+            };
+            if (strength === 'Indeterminate') return code + '_not_met';
+            if (strength === standardDefaults[code] || code === 'BA1') return code;
+            return code + '_' + vaSpecStrength(strength).replace(' ', '_');
+        }
+
+        function updateVaSpecPreview() {
+            if (!currentAssessmentRow) return;
+            var rows = Array.from(document.querySelectorAll('#acmg-modal .acmg-cb'));
+            var tokens = rows.map(acmgTokenFromRow).filter(Boolean);
+            var assessment = calculateAcmgAssessment(tokens);
+            var comments = {};
+            rows.forEach(function(row) {
+                var checkbox = row.querySelector('input[type=checkbox]');
+                var field = row.querySelector('.acmg-criterion-comment');
+                if (checkbox && checkbox.checked && field && field.value.trim()) {
+                    comments[checkbox.value] = field.value.trim();
+                }
+            });
+            var classificationCode = assessment.classification.toLowerCase();
+            var statementId = 'urn:expertboard:assessment:preview';
+            var propositionId = 'urn:expertboard:proposition:variant-' + currentAssessmentRow.dataset.vid;
+            var vrsId = document.getElementById('va-vrs-id').textContent.trim();
+            var subjectVariant = vrsId && vrsId !== '—'
+                ? vrsId : 'urn:expertboard:variant:' + currentAssessmentRow.dataset.vid;
+            var contribution = {
+                type: 'Contribution',
+                contributor: {
+                    type: 'Agent',
+                    name: vaSpecContext.reviewer || 'Unknown reviewer'
+                },
+                activityType: 'evidence evaluation',
+                date: new Date().toISOString().slice(0, 10)
+            };
+            var proposition = {
+                id: propositionId,
+                type: 'VariantPathogenicityProposition',
+                subjectVariant: subjectVariant,
+                predicate: 'isCausalFor',
+                objectCondition: {
+                    id: 'urn:expertboard:patient:' + vaSpecContext.patientId + ':condition',
+                    conceptType: 'Disease',
+                    name: vaSpecContext.condition || 'Unspecified condition'
+                }
+            };
+            if (currentAssessmentRow.dataset.gene) {
+                proposition.geneContextQualifier = {
+                    conceptType: 'Gene',
+                    name: currentAssessmentRow.dataset.gene.toUpperCase()
+                };
+            }
+            var evidenceLines = rows.filter(function(row) {
+                var checkbox = row.querySelector('input[type=checkbox]');
+                return checkbox && checkbox.checked;
+            }).map(function(row, index) {
+                var checkbox = row.querySelector('input[type=checkbox]');
+                var code = checkbox.value;
+                var token = acmgTokenFromRow(row);
+                var strength = tokenStrength(token);
+                var direction = strength === 'Indeterminate'
+                    ? 'neutral' : (tokenSide(token) === 'benign' ? 'disputes' : 'supports');
+                var line = {
+                    id: statementId + ':evidence-' + (index + 1),
+                    type: 'EvidenceLine',
+                    targetProposition: propositionId,
+                    directionOfEvidenceProvided: direction,
+                    scoreOfEvidenceProvided: Math.abs(
+                        (acmgStrengthPoints[strength] || 0)
+                    ),
+                    evidenceOutcome: {
+                        primaryCoding: {
+                            code: vaSpecEvidenceOutcome(code, strength),
+                            system: 'ACMG Guidelines, 2015'
+                        },
+                        name: 'ACMG 2015 ' + code + ' criterion assessment'
+                    },
+                    specifiedBy: {
+                        type: 'Method',
+                        name: 'ACMG 2015 ' + code + ' Criterion',
+                        methodType: code,
+                        reportedIn: {
+                            type: 'Document',
+                            pmid: '25741868',
+                            name: 'ACMG Guidelines, 2015'
+                        }
+                    },
+                    contributions: [contribution]
+                };
+                var mappedStrength = vaSpecStrength(strength);
+                if (mappedStrength) {
+                    line.strengthOfEvidenceProvided = {
+                        primaryCoding: {
+                            code: mappedStrength,
+                            system: 'ACMG Guidelines, 2015'
+                        }
+                    };
+                }
+                if (comments[code]) {
+                    line.extensions = [{name: 'reviewerComment', value: comments[code]}];
+                }
+                return line;
+            });
+            var notes = document.querySelector('#assess-form [name=notes]').value.trim();
+            var extensions = [
+                {name: 'tavtigianTotalScore', value: assessment.total},
+                {name: 'posteriorProbability', value: assessment.posterior},
+                {name: 'reviewerLbThresholdOverride', value: assessment.reviewerOverride}
+            ];
+            if (notes) extensions.push({name: 'reviewerNotes', value: notes});
+            var vaSpec = {
+                id: statementId,
+                type: 'Statement',
+                proposition: proposition,
+                direction: vaSpecDirection(assessment.classification),
+                classification: {
+                    primaryCoding: {
+                        code: classificationCode,
+                        system: 'ACMG Guidelines, 2015'
+                    },
+                    name: assessment.classification
+                },
+                contributions: [contribution],
+                specifiedBy: {
+                    type: 'Method',
+                    name: 'ACMG Guidelines, 2015',
+                    methodType: 'guideline',
+                    reportedIn: {
+                        type: 'Document',
+                        pmid: '25741868',
+                        name: 'Richards et al., 2015, Genet Med.'
+                    }
+                },
+                hasEvidenceLines: evidenceLines,
+                extensions: extensions
+            };
+            document.getElementById('va-spec-json').textContent = JSON.stringify(vaSpec, null, 2);
         }
 
         function updateAcmgPreview() {
@@ -1074,6 +1260,7 @@
                     return token + ' (' + (signedPoints > 0 ? '+' : '') + signedPoints + ')';
                 }).join(', ') : '\u2014 no ACMG criteria selected \u2014';
             autoClassify(checked);
+            updateVaSpecPreview();
         }
 
         function openAssessModal(actionUrl, trEl) {
@@ -1097,6 +1284,7 @@
             document.getElementById('va-data-loading').style.display = 'none';
             document.getElementById('va-data-loading').classList.remove('is-error');
             document.getElementById('va-data-content').style.display = 'none';
+            document.getElementById('va-vrs-id').textContent = '';
             document.getElementById('va-refresh-btn').disabled = false;
             document.getElementById('ai-refresh-btn').disabled = true;
 
@@ -1114,6 +1302,7 @@
             }
 
             document.getElementById('acmg-modal').style.display = 'flex';
+            updateVaSpecPreview();
         }
 
         function closeAssessModal() {
@@ -1157,10 +1346,14 @@
             if (sel) {
                 sel.addEventListener('change', updateAcmgPreview);
             }
+            var comment = row.querySelector('.acmg-criterion-comment');
+            if (comment) comment.addEventListener('input', updateVaSpecPreview);
             syncAcmgRowState(row);
         });
         document.querySelector('#assess-form [name=reviewer_override_lb_threshold]')
             .addEventListener('change', updateAcmgPreview);
+        document.querySelector('#assess-form [name=notes]')
+            .addEventListener('input', updateVaSpecPreview);
         document.getElementById('assess-form').addEventListener('submit', collectCriterionComments);
     </script>
 </body>

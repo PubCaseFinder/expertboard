@@ -141,6 +141,7 @@ def patient_detail(patient_id):
     return render_template(
         "patient_detail.html",
         r_patient=patient,
+        r_current_user_display=auth.current_user_display(),
         r_llm_configured=llm_module.is_configured(),
         r_variants=proband_variants,
         r_variant_shares=variant_shares,
