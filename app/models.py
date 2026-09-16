@@ -2,6 +2,7 @@ from sqlalchemy import ForeignKey
 from sqlalchemy import Boolean
 from sqlalchemy import Float
 from sqlalchemy import Text
+from sqlalchemy import UniqueConstraint
 from sqlalchemy import func
 from sqlalchemy.orm import Mapped
 from sqlalchemy.orm import mapped_column
@@ -42,6 +43,33 @@ class Patient(Base):
         ForeignKey("expert_boards.id"), nullable=True
     )
     created_at: Mapped[str] = mapped_column(TIMESTAMP(), nullable=False, server_default=func.current_timestamp())
+    updated_at: Mapped[str] = mapped_column(
+        TIMESTAMP(),
+        nullable=False,
+        server_default=func.current_timestamp(),
+        onupdate=func.current_timestamp(),
+    )
+
+
+class PatientPhenotype(Base):
+    """A reviewer-confirmed HPO phenotype associated with a patient."""
+
+    __tablename__ = "patient_phenotypes"
+    __table_args__ = (UniqueConstraint("patient_id", "hpo_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    patient_id: Mapped[int] = mapped_column(ForeignKey("patients.id"), nullable=False)
+    hpo_id: Mapped[str] = mapped_column(String(16), nullable=False)
+    hpo_label: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    source: Mapped[str] = mapped_column(String(32), nullable=False)
+    source_quote: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    confirmed_by: Mapped[str] = mapped_column(String(120), nullable=False)
+    confirmed_at: Mapped[str] = mapped_column(
+        TIMESTAMP(), nullable=False, server_default=func.current_timestamp()
+    )
+    created_at: Mapped[str] = mapped_column(
+        TIMESTAMP(), nullable=False, server_default=func.current_timestamp()
+    )
     updated_at: Mapped[str] = mapped_column(
         TIMESTAMP(),
         nullable=False,

@@ -12,6 +12,7 @@ from sqlalchemy.exc import OperationalError
 
 from app.db import Session
 from app.models import Patient
+from app.models import PatientPhenotype
 from app.models import Variant
 from app.vcf_import import import_variants_for_patient
 from app.vcf_import import parse_vcf_records
@@ -160,6 +161,62 @@ def save_clinical_text(patient_id, clinical_text):
     patient.clinical_text = clinical_text or None
     session.commit()
     return patient
+
+
+def list_confirmed_phenotypes(patient_id):
+    session = Session()
+    return (
+        session.query(PatientPhenotype)
+        .filter(PatientPhenotype.patient_id == patient_id)
+        .order_by(PatientPhenotype.hpo_id)
+        .all()
+    )
+
+
+def replace_confirmed_phenotypes(patient_id, phenotype_items, confirmed_by):
+    """Synchronize confirmed HPO while preserving existing provenance."""
+    session = Session()
+    patient = session.get(Patient, patient_id)
+    if patient is None:
+        return None
+
+    existing = {
+        item.hpo_id: item
+        for item in session.query(PatientPhenotype)
+        .filter(PatientPhenotype.patient_id == patient_id)
+        .all()
+    }
+    requested_ids = {item["hpo_id"] for item in phenotype_items}
+    for hpo_id, record in existing.items():
+        if hpo_id not in requested_ids:
+            session.delete(record)
+    for item in phenotype_items:
+        if item["hpo_id"] in existing:
+            continue
+        session.add(
+            PatientPhenotype(
+                patient_id=patient_id,
+                hpo_id=item["hpo_id"],
+                hpo_label=item.get("label") or None,
+                source=item.get("source") or "clinical_text_review",
+                source_quote=item.get("source_text") or None,
+                confirmed_by=confirmed_by,
+            )
+        )
+    session.commit()
+    return list_confirmed_phenotypes(patient_id)
+
+
+def remove_confirmed_phenotype(patient_id, hpo_id):
+    session = Session()
+    deleted = (
+        session.query(PatientPhenotype)
+        .filter(PatientPhenotype.patient_id == patient_id)
+        .filter(PatientPhenotype.hpo_id == hpo_id)
+        .delete()
+    )
+    session.commit()
+    return bool(deleted)
 
 
 def set_review_status(patient_id, status):

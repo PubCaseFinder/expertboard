@@ -69,12 +69,62 @@
         <section class="workspace">
             <article class="section section-wide">
                 <h2 class="section-title">Clinical free text</h2>
-                <form class="clinical-form" method="POST"
-                      action="{{ url_for('expertboard.patient_clinical_text', patient_id=r_patient.id) }}">
-                    <textarea name="clinical_text" rows="5"
-                              placeholder="e.g. 12-year-old with progressive muscle weakness, ptosis, and exercise intolerance...">{{ r_patient.clinical_text or "" }}</textarea>
-                    <button class="inline-button" type="submit">Save</button>
-                </form>
+                <div class="clinical-hpo-layout">
+                    <form class="clinical-form" method="POST"
+                          action="{{ url_for('expertboard.patient_clinical_text', patient_id=r_patient.id) }}">
+                        <textarea name="clinical_text" rows="9"
+                                  placeholder="e.g. 12-year-old with progressive muscle weakness, ptosis, and exercise intolerance...">{{ r_patient.clinical_text or "" }}</textarea>
+                        <button class="inline-button" type="submit">Save clinical text</button>
+                    </form>
+                    <section class="hpo-review-panel" aria-labelledby="hpo-review-title">
+                        <div class="hpo-review-header">
+                            <div>
+                                <h3 id="hpo-review-title">Patient HPO</h3>
+                                <p>Review candidates extracted from the saved clinical text.</p>
+                            </div>
+                            <button class="link-button" id="hpo-extract-btn" type="button"
+                                    data-llm-configured="{{ '1' if r_llm_configured else '0' }}"
+                                    onclick="extractHpoCandidates(this)">Extract candidates</button>
+                        </div>
+                        <div id="hpo-review-status" class="va-data-status" role="status"></div>
+                           <div class="hpo-manual-row">
+                            <input id="hpo-manual-input" type="text" placeholder="HP:0001250"
+                                aria-label="HPO identifier">
+                            <button class="link-button" type="button"
+                                 onclick="addManualHpoCandidate(this)">Add HPO</button>
+                           </div>
+                        <div id="hpo-candidate-list" class="hpo-candidate-list"></div>
+                        <div class="hpo-review-actions">
+                            <button class="inline-button" id="hpo-confirm-btn" type="button"
+                                    onclick="confirmPatientHpo(this)" disabled>Confirm selected HPO</button>
+                        </div>
+                        <div id="hpo-disease-results" class="hpo-disease-results" hidden></div>
+                        <div class="hpo-confirmed-block">
+                            <strong>Confirmed phenotypes</strong>
+                            <div id="hpo-confirmed-list" class="hpo-confirmed-list">
+                                {% for phenotype in r_confirmed_phenotypes %}
+                                    <div class="hpo-confirmed-item"
+                                         data-hpo-id="{{ phenotype.hpo_id }}"
+                                         data-label="{{ phenotype.hpo_label or '' }}"
+                                         data-source-text="{{ phenotype.source_quote or '' }}"
+                                         data-source="{{ phenotype.source }}"
+                                         data-confirmed-by="{{ phenotype.confirmed_by }}"
+                                         data-confirmed-at="{{ phenotype.confirmed_at }}">
+                                        <div>
+                                            <strong>{{ phenotype.hpo_id }} · {{ phenotype.hpo_label or "Unlabelled phenotype" }}</strong>
+                                            <span>Confirmed by {{ phenotype.confirmed_by }} · {{ phenotype.confirmed_at }}</span>
+                                        </div>
+                                        <button class="hpo-remove-btn" type="button" title="Remove confirmed HPO"
+                                                aria-label="Remove {{ phenotype.hpo_id }}"
+                                                onclick="removeConfirmedHpo(this, '{{ phenotype.hpo_id }}')">&#x2715;</button>
+                                    </div>
+                                {% else %}
+                                    <p class="hpo-empty">No HPO phenotypes confirmed.</p>
+                                {% endfor %}
+                            </div>
+                        </div>
+                    </section>
+                </div>
             </article>
 
             <article class="section section-wide">
@@ -269,7 +319,10 @@
                                         data-annotation-url="{{ url_for('expertboard.api_variant_annotation', patient_id=r_patient.id, variant_id=v.id) }}"
                                         data-ai-review-url="{{ url_for('expertboard.api_variant_ai_review', patient_id=r_patient.id, variant_id=v.id) }}"
                                     >
-                                        <td><strong>{{ v.gene or "—" }}</strong></td>
+                                        <td class="variant-gene-cell">
+                                            <strong>{{ v.gene or "—" }}</strong>
+                                            <span class="hpo-gene-rank-badge" hidden></span>
+                                        </td>
                                         <td>{{ v.hgvs_c or "—" }}</td>
                                         <td>{{ v.hgvs_p or "—" }}</td>
                                         <td>{{ v.chrom }}</td>
@@ -698,7 +751,9 @@
                     <button type="button" class="acmg-modal-close" onclick="closeAssessModal()">&#x2715;</button>
                 </div>
                 <div class="acmg-modal-body">
-                    <section class="va-review-panel">
+                    <div class="acmg-modal-columns">
+                    <div class="acmg-left-column">
+                        <section class="va-review-panel">
                         <div class="va-review-toolbar">
                             <div>
                                 <strong>Latest variant annotation</strong>
@@ -729,8 +784,10 @@
                                 <pre id="va-vep-json" class="va-json"></pre>
                             </details>
                         </div>
-                    </section>
-                    <div id="ai-suggestion-panel" class="ai-suggestion-panel" style="display:none">
+                        </section>
+                    </div>
+                    <div class="acmg-right-column">
+                        <div id="ai-suggestion-panel" class="ai-suggestion-panel" style="display:none">
                         <div class="ai-suggestion-label">✦ AI Reasoning</div>
                         <dl class="ai-reasoning-list">
                             <dt>Patient symptoms</dt><dd id="ai-r-symptoms"></dd>
@@ -750,8 +807,8 @@
                             <span class="ai-missing-label">⚠ Missing annotation data:</span>
                             <ul id="ai-missing-list" class="ai-missing-list"></ul>
                         </div>
-                    </div>
-                    <div class="acmg-score-summary" aria-live="polite">
+                        </div>
+                        <div class="acmg-score-summary" aria-live="polite">
                         <div><span>Total score</span><strong id="acmg-total-score">0</strong></div>
                         <div><span>Posterior probability</span><strong id="acmg-posterior">10.2%</strong></div>
                         <div><span>Classification</span><strong id="acmg-classification">Uncertain significance</strong></div>
@@ -759,8 +816,8 @@
                             <input type="checkbox" name="reviewer_override_lb_threshold" value="1">
                             <span>Use reviewer LB threshold (-2)</span>
                         </label>
-                    </div>
-                    <div class="acmg-group">
+                        </div>
+                        <div class="acmg-group">
                         <h4 class="acmg-group-title acmg-path">Pathogenic criteria</h4>
                         <div class="acmg-criteria-grid">
                             {% for code, label in r_acmg_codes if code[0] not in ('B',) %}
@@ -780,8 +837,8 @@
                                 </label>
                             {% endfor %}
                         </div>
-                    </div>
-                    <div class="acmg-group">
+                        </div>
+                        <div class="acmg-group">
                         <h4 class="acmg-group-title acmg-benign">Benign criteria</h4>
                         <div class="acmg-criteria-grid">
                             {% for code, label in r_acmg_codes if code[0] == 'B' %}
@@ -801,12 +858,18 @@
                                 </label>
                             {% endfor %}
                         </div>
-                    </div>
-                    <div class="acmg-notes-row">
+                        </div>
+                        <div class="acmg-notes-row">
                         <label>
                             <span>Notes</span>
                             <textarea name="notes" rows="2" placeholder="Free-text evidence notes…"></textarea>
                         </label>
+                        </div>
+                        <details class="va-spec-preview" open>
+                            <summary>VA-Spec JSON preview</summary>
+                            <pre id="va-spec-json" class="va-json" aria-live="polite"></pre>
+                        </details>
+                    </div>
                     </div>
                 </div>
                 <input type="hidden" name="acmg_codes" id="acmg-hidden-modal">
@@ -817,10 +880,6 @@
                         <button type="submit" class="inline-button">Save</button>
                         <button type="button" class="vf-clear" onclick="closeAssessModal()">Cancel</button>
                     </div>
-                    <details class="va-spec-preview" open>
-                        <summary>VA-Spec JSON preview</summary>
-                        <pre id="va-spec-json" class="va-json" aria-live="polite"></pre>
-                    </details>
                 </div>
             </form>
         </div>
@@ -828,11 +887,348 @@
     <script type="application/json" id="acmg-default-weights">{{ r_acmg_default_weights|tojson|safe }}</script>
     <script>
         var currentAssessmentRow = null;
+        var hpoCandidates = [];
         var vaSpecContext = {{ {
             "reviewer": r_current_user_display,
             "patientId": r_patient.id,
             "condition": r_patient.diagnosis_name
         }|tojson|safe }};
+
+        function confirmedPhenotypeContext() {
+            return Array.from(document.querySelectorAll('#hpo-confirmed-list .hpo-confirmed-item'))
+                .map(function(item) {
+                    return {
+                        hpo_id: item.dataset.hpoId,
+                        label: item.dataset.label,
+                        source_text: item.dataset.sourceText,
+                        source: item.dataset.source,
+                        confirmed_by: item.dataset.confirmedBy,
+                        confirmed_at: item.dataset.confirmedAt
+                    };
+                });
+        }
+
+        function renderHpoCandidates(candidates) {
+            hpoCandidates = candidates || [];
+            var list = document.getElementById('hpo-candidate-list');
+            list.replaceChildren();
+            hpoCandidates.forEach(function(candidate, index) {
+                var row = document.createElement('label');
+                row.className = 'hpo-candidate-item';
+                var checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.checked = true;
+                checkbox.dataset.index = index;
+                var copy = document.createElement('span');
+                copy.className = 'hpo-candidate-copy';
+                var heading = document.createElement('strong');
+                heading.textContent = candidate.hpo_id + ' · ' + candidate.label;
+                var source = document.createElement('span');
+                source.textContent = candidate.source_text
+                    ? 'Clinical text: “' + candidate.source_text + '”'
+                    : 'No exact source phrase returned';
+                var match = document.createElement('span');
+                match.textContent = candidate.match_type === 'exact'
+                    ? 'Exact terminology match'
+                    : 'Suggested terminology match — verify before confirming';
+                if (candidate.match_type !== 'exact') match.className = 'hpo-match-suggested';
+                copy.append(heading, source, match);
+                row.append(checkbox, copy);
+                list.appendChild(row);
+            });
+            document.getElementById('hpo-confirm-btn').disabled = !hpoCandidates.length;
+        }
+
+        function renderConfirmedPhenotypes(confirmed) {
+            var list = document.getElementById('hpo-confirmed-list');
+            list.replaceChildren();
+            if (!confirmed.length) {
+                var empty = document.createElement('p');
+                empty.className = 'hpo-empty';
+                empty.textContent = 'No HPO phenotypes confirmed.';
+                list.appendChild(empty);
+            }
+            confirmed.forEach(function(phenotype) {
+                var item = document.createElement('div');
+                item.className = 'hpo-confirmed-item';
+                item.dataset.hpoId = phenotype.hpo_id;
+                item.dataset.label = phenotype.label || '';
+                item.dataset.sourceText = phenotype.source_text || '';
+                item.dataset.source = phenotype.source || 'clinical_text_review';
+                item.dataset.confirmedBy = phenotype.confirmed_by || '';
+                item.dataset.confirmedAt = phenotype.confirmed_at || '';
+                var content = document.createElement('div');
+                var heading = document.createElement('strong');
+                heading.textContent = phenotype.hpo_id + ' · ' + (phenotype.label || 'Unlabelled phenotype');
+                var provenance = document.createElement('span');
+                provenance.textContent = 'Confirmed by ' + phenotype.confirmed_by + ' · ' + phenotype.confirmed_at;
+                content.append(heading, provenance);
+                var remove = document.createElement('button');
+                remove.className = 'hpo-remove-btn';
+                remove.type = 'button';
+                remove.title = 'Remove confirmed HPO';
+                remove.setAttribute('aria-label', 'Remove ' + phenotype.hpo_id);
+                remove.textContent = '\u2715';
+                remove.addEventListener('click', function() {
+                    removeConfirmedHpo(remove, phenotype.hpo_id);
+                });
+                item.append(content, remove);
+                list.appendChild(item);
+            });
+            clearPhenotypeGeneMarks();
+            document.getElementById('hpo-disease-results').replaceChildren();
+            document.getElementById('hpo-disease-results').hidden = true;
+            updateVaSpecPreview();
+            if (confirmed.length) {
+                markPhenotypeRelatedGenes();
+            }
+        }
+
+        function extractHpoCandidates(button) {
+            var status = document.getElementById('hpo-review-status');
+            if (button.dataset.llmConfigured !== '1') {
+                status.textContent = 'Ollama is not configured.';
+                status.classList.add('is-error');
+                return;
+            }
+            button.disabled = true;
+            status.textContent = 'Extracting phenotype candidates and resolving HPO terms...';
+            status.classList.remove('is-error');
+            fetch("{{ url_for('expertboard.api_patient_phenotypes_extract', patient_id=r_patient.id) }}", {
+                method: 'POST', headers: {'Accept': 'application/json'}
+            })
+                .then(function(response) {
+                    return response.json().then(function(data) {
+                        if (!response.ok) throw new Error(data.error || 'HPO extraction failed.');
+                        return data;
+                    });
+                })
+                .then(function(data) {
+                    renderHpoCandidates(data.candidates || []);
+                    status.textContent = data.candidates.length
+                        ? 'Review each candidate, then confirm the selected HPO terms.'
+                        : 'No phenotype candidates were found.';
+                })
+                .catch(function(error) {
+                    status.textContent = error.message;
+                    status.classList.add('is-error');
+                })
+                .finally(function() { button.disabled = false; });
+        }
+
+        function addManualHpoCandidate(button) {
+            var field = document.getElementById('hpo-manual-input');
+            var hpoId = field.value.trim().toUpperCase();
+            var status = document.getElementById('hpo-review-status');
+            if (!/^HP:\d{7}$/.test(hpoId)) {
+                status.textContent = 'Enter an HPO ID such as HP:0001250.';
+                status.classList.add('is-error');
+                return;
+            }
+            if (confirmedPhenotypeContext().some(function(item) { return item.hpo_id === hpoId; })) {
+                status.textContent = hpoId + ' is already confirmed.';
+                status.classList.add('is-error');
+                return;
+            }
+            button.disabled = true;
+            status.textContent = 'Validating ' + hpoId + ' against HPO...';
+            status.classList.remove('is-error');
+            fetch("{{ url_for('expertboard.api_patient_phenotypes_resolve', patient_id=r_patient.id) }}", {
+                method: 'POST',
+                headers: {'Accept': 'application/json', 'Content-Type': 'application/json'},
+                body: JSON.stringify({hpo_id: hpoId})
+            })
+                .then(function(response) {
+                    return response.json().then(function(data) {
+                        if (!response.ok) throw new Error(data.error || 'HPO lookup failed.');
+                        return data;
+                    });
+                })
+                .then(function(data) {
+                    var candidate = data.candidate;
+                    if (!hpoCandidates.some(function(item) { return item.hpo_id === candidate.hpo_id; })) {
+                        hpoCandidates.push(candidate);
+                    }
+                    renderHpoCandidates(hpoCandidates);
+                    field.value = '';
+                    status.textContent = candidate.hpo_id + ' added as a candidate. Confirm it to save.';
+                })
+                .catch(function(error) {
+                    status.textContent = error.message;
+                    status.classList.add('is-error');
+                })
+                .finally(function() { button.disabled = false; });
+        }
+
+        function confirmPatientHpo(button) {
+            var selectedCandidates = Array.from(document.querySelectorAll('#hpo-candidate-list input:checked'))
+                .map(function(checkbox) { return hpoCandidates[Number(checkbox.dataset.index)]; })
+                .filter(Boolean);
+            var selected = confirmedPhenotypeContext().concat(selectedCandidates);
+            selected = selected.filter(function(item, index, items) {
+                return items.findIndex(function(other) { return other.hpo_id === item.hpo_id; }) === index;
+            });
+            var status = document.getElementById('hpo-review-status');
+            button.disabled = true;
+            fetch("{{ url_for('expertboard.api_patient_phenotypes_confirm', patient_id=r_patient.id) }}", {
+                method: 'POST',
+                headers: {'Accept': 'application/json', 'Content-Type': 'application/json'},
+                body: JSON.stringify({phenotypes: selected})
+            })
+                .then(function(response) {
+                    return response.json().then(function(data) {
+                        if (!response.ok) throw new Error(data.error || 'HPO confirmation failed.');
+                        return data;
+                    });
+                })
+                .then(function(data) {
+                    renderConfirmedPhenotypes(data.confirmed || []);
+                    status.textContent = (data.confirmed || []).length + ' HPO phenotype(s) confirmed and saved.';
+                })
+                .catch(function(error) {
+                    status.textContent = error.message;
+                    status.classList.add('is-error');
+                })
+                .finally(function() { button.disabled = !hpoCandidates.length; });
+        }
+
+        function removeConfirmedHpo(button, hpoId) {
+            if (!window.confirm('Remove ' + hpoId + ' from the confirmed patient HPO set?')) return;
+            var status = document.getElementById('hpo-review-status');
+            button.disabled = true;
+            fetch("{{ url_for('expertboard.api_patient_phenotype_remove', patient_id=r_patient.id, hpo_id='HP:0000000') }}"
+                .replace('HP:0000000', encodeURIComponent(hpoId)), {method: 'DELETE', headers: {'Accept': 'application/json'}})
+                .then(function(response) {
+                    return response.json().then(function(data) {
+                        if (!response.ok) throw new Error(data.error || 'Could not remove HPO.');
+                        return data;
+                    });
+                })
+                .then(function(data) {
+                    renderConfirmedPhenotypes(data.confirmed || []);
+                    status.textContent = hpoId + ' removed from confirmed patient HPO.';
+                })
+                .catch(function(error) {
+                    status.textContent = error.message;
+                    status.classList.add('is-error');
+                    button.disabled = false;
+                });
+        }
+
+        function clearPhenotypeGeneMarks() {
+            document.querySelectorAll('#variant-tbody tr:not(.assessment-form-row)').forEach(function(row) {
+                row.classList.remove('hpo-gene-match');
+                var badge = row.querySelector('.hpo-gene-rank-badge');
+                if (badge) {
+                    badge.hidden = true;
+                    badge.textContent = '';
+                    badge.removeAttribute('title');
+                }
+            });
+        }
+
+        function markPhenotypeRelatedGenes() {
+            var status = document.getElementById('hpo-review-status');
+            if (!confirmedPhenotypeContext().length) {
+                return;
+            }
+            status.textContent = 'Ranking phenotype-associated genes with PubCaseFinder...';
+            status.classList.remove('is-error');
+            fetch("{{ url_for('expertboard.api_patient_pubcasefinder_genes', patient_id=r_patient.id) }}", {
+                method: 'POST', headers: {'Accept': 'application/json'}
+            })
+                .then(function(response) {
+                    return response.json().then(function(data) {
+                        if (!response.ok) throw new Error(data.error || 'Gene ranking failed.');
+                        return data;
+                    });
+                })
+                .then(function(data) {
+                    var rankedGenes = new Map();
+                    ((data.ranking || {}).results || []).forEach(function(result) {
+                        var symbol = String(result.gene_symbol || '').trim().toUpperCase();
+                        if (symbol && !rankedGenes.has(symbol)) {
+                            rankedGenes.set(symbol, {rank: result.rank, score: result.score});
+                        }
+                    });
+                    clearPhenotypeGeneMarks();
+                    var matchedRows = 0;
+                    document.querySelectorAll('#variant-tbody tr:not(.assessment-form-row)').forEach(function(row) {
+                        var symbol = String(row.dataset.gene || '').trim().toUpperCase();
+                        var match = rankedGenes.get(symbol);
+                        if (!match) return;
+                        row.classList.add('hpo-gene-match');
+                        var badge = row.querySelector('.hpo-gene-rank-badge');
+                        badge.textContent = 'Pheno_Disease rank' + match.rank;
+                        badge.title = 'PubCaseFinder phenotype-associated gene rank ' + match.rank +
+                            ' (score ' + match.score + '). This is not evidence of variant pathogenicity.';
+                        badge.hidden = false;
+                        matchedRows += 1;
+                    });
+                    status.textContent = matchedRows
+                        ? matchedRows + ' variant row(s) match the top phenotype-associated genes. This does not indicate pathogenicity.'
+                        : 'No variant genes match the top 50 phenotype-associated genes.';
+                })
+                .catch(function(error) {
+                    clearPhenotypeGeneMarks();
+                    status.textContent = error.message;
+                    status.classList.add('is-error');
+                });
+        }
+
+        function showPhenotypeRelatedDiseases(button) {
+            var status = document.getElementById('hpo-review-status');
+            var results = document.getElementById('hpo-disease-results');
+            if (!confirmedPhenotypeContext().length) {
+                status.textContent = 'Confirm at least one patient HPO before ranking diseases.';
+                status.classList.add('is-error');
+                return;
+            }
+            button.disabled = true;
+            status.textContent = 'Ranking phenotype-associated diseases with PubCaseFinder...';
+            status.classList.remove('is-error');
+            fetch("{{ url_for('expertboard.api_patient_pubcasefinder_diseases', patient_id=r_patient.id) }}", {
+                method: 'POST', headers: {'Accept': 'application/json'}
+            })
+                .then(function(response) {
+                    return response.json().then(function(data) {
+                        if (!response.ok) throw new Error(data.error || 'Disease ranking failed.');
+                        return data;
+                    });
+                })
+                .then(function(data) {
+                    results.replaceChildren();
+                    ((data.ranking || {}).results || []).forEach(function(disease) {
+                        var item = document.createElement('div');
+                        item.className = 'hpo-disease-item';
+                        var heading = document.createElement('strong');
+                        var name = disease.name_en || disease.id;
+                        if (disease.name_ja && disease.name_ja !== disease.name_en) {
+                            name += ' / ' + disease.name_ja;
+                        }
+                        heading.textContent = '#' + disease.rank + ' ' + name;
+                        var genes = document.createElement('span');
+                        genes.textContent = 'Genes: ' + ((disease.gene_symbols || []).join(', ') || 'Not listed');
+                        var inheritance = document.createElement('span');
+                        inheritance.className = 'hpo-inheritance';
+                        inheritance.textContent = 'Inheritance: ' +
+                            ((disease.inheritance || []).join(', ') || 'Not listed');
+                        var score = document.createElement('span');
+                        score.textContent = 'Phenotype-match score: ' + disease.score;
+                        item.append(heading, genes, inheritance, score);
+                        results.appendChild(item);
+                    });
+                    results.hidden = false;
+                    status.textContent = 'Related diseases and reported inheritance modes loaded. These are phenotype associations, not diagnoses.';
+                })
+                .catch(function(error) {
+                    results.replaceChildren();
+                    results.hidden = true;
+                    status.textContent = error.message;
+                    status.classList.add('is-error');
+                })
+                .finally(function() { button.disabled = !confirmedPhenotypeContext().length; });
+        }
 
         function setVariantAnnotationError(elementId, message) {
             var element = document.getElementById(elementId);
@@ -1219,6 +1615,25 @@
                 {name: 'reviewerLbThresholdOverride', value: assessment.reviewerOverride}
             ];
             if (notes) extensions.push({name: 'reviewerNotes', value: notes});
+            var confirmedPhenotypes = confirmedPhenotypeContext();
+            if (confirmedPhenotypes.length) {
+                extensions.push({
+                    name: 'expertboardConfirmedPatientPhenotypes',
+                    value: {
+                        patient_id: vaSpecContext.patientId,
+                        vocabulary: 'Human Phenotype Ontology',
+                        terms: confirmedPhenotypes.map(function(phenotype) {
+                            return {
+                                id: phenotype.hpo_id,
+                                label: phenotype.label,
+                                source_text: phenotype.source_text,
+                                confirmed_by: phenotype.confirmed_by,
+                                confirmed_at: phenotype.confirmed_at
+                            };
+                        })
+                    }
+                });
+            }
             var vaSpec = {
                 id: statementId,
                 type: 'Statement',
@@ -1355,6 +1770,13 @@
         document.querySelector('#assess-form [name=notes]')
             .addEventListener('input', updateVaSpecPreview);
         document.getElementById('assess-form').addEventListener('submit', collectCriterionComments);
+        
+        // Auto-trigger gene marking on page load if confirmed phenotypes exist
+        document.addEventListener('DOMContentLoaded', function() {
+            if (confirmedPhenotypeContext().length) {
+                markPhenotypeRelatedGenes();
+            }
+        });
     </script>
 </body>
 </html>

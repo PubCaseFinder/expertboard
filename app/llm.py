@@ -7,11 +7,13 @@ Supports both the native Ollama API (/api/chat) and OpenAI-compatible endpoints
 
 import json
 import logging
+import re
 from urllib.parse import urlparse
 
 import requests
 
 from app import admin as admin_module
+from app import hpo_client
 
 log = logging.getLogger(__name__)
 
@@ -58,6 +60,78 @@ def _is_ollama_cloud(base_url):
 def is_configured():
     base_url, _, _ = _get_client_settings()
     return bool(base_url)
+
+
+_HPO_EXTRACTION_SYSTEM = """\
+You are a clinical phenotyping assistant. Extract only phenotypes explicitly
+present in the supplied clinical text. A terminology service will map the
+extracted labels to Human Phenotype Ontology (HPO) identifiers.
+
+Return ONLY one valid JSON object with this shape:
+{
+  "phenotypes": [
+    {
+    "label": "concise clinical phenotype",
+      "source_text": "short exact phrase from the clinical text"
+    }
+  ]
+}
+
+Rules:
+- Include only patient findings, not diagnoses, genes, tests, treatments, or family-member findings.
+- Exclude negated findings, ruled-out findings, and hypothetical findings.
+- Extract each explicitly stated symptom, examination finding, developmental finding, or abnormal measurement.
+- Do not decide or return HPO identifiers; return phenotype labels even when you do not know an HPO identifier.
+- Use a concise phenotype label suitable for terminology lookup.
+- Preserve the meaning of onset, severity, laterality, and frequency when choosing a term.
+- Deduplicate synonymous findings.
+- Return an empty phenotypes array only when the text contains no explicit patient phenotype.
+"""
+
+
+def extract_hpo_phenotypes(clinical_text):
+    """Use the configured LLM to extract HPO candidates from clinical text."""
+    if not (clinical_text or "").strip():
+        return []
+    base_url, model, api_key = _get_client_settings()
+    if not base_url:
+        raise RuntimeError("Ollama is not configured. Set the URL in Admin.")
+
+    raw = _chat(
+        [
+            {"role": "system", "content": _HPO_EXTRACTION_SYSTEM},
+            {"role": "user", "content": clinical_text.strip()},
+        ],
+        base_url,
+        model,
+        api_key,
+    ).strip()
+    if raw.startswith("```"):
+        raw = raw.split("```", 2)[1]
+        if raw.startswith("json"):
+            raw = raw[4:]
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("Ollama returned invalid JSON for HPO extraction.") from exc
+
+    candidates = []
+    for item in payload.get("phenotypes", []):
+        if not isinstance(item, dict):
+            continue
+        label = str(item.get("label") or "").strip()
+        if not label:
+            continue
+        candidates.append(
+            {
+                "label": label,
+                "source_text": str(item.get("source_text") or ""),
+            }
+        )
+    try:
+        return hpo_client.resolve_candidates(candidates)
+    except requests.RequestException as exc:
+        raise RuntimeError(f"HPO terminology lookup failed: {exc}") from exc
 
 
 def _chat(messages, base_url, model, api_key):
@@ -142,6 +216,7 @@ You will receive:
 - a patient's clinical description (including family history if available)
 - a list of genetic variants with annotation data from VCF INFO fields (including VEP annotations)
 - when available, a latest_external_annotation object containing live VEP and VRS results
+- when available, case_external_evidence containing PubCaseFinder phenotype rankings and case reports
 
 For each variant, perform the following analysis and return a structured JSON response.
 
@@ -157,6 +232,9 @@ Interpret variants according to:
 Do not invent evidence. Only recommend criteria that are directly supported by the available data.
 Prefer latest_external_annotation over older VCF INFO values when they conflict.
 Use the VRS identifier to establish variant identity only; it is not pathogenicity evidence.
+Treat PubCaseFinder rankings as diagnostic-support signals, not proof of causality.
+A case-report citation alone does not establish PS3, PS4, or any other ACMG criterion;
+apply a criterion only when the supplied evidence contains the required study details.
 
 == Analysis tasks ==
 
@@ -235,7 +313,9 @@ Common examples:
 """
 
 
-def analyze_variants(clinical_text, variants, annotations_by_variant=None):
+def analyze_variants(
+    clinical_text, variants, annotations_by_variant=None, case_evidence=None
+):
     """Analyze variants against clinical text using the configured Ollama model.
 
     Parameters
@@ -280,6 +360,11 @@ def analyze_variants(clinical_text, variants, annotations_by_variant=None):
         f"Patient clinical description:\n{clinical_text or '(not provided)'}\n\n"
         f"Variants to analyze:\n{json.dumps(variant_list, ensure_ascii=False)}"
     )
+    if case_evidence:
+        user_message += (
+            "\n\nCase external evidence:\n"
+            + json.dumps(case_evidence, ensure_ascii=False)
+        )
 
     messages = [
         {"role": "system", "content": _ANALYZE_SYSTEM},

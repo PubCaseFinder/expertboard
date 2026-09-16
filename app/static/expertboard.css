@@ -1655,6 +1655,126 @@ h1 {
     justify-self: start;
 }
 
+.clinical-hpo-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(360px, .9fr);
+    gap: 20px;
+    align-items: start;
+}
+.hpo-review-panel {
+    border-left: 1px solid #dbe3ec;
+    padding-left: 20px;
+    min-width: 0;
+}
+.hpo-review-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+.hpo-review-header h3 { margin: 0; font-size: 14px; color: #111827; }
+.hpo-review-header p { margin: 3px 0 0; font-size: 12px; color: #64748b; }
+.hpo-candidate-list,
+.hpo-confirmed-list { display: grid; gap: 7px; margin-top: 10px; }
+.hpo-manual-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    margin-top: 10px;
+}
+.hpo-manual-row input {
+    min-width: 0;
+    border: 1px solid #cbd5e1;
+    border-radius: 5px;
+    padding: 7px 8px;
+    font: inherit;
+}
+.hpo-candidate-item,
+.hpo-confirmed-item {
+    border: 1px solid #dbe3ec;
+    border-radius: 5px;
+    padding: 8px;
+    background: #fff;
+}
+.hpo-candidate-item {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 8px;
+    align-items: start;
+}
+.hpo-candidate-item input { margin-top: 2px; }
+.hpo-candidate-copy { display: grid; gap: 2px; }
+.hpo-candidate-copy strong,
+.hpo-confirmed-item strong { font-size: 12px; color: #111827; }
+.hpo-candidate-copy span,
+.hpo-confirmed-item span { font-size: 11px; color: #64748b; }
+.hpo-match-suggested { color: #9a3412 !important; }
+.hpo-review-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.hpo-confirmed-block { margin-top: 14px; padding-top: 12px; border-top: 1px solid #dbe3ec; }
+.hpo-confirmed-block > strong { font-size: 12px; color: #334155; }
+.hpo-confirmed-item {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px;
+    background: #f8fafc;
+}
+.hpo-confirmed-item > div { display: grid; gap: 3px; min-width: 0; }
+.hpo-remove-btn {
+    width: 26px;
+    height: 26px;
+    flex: 0 0 26px;
+    border: 0;
+    background: transparent;
+    color: #64748b;
+    cursor: pointer;
+    font-size: 13px;
+}
+.hpo-remove-btn:hover { color: #b91c1c; background: #fee2e2; border-radius: 4px; }
+.hpo-remove-btn:disabled { cursor: wait; opacity: .5; }
+.hpo-empty { margin: 0; color: #64748b; font-size: 12px; }
+.hpo-disease-results {
+    display: grid;
+    gap: 7px;
+    margin-top: 10px;
+    max-height: 300px;
+    overflow-y: auto;
+}
+.hpo-disease-results[hidden] { display: none; }
+.hpo-disease-item {
+    display: grid;
+    gap: 3px;
+    padding: 8px;
+    border: 1px solid #dbe3ec;
+    border-radius: 5px;
+    background: #f8fafc;
+}
+.hpo-disease-item strong { color: #111827; font-size: 12px; }
+.hpo-disease-item span { color: #64748b; font-size: 11px; }
+.hpo-disease-item .hpo-inheritance { color: #334155; font-weight: 600; }
+
+.variant-gene-cell { box-shadow: inset 0 0 transparent; }
+.hpo-gene-match .variant-gene-cell { box-shadow: inset 2px 0 #94a3b8; }
+.hpo-gene-rank-badge {
+    display: inline-block;
+    margin-left: 5px;
+    padding: 1px 4px;
+    border: 1px solid #cbd5e1;
+    border-radius: 3px;
+    background: #f1f5f9;
+    color: #475569;
+    font-size: 9px;
+    font-weight: 600;
+    vertical-align: middle;
+    white-space: nowrap;
+}
+.hpo-gene-rank-badge[hidden] { display: none; }
+
+@media (max-width: 900px) {
+    .clinical-hpo-layout { grid-template-columns: 1fr; }
+    .hpo-review-panel { border-left: 0; border-top: 1px solid #dbe3ec; padding: 16px 0 0; }
+}
+
 .status-form {
     display: grid;
     gap: 12px;
@@ -2139,7 +2259,7 @@ h1 {
     background: #fff;
     border-radius: 10px;
     box-shadow: 0 8px 32px rgba(0,0,0,.25);
-    width: min(860px, 94vw);
+    width: min(1290px, 96vw);
     max-height: 88vh;
     display: flex;
     flex-direction: column;
@@ -2177,13 +2297,32 @@ h1 {
     min-height: 0;
     overflow-y: auto;
     padding: 14px 18px;
-    display: flex;
-    gap: 16px;
-    flex-wrap: wrap;
-    align-content: flex-start;
 }
 
-.acmg-group { flex: 1; min-width: 260px; }
+.acmg-modal-columns {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 20px;
+    align-items: start;
+}
+.acmg-left-column,
+.acmg-right-column {
+    min-width: 0;
+    display: grid;
+    gap: 16px;
+    align-content: start;
+}
+.acmg-right-column {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.acmg-right-column > .ai-suggestion-panel,
+.acmg-right-column > .acmg-score-summary,
+.acmg-right-column > .acmg-notes-row,
+.acmg-right-column > .va-spec-preview {
+    grid-column: 1 / -1;
+}
+
+.acmg-group { min-width: 0; }
 .acmg-group-title {
     font-size: 12px;
     font-weight: 700;
@@ -2277,6 +2416,15 @@ h1 {
     margin: 8px 0 0;
     overflow: auto;
     white-space: pre;
+}
+
+@media (max-width: 1050px) {
+    .acmg-modal-columns { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 640px) {
+    .acmg-right-column { grid-template-columns: 1fr; }
+    .acmg-right-column > * { grid-column: 1; }
 }
 
 .assess-add-btn {

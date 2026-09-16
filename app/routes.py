@@ -6,6 +6,8 @@ from flask import redirect
 from flask import render_template
 from flask import request
 from flask import url_for
+import re
+import requests
 
 from app import auth
 from app import cases
@@ -13,11 +15,14 @@ from app import patients
 from app import admin
 from app import panel
 from app import family as family_module
+from app import hpo_client
 from app import togovar_client
+from app import togomcp_client
 from app import assessments as assessments_module
 from app import llm as llm_module
 from app import vep_api
 from app.db import Session
+from app.models import Case
 from app.models import Variant
 
 
@@ -143,6 +148,7 @@ def patient_detail(patient_id):
         r_patient=patient,
         r_current_user_display=auth.current_user_display(),
         r_llm_configured=llm_module.is_configured(),
+        r_confirmed_phenotypes=patients.list_confirmed_phenotypes(patient_id),
         r_variants=proband_variants,
         r_variant_shares=variant_shares,
         r_proband_vkeys=list(proband_key_map.keys()),
@@ -580,4 +586,242 @@ def case_detail(case_id):
             room_id=case_detail["case"].id,
         )
     )
+
+
+@bp.route("/api/cases/<int:case_id>/pubcasefinder-evidence", methods=["POST"])
+def api_case_pubcasefinder_evidence(case_id):
+    case = Session().get(Case, case_id)
+    if case is None:
+        abort(404)
+    try:
+        evidence = togomcp_client.collect_pubcasefinder_evidence([case.phenotypes])
+    except (RuntimeError, ValueError) as exc:
+        return jsonify({"error": str(exc)}), 502
+    return jsonify(evidence)
+
+
+@bp.route("/api/patients/<int:patient_id>/pubcasefinder-evidence", methods=["POST"])
+def api_patient_pubcasefinder_evidence(patient_id):
+    patient = patients.get_patient(patient_id)
+    if patient is None:
+        abort(404)
+
+    payload = request.get_json(silent=True) or {}
+    phenotype_sources = [payload.get("hpo_ids")]
+    if not togomcp_client.extract_hpo_ids(phenotype_sources):
+        phenotype_sources.append(
+            [item.hpo_id for item in patients.list_confirmed_phenotypes(patient_id)]
+        )
+    try:
+        evidence = togomcp_client.collect_pubcasefinder_evidence(phenotype_sources)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 502
+    return jsonify(evidence)
+
+
+@bp.route("/api/patients/<int:patient_id>/pubcasefinder-genes", methods=["POST"])
+def api_patient_pubcasefinder_genes(patient_id):
+    if patients.get_patient(patient_id) is None:
+        abort(404)
+    confirmed_hpo_ids = [
+        item.hpo_id for item in patients.list_confirmed_phenotypes(patient_id)
+    ]
+    try:
+        ranking = togomcp_client.collect_pubcasefinder_gene_ranking(
+            confirmed_hpo_ids
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 502
+    return jsonify(ranking)
+
+
+@bp.route("/api/patients/<int:patient_id>/pubcasefinder-diseases", methods=["POST"])
+def api_patient_pubcasefinder_diseases(patient_id):
+    if patients.get_patient(patient_id) is None:
+        abort(404)
+    confirmed_hpo_ids = [
+        item.hpo_id for item in patients.list_confirmed_phenotypes(patient_id)
+    ]
+    try:
+        ranking = togomcp_client.collect_pubcasefinder_disease_ranking(
+            confirmed_hpo_ids
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 502
+    return jsonify(ranking)
+
+
+def _patient_phenotype_payload(phenotype):
+    return {
+        "hpo_id": phenotype.hpo_id,
+        "label": phenotype.hpo_label or "",
+        "source": phenotype.source,
+        "source_text": phenotype.source_quote or "",
+        "confirmed_by": phenotype.confirmed_by,
+        "confirmed_at": phenotype.confirmed_at.isoformat()
+        if hasattr(phenotype.confirmed_at, "isoformat")
+        else str(phenotype.confirmed_at),
+    }
+
+
+@bp.route("/api/patients/<int:patient_id>/phenotypes")
+def api_patient_phenotypes(patient_id):
+    patient = patients.get_patient(patient_id)
+    if patient is None:
+        abort(404)
+    return jsonify(
+        {
+            "type": "PatientPhenotypeContext",
+            "patient_id": patient.id,
+            "confirmed_phenotypes": [
+                _patient_phenotype_payload(item)
+                for item in patients.list_confirmed_phenotypes(patient_id)
+            ],
+        }
+    )
+
+
+@bp.route("/api/patients/<int:patient_id>/phenotypes/extract", methods=["POST"])
+def api_patient_phenotypes_extract(patient_id):
+    patient = patients.get_patient(patient_id)
+    if patient is None:
+        abort(404)
+    if not (patient.clinical_text or "").strip():
+        return jsonify({"error": "Save clinical free text before extracting HPO candidates."}), 400
+    try:
+        candidates = llm_module.extract_hpo_phenotypes(patient.clinical_text)
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 502
+    return jsonify({"candidates": candidates})
+
+
+@bp.route("/api/patients/<int:patient_id>/phenotypes/resolve", methods=["POST"])
+def api_patient_phenotypes_resolve(patient_id):
+    if patients.get_patient(patient_id) is None:
+        abort(404)
+    payload = request.get_json(silent=True) or {}
+    try:
+        phenotype = hpo_client.resolve_id(payload.get("hpo_id"))
+    except requests.RequestException as exc:
+        return jsonify({"error": f"HPO terminology lookup failed: {exc}"}), 502
+    if phenotype is None:
+        return jsonify({"error": "Enter a current HPO ID such as HP:0001250."}), 400
+    return jsonify(
+        {
+            "candidate": {
+                **phenotype,
+                "source": "manual_review",
+                "source_text": "",
+            }
+        }
+    )
+
+
+@bp.route("/api/patients/<int:patient_id>/phenotypes/confirm", methods=["POST"])
+def api_patient_phenotypes_confirm(patient_id):
+    patient = patients.get_patient(patient_id)
+    if patient is None:
+        abort(404)
+    payload = request.get_json(silent=True) or {}
+    raw_items = payload.get("phenotypes")
+    if not isinstance(raw_items, list):
+        return jsonify({"error": "phenotypes must be a JSON array."}), 400
+
+    clinical_text = patient.clinical_text or ""
+    confirmed = []
+    seen = set()
+    for raw_item in raw_items[:100]:
+        if not isinstance(raw_item, dict):
+            continue
+        hpo_id = str(raw_item.get("hpo_id") or "").strip().upper()
+        if not re.fullmatch(r"HP:\d{7}", hpo_id) or hpo_id in seen:
+            continue
+        try:
+            resolved = hpo_client.resolve_id(hpo_id)
+        except requests.RequestException as exc:
+            return jsonify({"error": f"HPO terminology lookup failed: {exc}"}), 502
+        if resolved is None:
+            return jsonify({"error": f"Unknown or obsolete HPO ID: {hpo_id}"}), 400
+        seen.add(hpo_id)
+        source_text = str(raw_item.get("source_text") or "").strip()[:1000]
+        if source_text and source_text.casefold() not in clinical_text.casefold():
+            source_text = ""
+        source = str(raw_item.get("source") or "clinical_text_review")
+        if source not in ("clinical_text_review", "manual_review"):
+            source = "clinical_text_review"
+        confirmed.append(
+            {
+                "hpo_id": hpo_id,
+                "label": resolved["label"][:255],
+                "source": source,
+                "source_text": source_text,
+            }
+        )
+
+    saved = patients.replace_confirmed_phenotypes(
+        patient_id, confirmed, auth.current_user_display()
+    )
+    return jsonify(
+        {"confirmed": [_patient_phenotype_payload(item) for item in saved or []]}
+    )
+
+
+@bp.route(
+    "/api/patients/<int:patient_id>/phenotypes/<hpo_id>", methods=["DELETE"]
+)
+def api_patient_phenotype_remove(patient_id, hpo_id):
+    if patients.get_patient(patient_id) is None:
+        abort(404)
+    normalized = hpo_id.strip().upper()
+    if not re.fullmatch(r"HP:\d{7}", normalized):
+        return jsonify({"error": "Invalid HPO ID."}), 400
+    if not patients.remove_confirmed_phenotype(patient_id, normalized):
+        return jsonify({"error": "Confirmed phenotype not found."}), 404
+    return jsonify(
+        {
+            "confirmed": [
+                _patient_phenotype_payload(item)
+                for item in patients.list_confirmed_phenotypes(patient_id)
+            ]
+        }
+    )
+
+
+@bp.route("/api/cases/<int:case_id>/pubcasefinder-ai-review", methods=["POST"])
+def api_case_pubcasefinder_ai_review(case_id):
+    if not llm_module.is_configured():
+        return jsonify({"error": "Ollama is not configured. Set the URL in Admin."}), 503
+
+    case = Session().get(Case, case_id)
+    if case is None:
+        abort(404)
+    if case.patient_id is None:
+        return jsonify({"error": "This review room is not linked to a patient."}), 400
+
+    patient = patients.get_patient(case.patient_id)
+    variant_list = patients.get_patient_variants(case.patient_id)
+    if patient is None or not variant_list:
+        return jsonify({"error": "The linked patient has no variants."}), 400
+
+    try:
+        evidence = togomcp_client.collect_pubcasefinder_evidence([case.phenotypes])
+    except (RuntimeError, ValueError) as exc:
+        return jsonify({"error": str(exc)}), 502
+
+    result = llm_module.analyze_variants(
+        patient.clinical_text,
+        variant_list,
+        case_evidence=evidence,
+    )
+    if "error" in result:
+        return jsonify({"error": result["error"], "evidence": evidence}), 502
+
+    patients.save_llm_scores(case.patient_id, result)
+    return jsonify({"evidence": evidence, "analysis": result})
 

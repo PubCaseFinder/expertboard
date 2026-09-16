@@ -161,6 +161,22 @@ http://localhost:8010/boards
 
 Create the first demo board room from the landing page.
 
+## TogoMCP and PubCaseFinder
+
+The case Evidence inbox uses the PubCaseFinder tools introduced in TogoMCP
+2.16.0 to rank candidate diseases from HPO terms and retrieve PubMed case
+reports. It uses the hosted DBCLS endpoint by default:
+
+```bash
+TOGOMCP_BASE_URL=https://togomcp.rdfportal.org/mcp
+```
+
+For a private TogoMCP service on the same Docker network, set this to
+`http://togomcp:8000/mcp`. ExpertBoard sends only HPO and MONDO identifiers to
+TogoMCP, not patient names or clinical free text. When a review room is linked
+to a patient, the resulting evidence can be included in the existing Ollama
+variant analysis.
+
 ## MVP scope
 
 - Expert board list and demo board creation
