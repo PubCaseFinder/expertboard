@@ -219,9 +219,10 @@ def _normalize_strength(value):
     }.get(normalized)
 
 
-def parse_evidence(acmg_codes):
+def parse_evidence(acmg_codes, criterion_comments=None):
     """Convert stored ACMG tokens into individually scored evidence items."""
     valid_codes = {code for code, _label in ACMG_CODES}
+    comments = criterion_comments or {}
     evidence = []
     for raw_token in (acmg_codes or "").split(","):
         token = raw_token.strip()
@@ -234,11 +235,15 @@ def parse_evidence(acmg_codes):
         strength = strength or ACMG_DEFAULT_WEIGHTS.get(code, "Supporting")
         magnitude = STRENGTH_POINTS[strength]
         points = -magnitude if code.startswith("B") else magnitude
-        evidence.append({
+        item = {
             "code": code,
             "strength": strength,
             "points": points,
-        })
+        }
+        comment = str(comments.get(code) or "").strip()
+        if comment:
+            item["comment"] = comment
+        evidence.append(item)
     return evidence
 
 
@@ -335,9 +340,10 @@ def add_assessment(
     assessed_by,
     acmg_codes=None,
     reviewer_override=False,
+    criterion_comments=None,
 ):
     """Create an assessment. Returns (assessment, error)."""
-    evidence = parse_evidence(acmg_codes)
+    evidence = parse_evidence(acmg_codes, criterion_comments)
     calculated = calculate_assessment(evidence, reviewer_override)
 
     raw_gid = str(expert_board_id or "").strip()
@@ -355,6 +361,9 @@ def add_assessment(
         evidence_level=(evidence_level or "").strip() or None,
         acmg_codes=(acmg_codes or "").strip() or None,
         evidence_points=json.dumps(evidence, separators=(",", ":")),
+        criterion_comments=json.dumps(
+            criterion_comments or {}, ensure_ascii=False, separators=(",", ":")
+        ),
         total_score=calculated["total_score"],
         posterior_probability=calculated["posterior_probability"],
         reviewer_override_lb_threshold=calculated["reviewer_override"],

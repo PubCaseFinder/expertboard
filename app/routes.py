@@ -178,6 +178,18 @@ def patient_variant_assessment_add(patient_id, variant_id):
             if token:
                 acmg_tokens.append(token)
     acmg_str = ", ".join(dict.fromkeys(acmg_tokens)) if acmg_tokens else None
+    try:
+        criterion_comments = request.get_json(silent=True) or {}
+        criterion_comments = criterion_comments.get("criterion_comments", {})
+        if not criterion_comments:
+            import json
+            criterion_comments = json.loads(
+                request.form.get("criterion_comments") or "{}"
+            )
+        if not isinstance(criterion_comments, dict):
+            criterion_comments = {}
+    except (TypeError, ValueError):
+        criterion_comments = {}
     assessment, error = assessments_module.add_assessment(
         variant_id,
         None,
@@ -187,6 +199,7 @@ def patient_variant_assessment_add(patient_id, variant_id):
         auth.current_user_display(),   # auto-stamped from session
         acmg_codes=acmg_str,
         reviewer_override=request.form.get("reviewer_override_lb_threshold") == "1",
+        criterion_comments=criterion_comments,
     )
     if request.accept_mimetypes.best == "application/json":
         if error:

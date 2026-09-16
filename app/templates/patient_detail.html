@@ -740,6 +740,9 @@
                                             <option value="{{ weight_key }}">{{ weight_label }}</option>
                                         {% endfor %}
                                     </select>
+                                    <textarea class="acmg-criterion-comment" rows="2"
+                                              aria-label="{{ code }} comment"
+                                              placeholder="Comment for {{ code }}..." disabled></textarea>
                                 </label>
                             {% endfor %}
                         </div>
@@ -758,6 +761,9 @@
                                             <option value="{{ weight_key }}">{{ weight_label }}</option>
                                         {% endfor %}
                                     </select>
+                                    <textarea class="acmg-criterion-comment" rows="2"
+                                              aria-label="{{ code }} comment"
+                                              placeholder="Comment for {{ code }}..." disabled></textarea>
                                 </label>
                             {% endfor %}
                         </div>
@@ -770,6 +776,7 @@
                     </div>
                 </div>
                 <input type="hidden" name="acmg_codes" id="acmg-hidden-modal">
+                <input type="hidden" name="criterion_comments" id="criterion-comments-modal" value="{}">
                 <div class="acmg-modal-footer">
                     <span class="acmg-selected-preview" id="acmg-preview">— no ACMG criteria selected —</span>
                     <button type="submit" class="inline-button">Save</button>
@@ -806,11 +813,24 @@
         function syncAcmgRowState(row) {
             var cb = row.querySelector('input[type=checkbox]');
             var sel = row.querySelector('select');
+            var comment = row.querySelector('.acmg-criterion-comment');
             if (!cb || !sel) {
                 return;
             }
             sel.disabled = !cb.checked;
+            if (comment) comment.disabled = !cb.checked;
             row.classList.toggle('is-selected', cb.checked);
+        }
+
+        function collectCriterionComments() {
+            var comments = {};
+            document.querySelectorAll('#acmg-modal .acmg-cb').forEach(function(row) {
+                var cb = row.querySelector('input[type=checkbox]');
+                var field = row.querySelector('.acmg-criterion-comment');
+                var comment = field ? field.value.trim() : '';
+                if (cb && cb.checked && comment) comments[cb.value] = comment;
+            });
+            document.getElementById('criterion-comments-modal').value = JSON.stringify(comments);
         }
 
         function acmgTokenFromRow(row) {
@@ -879,11 +899,14 @@
             document.querySelectorAll('#acmg-modal .acmg-cb').forEach(function(row){
                 var cb = row.querySelector('input[type=checkbox]');
                 var sel = row.querySelector('select');
+                var comment = row.querySelector('.acmg-criterion-comment');
                 if (cb) cb.checked = false;
                 if (sel) sel.disabled = true;
+                if (comment) comment.disabled = true;
                 row.classList.remove('is-selected');
             });
             document.getElementById('acmg-hidden-modal').value = '';
+            document.getElementById('criterion-comments-modal').value = '{}';
             document.getElementById('acmg-preview').textContent = '\u2014 no ACMG criteria selected \u2014';
             autoClassify([]);
 
@@ -961,9 +984,8 @@
                     if (suffix) {
                         sel.value = suffix;
                     }
-                    sel.disabled = false;
-                    row.classList.add('is-selected');
                 }
+                syncAcmgRowState(row);
             });
             updateAcmgPreview();
         }
@@ -984,6 +1006,7 @@
         });
         document.querySelector('#assess-form [name=reviewer_override_lb_threshold]')
             .addEventListener('change', updateAcmgPreview);
+        document.getElementById('assess-form').addEventListener('submit', collectCriterionComments);
     </script>
 </body>
 </html>

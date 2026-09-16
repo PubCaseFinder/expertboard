@@ -43,6 +43,7 @@ def ensure_schema():
     _add_table_column_if_missing("variant_assessments", "expert_board_id INT NULL")
     _add_table_column_if_missing("variant_assessments", "acmg_codes VARCHAR(255) NULL")
     _add_table_column_if_missing("variant_assessments", "evidence_points TEXT NULL")
+    _add_table_column_if_missing("variant_assessments", "criterion_comments TEXT NULL")
     _add_table_column_if_missing("variant_assessments", "total_score DOUBLE NULL")
     _add_table_column_if_missing("variant_assessments", "posterior_probability DOUBLE NULL")
     _add_table_column_if_missing(
