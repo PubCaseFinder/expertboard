@@ -5,7 +5,7 @@ services:
     env_file:
       - .env
     environment:
-      SCRIPT_NAME: /expertboard
+      GA4GH_VRS_DATAPROXY_URI: ${GA4GH_VRS_DATAPROXY_URI:-seqrepo+https://services.genomicmedlab.org/seqrepo}
 
     ports:
       - "${EXPERTBOARD_APP_PORT:-8010}:8010"
@@ -46,4 +46,25 @@ services:
           memory: 2G
         reservations:
           memory: 1G
+
+  seqrepo:
+    image: biocommons/seqrepo-rest-service:0.2.2
+    container_name: expertboard-seqrepo
+    profiles: ["vrs"]
+    command: ["seqrepo-rest-service", "/mnt/seqrepo/${SEQREPO_VERSION:-2024-12-20}"]
+    ports:
+      - "${EXPERTBOARD_SEQREPO_PORT:-5000}:5000"
+    volumes:
+      - ${SEQREPO_DATA_DIR:-./seqrepo-data}:/mnt/seqrepo:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/seqrepo/1/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 512M
 

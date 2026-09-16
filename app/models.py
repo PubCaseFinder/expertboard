@@ -5,6 +5,7 @@ from sqlalchemy import Text
 from sqlalchemy import func
 from sqlalchemy.orm import Mapped
 from sqlalchemy.orm import mapped_column
+from sqlalchemy.dialects.mysql import LONGTEXT
 from sqlalchemy.types import String
 from sqlalchemy.types import TIMESTAMP
 
@@ -57,8 +58,8 @@ class Variant(Base):
     chrom: Mapped[str] = mapped_column(String(16), nullable=False)
     pos: Mapped[int] = mapped_column(nullable=False)
     variant_ext_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    ref: Mapped[str] = mapped_column(String(255), nullable=False)
-    alt: Mapped[str] = mapped_column(String(255), nullable=False)
+    ref: Mapped[str] = mapped_column(LONGTEXT(), nullable=False)
+    alt: Mapped[str] = mapped_column(LONGTEXT(), nullable=False)
     gene: Mapped[str | None] = mapped_column(String(64), nullable=True)
     hgvs_c: Mapped[str | None] = mapped_column(String(128), nullable=True)
     hgvs_p: Mapped[str | None] = mapped_column(String(128), nullable=True)

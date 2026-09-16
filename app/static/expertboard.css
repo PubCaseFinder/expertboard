@@ -327,6 +327,87 @@ h1 {
 
 .ai-col-header { white-space: nowrap; }
 
+.va-data-btn {
+    border: 1px solid #0f766e;
+    border-radius: 4px;
+    background: #f0fdfa;
+    color: #0f766e;
+    padding: 5px 7px;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+}
+.va-data-btn:hover { background: #ccfbf1; }
+.va-data-btn:disabled { cursor: wait; opacity: .55; }
+.va-data-variant { color: #6b7280; font-family: monospace; font-size: 12px; }
+.va-review-panel {
+    margin-bottom: 12px;
+    padding: 10px 12px;
+    border: 1px solid #99d5ce;
+    border-radius: 6px;
+    background: #f5fffd;
+}
+.va-review-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.va-review-toolbar > div {
+    display: flex;
+    flex: 1;
+    min-width: 0;
+    flex-direction: column;
+    gap: 2px;
+    font-size: 12px;
+}
+.ai-refresh-btn {
+    border: 1px solid #2d6a4f;
+    border-radius: 4px;
+    background: #2d6a4f;
+    color: #fff;
+    padding: 5px 8px;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+}
+.ai-refresh-btn:hover { background: #1b4332; }
+.ai-refresh-btn:disabled { cursor: not-allowed; opacity: .45; }
+.va-data-status { padding: 10px 0 2px; color: #4b5563; font-size: 12px; }
+.va-data-status.is-error, .va-data-error { color: #b91c1c; }
+.va-data-error {
+    margin-bottom: 8px;
+    padding: 8px;
+    border: 1px solid #fecaca;
+    border-radius: 4px;
+    background: #fef2f2;
+    font-size: 12px;
+}
+.va-data-section + .va-data-section { margin-top: 18px; }
+.va-data-section h4 { margin: 0 0 8px; }
+.va-data-summary {
+    display: grid;
+    grid-template-columns: 120px minmax(0, 1fr);
+    gap: 5px 10px;
+    margin: 0 0 10px;
+    font-size: 12px;
+}
+.va-data-summary dt { color: #6b7280; font-weight: 700; }
+.va-data-summary dd { margin: 0; overflow-wrap: anywhere; font-family: monospace; }
+.va-data-section details summary { cursor: pointer; font-size: 12px; font-weight: 700; }
+.va-review-panel details { margin-top: 7px; }
+.va-review-panel details summary { cursor: pointer; font-size: 12px; font-weight: 700; }
+.va-json {
+    max-height: 360px;
+    overflow: auto;
+    padding: 10px;
+    border: 1px solid #d1d5db;
+    background: #f8fafc;
+    font-size: 11px;
+    line-height: 1.45;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
 .ai-suggestion-panel {
     background: #f0faf4;
     border: 1px solid #b7e4c7;
@@ -433,6 +514,13 @@ h1 {
 }
 
 .ai-apply-btn:hover { background: #2d6a4f; }
+
+@media (max-width: 700px) {
+    .va-review-toolbar { align-items: stretch; flex-direction: column; }
+    .va-review-toolbar .va-data-btn,
+    .va-review-toolbar .ai-refresh-btn { width: 100%; }
+    .va-data-summary { grid-template-columns: 1fr; }
+}
 
 .vcf-file-input {
     font-size: 12px;

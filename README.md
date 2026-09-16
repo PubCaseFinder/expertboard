@@ -108,6 +108,51 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
+## VEP and GA4GH VRS lookup
+
+Each variant row has a **VEP / VRS** action. It queries Ensembl VEP using the
+GRCh38 region endpoint and generates a normalized VRS Allele using the official
+`ga4gh.vrs` Python package. VEP remains available when SeqRepo is offline. By
+default, VRS uses the public SeqRepo REST service over HTTPS, so no local
+reference data download is required:
+
+```bash
+GA4GH_VRS_DATAPROXY_URI=seqrepo+https://services.genomicmedlab.org/seqrepo
+docker compose up -d --build app
+```
+
+For production or closed-network operation, run the optional local SeqRepo
+service. Store the GRCh38 data set in a host-managed persistent directory
+(preferably on a large data volume), and set these values in `.env`:
+
+```bash
+sudo mkdir -p /srv/expertboard/seqrepo
+printf '\nSEQREPO_DATA_DIR=/srv/expertboard/seqrepo\n' >> .env
+printf 'GA4GH_VRS_DATAPROXY_URI=seqrepo+http://seqrepo:5000/seqrepo\n' >> .env
+
+sudo docker run --rm \
+  -v /srv/expertboard/seqrepo:/usr/local/share/seqrepo \
+  biocommons/seqrepo-rest-service:0.2.2 \
+  sh -c 'apt-get update && apt-get install -y --no-install-recommends rsync && \
+         seqrepo pull -i 2024-12-20'
+```
+
+Start ExpertBoard with the optional SeqRepo REST service:
+
+```bash
+docker compose --profile vrs up -d --build
+```
+
+Verify SeqRepo before using VRS lookup:
+
+```bash
+curl -f http://localhost:5000/seqrepo/1/metadata/GRCh38:6
+```
+
+The host directory, data version, and host port can be overridden with
+`SEQREPO_DATA_DIR`, `SEQREPO_VERSION`, and `EXPERTBOARD_SEQREPO_PORT`. The
+application-side endpoint is configured through `GA4GH_VRS_DATAPROXY_URI`.
+
 Open:
 
 ```text

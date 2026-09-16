@@ -141,6 +141,7 @@ You are an expert clinical geneticist specializing in rare and undiagnosed disea
 You will receive:
 - a patient's clinical description (including family history if available)
 - a list of genetic variants with annotation data from VCF INFO fields (including VEP annotations)
+- when available, a latest_external_annotation object containing live VEP and VRS results
 
 For each variant, perform the following analysis and return a structured JSON response.
 
@@ -154,6 +155,8 @@ Interpret variants according to:
 - PM2 should be applied as PM2_Supporting (not PM2), following the ClinGen SVI recommendation on rarity/absence from population databases.
 
 Do not invent evidence. Only recommend criteria that are directly supported by the available data.
+Prefer latest_external_annotation over older VCF INFO values when they conflict.
+Use the VRS identifier to establish variant identity only; it is not pathogenicity evidence.
 
 == Analysis tasks ==
 
@@ -232,7 +235,7 @@ Common examples:
 """
 
 
-def analyze_variants(clinical_text, variants):
+def analyze_variants(clinical_text, variants, annotations_by_variant=None):
     """Analyze variants against clinical text using the configured Ollama model.
 
     Parameters
@@ -252,9 +255,10 @@ def analyze_variants(clinical_text, variants):
     if not base_url:
         return {}
 
+    annotations_by_variant = annotations_by_variant or {}
     variant_list = []
     for v in variants:
-        variant_list.append({
+        variant_data = {
             "id": v.id,
             "gene": v.gene or "",
             "hgvs_c": v.hgvs_c or "",
@@ -264,7 +268,13 @@ def analyze_variants(clinical_text, variants):
             "genotype": v.genotype or "",
             "depth": v.depth,
             "raw_info": v.raw_info or "",
-        })
+        }
+        annotation = annotations_by_variant.get(v.id) or annotations_by_variant.get(
+            str(v.id)
+        )
+        if annotation:
+            variant_data["latest_external_annotation"] = annotation
+        variant_list.append(variant_data)
 
     user_message = (
         f"Patient clinical description:\n{clinical_text or '(not provided)'}\n\n"

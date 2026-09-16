@@ -53,6 +53,7 @@ def ensure_schema():
     _add_table_column_if_missing("patients", "requested_expert_board_id INT NULL")
     _add_table_column_if_missing("variants", "llm_score INT NULL")
     _add_table_column_if_missing("variants", "llm_reason TEXT NULL")
+    _expand_variant_allele_columns()
     _create_app_settings_if_missing()
 
 
@@ -97,6 +98,32 @@ def _add_table_column_if_missing(table, column_definition):
         session.commit()
     except OperationalError:
         session.rollback()
+
+
+def _expand_variant_allele_columns():
+    session = Session()
+    try:
+        rows = session.execute(text(
+            "SELECT COLUMN_NAME, DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS "
+            "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'variants' "
+            "AND COLUMN_NAME IN ('ref', 'alt')"
+        ))
+        column_types = {
+            row["COLUMN_NAME"]: row["DATA_TYPE"] for row in rows.mappings()
+        }
+        if column_types and any(
+            column_types.get(column) != "longtext" for column in ("ref", "alt")
+        ):
+            session.execute(text(
+                "ALTER TABLE variants "
+                "MODIFY COLUMN ref LONGTEXT NOT NULL, "
+                "MODIFY COLUMN alt LONGTEXT NOT NULL"
+            ))
+            session.commit()
+    except OperationalError:
+        session.rollback()
+    finally:
+        session.close()
 
 
 def _create_app_settings_if_missing():

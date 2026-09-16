@@ -16,6 +16,9 @@ from app import family as family_module
 from app import togovar_client
 from app import assessments as assessments_module
 from app import llm as llm_module
+from app import vep_api
+from app.db import Session
+from app.models import Variant
 
 
 bp = Blueprint("expertboard", __name__)
@@ -207,6 +210,65 @@ def patient_variant_assessment_add(patient_id, variant_id):
         return jsonify(assessments_module.assessment_payload(assessment)), 201
     flash(error or "Assessment saved.", "error" if error else "success")
     return redirect(url_for("expertboard.patient_detail", patient_id=patient_id))
+
+
+@bp.route(
+    "/api/patients/<int:patient_id>/variants/<int:variant_id>/annotation",
+    methods=["POST"],
+)
+def api_variant_annotation(patient_id, variant_id):
+    variant = Session().get(Variant, variant_id)
+    if variant is None or variant.patient_id != patient_id:
+        abort(404)
+    result = vep_api.annotate_variant(
+        variant.chrom,
+        variant.pos,
+        variant.ref,
+        variant.alt,
+        genome_build="GRCh38",
+    )
+    status = 200 if result.get("vep") or result.get("vrs") else 502
+    return jsonify(result), status
+
+
+@bp.route(
+    "/api/patients/<int:patient_id>/variants/<int:variant_id>/ai-review",
+    methods=["POST"],
+)
+def api_variant_ai_review(patient_id, variant_id):
+    if not llm_module.is_configured():
+        return jsonify({"error": "Ollama is not configured. Set the URL in Admin."}), 503
+
+    patient = patients.get_patient(patient_id)
+    variant = Session().get(Variant, variant_id)
+    if patient is None or variant is None or variant.patient_id != patient_id:
+        abort(404)
+
+    annotation = vep_api.annotate_variant(
+        variant.chrom,
+        variant.pos,
+        variant.ref,
+        variant.alt,
+        genome_build="GRCh38",
+    )
+    if not annotation.get("vep") and not annotation.get("vrs"):
+        return jsonify({"error": "VEP and VRS annotation failed.", "annotation": annotation}), 502
+
+    result = llm_module.analyze_variants(
+        patient.clinical_text,
+        [variant],
+        annotations_by_variant={
+            variant.id: vep_api.compact_annotation_for_llm(annotation)
+        },
+    )
+    if "error" in result:
+        return jsonify({"error": result["error"], "annotation": annotation}), 502
+
+    patients.save_llm_scores(patient_id, result)
+    analysis = result.get(variant.id) or result.get(str(variant.id))
+    if analysis is None:
+        return jsonify({"error": "AI returned no result for this variant."}), 502
+    return jsonify({"annotation": annotation, "analysis": analysis})
 
 
 @bp.route("/api/assessments/<int:assessment_id>")

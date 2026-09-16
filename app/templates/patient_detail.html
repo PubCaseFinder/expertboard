@@ -266,6 +266,8 @@
                                         data-vid="{{ v.id }}"
                                         data-ai-score="{{ v.llm_score if v.llm_score is not none else '' }}"
                                         data-ai-reason="{{ v.llm_reason or '' }}"
+                                        data-annotation-url="{{ url_for('expertboard.api_variant_annotation', patient_id=r_patient.id, variant_id=v.id) }}"
+                                        data-ai-review-url="{{ url_for('expertboard.api_variant_ai_review', patient_id=r_patient.id, variant_id=v.id) }}"
                                     >
                                         <td><strong>{{ v.gene or "—" }}</strong></td>
                                         <td>{{ v.hgvs_c or "—" }}</td>
@@ -696,6 +698,38 @@
                     <button type="button" class="acmg-modal-close" onclick="closeAssessModal()">&#x2715;</button>
                 </div>
                 <div class="acmg-modal-body">
+                    <section class="va-review-panel">
+                        <div class="va-review-toolbar">
+                            <div>
+                                <strong>Latest variant annotation</strong>
+                                <span class="va-data-variant" id="va-data-variant"></span>
+                            </div>
+                            <button class="va-data-btn" id="va-refresh-btn" type="button"
+                                    onclick="fetchVariantAnnotation(this)">Refresh VEP / VRS</button>
+                            <button class="ai-refresh-btn" id="ai-refresh-btn" type="button"
+                                    data-llm-configured="{{ '1' if r_llm_configured else '0' }}"
+                                    onclick="refreshAiCriteria(this)" disabled>Update AI criteria</button>
+                        </div>
+                        <div id="va-data-loading" class="va-data-status" style="display:none"></div>
+                        <div id="va-data-content" style="display:none">
+                            <dl class="va-data-summary">
+                                <dt>Genome build</dt><dd id="va-genome-build"></dd>
+                                <dt>Sequence ID</dt><dd id="va-sequence-id"></dd>
+                                <dt>VRS ID</dt><dd id="va-vrs-id"></dd>
+                                <dt>Digest</dt><dd id="va-vrs-digest"></dd>
+                            </dl>
+                            <div id="va-vrs-error" class="va-data-error" style="display:none"></div>
+                            <div id="va-vep-error" class="va-data-error" style="display:none"></div>
+                            <details>
+                                <summary>Normalized VRS Allele JSON</summary>
+                                <pre id="va-vrs-json" class="va-json"></pre>
+                            </details>
+                            <details>
+                                <summary>Ensembl VEP JSON</summary>
+                                <pre id="va-vep-json" class="va-json"></pre>
+                            </details>
+                        </div>
+                    </section>
                     <div id="ai-suggestion-panel" class="ai-suggestion-panel" style="display:none">
                         <div class="ai-suggestion-label">✦ AI Reasoning</div>
                         <dl class="ai-reasoning-list">
@@ -787,6 +821,155 @@
     </div>
     <script type="application/json" id="acmg-default-weights">{{ r_acmg_default_weights|tojson|safe }}</script>
     <script>
+        var currentAssessmentRow = null;
+
+        function setVariantAnnotationError(elementId, message) {
+            var element = document.getElementById(elementId);
+            element.textContent = message || '';
+            element.style.display = message ? 'block' : 'none';
+        }
+
+        function renderVariantAnnotation(data) {
+            var vrs = data.vrs || {};
+            document.getElementById('va-genome-build').textContent = data.genome_build || '—';
+            document.getElementById('va-sequence-id').textContent = vrs.sequence_id || '—';
+            document.getElementById('va-vrs-id').textContent = vrs.vrs_id || '—';
+            document.getElementById('va-vrs-digest').textContent = vrs.digest || '—';
+            document.getElementById('va-vrs-json').textContent = vrs.allele
+                ? JSON.stringify(vrs.allele, null, 2) : '';
+            document.getElementById('va-vep-json').textContent = data.vep
+                ? JSON.stringify(data.vep, null, 2) : '';
+            setVariantAnnotationError('va-vrs-error', data.vrs_error);
+            setVariantAnnotationError('va-vep-error', data.vep_error);
+        }
+
+        function fetchVariantAnnotation(button) {
+            var requestRow = currentAssessmentRow;
+            if (!requestRow) return;
+            var loading = document.getElementById('va-data-loading');
+            var content = document.getElementById('va-data-content');
+            loading.textContent = 'Querying Ensembl VEP and SeqRepo...';
+            loading.classList.remove('is-error');
+            loading.style.display = 'block';
+            content.style.display = 'none';
+            button.disabled = true;
+
+            fetch(requestRow.dataset.annotationUrl, {
+                method: 'POST',
+                headers: {'Accept': 'application/json'}
+            })
+                .then(function(response) {
+                    return response.json().then(function(data) {
+                        if (!response.ok && !data.vep && !data.vrs) {
+                            throw new Error(data.error || data.vep_error || data.vrs_error || 'Annotation failed.');
+                        }
+                        return data;
+                    });
+                })
+                .then(function(data) {
+                    if (currentAssessmentRow !== requestRow) return;
+                    renderVariantAnnotation(data);
+                    loading.style.display = 'none';
+                    content.style.display = 'block';
+                    document.getElementById('ai-refresh-btn').disabled =
+                        document.getElementById('ai-refresh-btn').dataset.llmConfigured !== '1';
+                })
+                .catch(function(error) {
+                    if (currentAssessmentRow !== requestRow) return;
+                    loading.textContent = error.message;
+                    loading.classList.add('is-error');
+                })
+                .finally(function() {
+                    if (currentAssessmentRow === requestRow) button.disabled = false;
+                });
+        }
+
+        function renderAiReasoning(reasoning) {
+            var panel = document.getElementById('ai-suggestion-panel');
+            document.getElementById('ai-r-symptoms').textContent = reasoning.patient_symptoms || '—';
+            document.getElementById('ai-r-gene').textContent = reasoning.gene_diseases || '—';
+            document.getElementById('ai-r-relevance').textContent = reasoning.relevance || '—';
+            document.getElementById('ai-r-popfreq').textContent = reasoning.population_frequency || '—';
+            document.getElementById('ai-r-insilico').textContent = reasoning.in_silico_predictions || '—';
+            document.getElementById('ai-r-family').textContent = reasoning.family_history || '—';
+            document.getElementById('ai-r-rationale').textContent = reasoning.score_rationale || '—';
+
+            var suggestPanel = document.getElementById('ai-acmg-suggest');
+            var badges = document.getElementById('ai-acmg-badges');
+            var suggested = reasoning.suggested_acmg || [];
+            badges.replaceChildren();
+            if (suggested.length) {
+                suggested.forEach(function(code) {
+                    var chip = document.createElement('span');
+                    chip.className = 'acmg-suggest-chip';
+                    chip.textContent = code;
+                    badges.appendChild(chip);
+                });
+                document.getElementById('ai-apply-btn').style.display = '';
+            } else {
+                var empty = document.createElement('span');
+                empty.className = 'ai-no-criteria';
+                empty.textContent = 'No applicable criteria found — manual selection required.';
+                badges.appendChild(empty);
+                document.getElementById('ai-apply-btn').style.display = 'none';
+            }
+            suggestPanel.dataset.codes = JSON.stringify(suggested);
+            suggestPanel.style.display = 'flex';
+
+            var missingPanel = document.getElementById('ai-missing-data');
+            var missingList = document.getElementById('ai-missing-list');
+            var missing = reasoning.missing_data || [];
+            missingList.replaceChildren();
+            missing.forEach(function(message) {
+                var item = document.createElement('li');
+                item.textContent = message;
+                missingList.appendChild(item);
+            });
+            missingPanel.style.display = missing.length ? 'block' : 'none';
+            panel.style.display = 'block';
+        }
+
+        function refreshAiCriteria(button) {
+            var requestRow = currentAssessmentRow;
+            if (!requestRow) return;
+            var loading = document.getElementById('va-data-loading');
+            button.disabled = true;
+            loading.textContent = 'Updating AI criteria from fresh VEP / VRS data...';
+            loading.classList.remove('is-error');
+            loading.style.display = 'block';
+
+            fetch(requestRow.dataset.aiReviewUrl, {
+                method: 'POST',
+                headers: {'Accept': 'application/json'}
+            })
+                .then(function(response) {
+                    return response.json().then(function(data) {
+                        if (!response.ok) throw new Error(data.error || 'AI review failed.');
+                        return data;
+                    });
+                })
+                .then(function(data) {
+                    if (currentAssessmentRow !== requestRow) return;
+                    renderVariantAnnotation(data.annotation || {});
+                    renderAiReasoning(data.analysis);
+                    requestRow.dataset.aiScore = data.analysis.score;
+                    requestRow.dataset.aiReason = JSON.stringify(data.analysis);
+                    var aiCell = document.getElementById('ai-' + requestRow.dataset.vid);
+                    aiCell.style.display = '';
+                    aiCell.innerHTML = '<span class="ai-badge" title="AI analysis available">\u2726</span>';
+                    document.getElementById('ai-col-header').style.display = '';
+                    loading.textContent = 'AI criteria updated from current annotations.';
+                })
+                .catch(function(error) {
+                    if (currentAssessmentRow !== requestRow) return;
+                    loading.textContent = error.message;
+                    loading.classList.add('is-error');
+                })
+                .finally(function() {
+                    if (currentAssessmentRow === requestRow) button.disabled = false;
+                });
+        }
+
         var acmgDefaultWeights = JSON.parse(document.getElementById('acmg-default-weights').textContent);
         var acmgStrengthPoints = {
             VeryStrong: 8,
@@ -894,6 +1077,7 @@
         }
 
         function openAssessModal(actionUrl, trEl) {
+            currentAssessmentRow = trEl;
             document.getElementById('assess-form').action = actionUrl;
             document.getElementById('assess-form').reset();
             document.querySelectorAll('#acmg-modal .acmg-cb').forEach(function(row){
@@ -909,49 +1093,19 @@
             document.getElementById('criterion-comments-modal').value = '{}';
             document.getElementById('acmg-preview').textContent = '\u2014 no ACMG criteria selected \u2014';
             autoClassify([]);
+            document.getElementById('va-data-variant').textContent = trEl.dataset.vkey;
+            document.getElementById('va-data-loading').style.display = 'none';
+            document.getElementById('va-data-loading').classList.remove('is-error');
+            document.getElementById('va-data-content').style.display = 'none';
+            document.getElementById('va-refresh-btn').disabled = false;
+            document.getElementById('ai-refresh-btn').disabled = true;
 
             var panel = document.getElementById('ai-suggestion-panel');
             var aiScore = trEl ? trEl.dataset.aiScore : '';
             var aiReason = trEl ? trEl.dataset.aiReason : '';
             if (aiScore !== '' && aiReason) {
                 try {
-                    var r = JSON.parse(aiReason);
-                    document.getElementById('ai-r-symptoms').textContent  = r.patient_symptoms  || '—';
-                    document.getElementById('ai-r-gene').textContent      = r.gene_diseases      || '—';
-                    document.getElementById('ai-r-relevance').textContent = r.relevance          || '—';
-                    document.getElementById('ai-r-popfreq').textContent   = r.population_frequency || '—';
-                    document.getElementById('ai-r-insilico').textContent = r.in_silico_predictions || '—';
-                    document.getElementById('ai-r-family').textContent    = r.family_history     || '—';
-                    document.getElementById('ai-r-rationale').textContent = r.score_rationale    || '—';
-
-                    var suggestPanel = document.getElementById('ai-acmg-suggest');
-                    var badges = document.getElementById('ai-acmg-badges');
-                    var suggested = r.suggested_acmg || [];
-                    if (suggested.length > 0) {
-                        badges.innerHTML = suggested.map(function(c) {
-                            return '<span class="acmg-suggest-chip">' + c + '</span>';
-                        }).join('');
-                        document.getElementById('ai-apply-btn').style.display = '';
-                        suggestPanel.dataset.codes = JSON.stringify(suggested);
-                    } else {
-                        badges.innerHTML = '<span class="ai-no-criteria">No applicable criteria found — manual selection required.</span>';
-                        document.getElementById('ai-apply-btn').style.display = 'none';
-                        suggestPanel.dataset.codes = '[]';
-                    }
-                    suggestPanel.style.display = 'flex';
-
-                    var missingPanel = document.getElementById('ai-missing-data');
-                    var missingList = document.getElementById('ai-missing-list');
-                    var missing = r.missing_data || [];
-                    if (missing.length > 0) {
-                        missingList.innerHTML = missing.map(function(m) {
-                            return '<li>' + m.replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</li>';
-                        }).join('');
-                        missingPanel.style.display = 'block';
-                    } else {
-                        missingPanel.style.display = 'none';
-                    }
-                    panel.style.display = 'block';
+                    renderAiReasoning(JSON.parse(aiReason));
                 } catch(e) {
                     panel.style.display = 'none';
                 }
@@ -964,6 +1118,7 @@
 
         function closeAssessModal() {
             document.getElementById('acmg-modal').style.display = 'none';
+            currentAssessmentRow = null;
         }
 
         function applyAiAcmg() {
