@@ -89,7 +89,7 @@
                             {% for item in r_clinical_context.diseases or [] %}<div class="hpo-confirmed-item"><div><strong>Disease: {{ item.value }}</strong><span>{{ item.source_text }}</span></div><button class="hpo-remove-btn" type="button" title="Remove confirmed disease" aria-label="Remove {{ item.value }}" onclick="removeClinicalContext(this, 'diseases', {{ item.value|tojson }})">&#x2715;</button></div>{% endfor %}
                         </div>
                     </section>
-                    <section class="hpo-review-panel" aria-labelledby="hpo-review-title">
+                    <section class="hpo-review-panel patient-hpo-panel" aria-labelledby="hpo-review-title">
                         <div class="hpo-review-header">
                             <div>
                                 <h3 id="hpo-review-title">Patient HPO</h3>
