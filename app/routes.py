@@ -70,6 +70,25 @@ def patient_queue():
     )
 
 
+@bp.route("/variant-assessments")
+def variant_assessment_review():
+    records = assessments_module.list_va_spec_review_records()
+    by_patient = {}
+    for record in records:
+        patient = record["patient"]
+        by_patient.setdefault(patient.id, {
+            "patient": patient,
+            "records": [],
+        })["records"].append(record)
+    return render_template(
+        "variant_assessment_review.html",
+        r_records=records,
+        r_by_gene=assessments_module.group_va_spec_records_by_gene_position(records),
+        r_by_patient=list(by_patient.values()),
+        r_target_variant=(request.args.get("variant") or "").strip(),
+    )
+
+
 @bp.route("/patients/import", methods=["POST"])
 def patient_import():
     upload = request.files.get("vcf_file")
@@ -167,6 +186,9 @@ def patient_detail(patient_id):
         r_cross_assessments=assessments_module.list_cross_patient_for_variants(
             proband_variants, patient_id
         ),
+        r_variant_review_summaries=assessments_module.summarize_assessments_for_variants(
+            proband_variants
+        ),
         r_classifications=assessments_module.CLASSIFICATIONS,
         r_evidence_levels=assessments_module.EVIDENCE_LEVELS,
         r_acmg_codes=assessments_module.ACMG_CODES,
@@ -210,6 +232,7 @@ def patient_variant_assessment_add(patient_id, variant_id):
         acmg_codes=acmg_str,
         reviewer_override=request.form.get("reviewer_override_lb_threshold") == "1",
         criterion_comments=criterion_comments,
+        annotation_snapshot=request.form.get("annotation_snapshot"),
     )
     if request.accept_mimetypes.best == "application/json":
         if error:

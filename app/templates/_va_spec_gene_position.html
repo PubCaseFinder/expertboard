@@ -1,0 +1,91 @@
+<article class="va-spec-review-card va-spec-position-card" data-variant-key="{{ group.chrom }}:{{ group.pos }} {{ group.ref }}&gt;{{ group.alt }}">
+    <div class="va-spec-review-meta">
+        <span><strong>GRCh38 variant:</strong> <code>{{ group.chrom }}:{{ group.pos }} {{ group.ref }}&gt;{{ group.alt }}</code></span>
+        <span><strong>Patients:</strong> {{ group.patients|length }}</span>
+        <span><strong>Assessments:</strong> {{ group.records|length }}</span>
+        <span><strong>HPO terms:</strong> {{ group.hpo_terms|length }}</span>
+        <span><strong>Classification:</strong> {% for classification, count in group.classification_counts %}{{ classification }} {{ count }}{% if not loop.last %}; {% endif %}{% endfor %}</span>
+    </div>
+    <details>
+        <summary>Show patients, cohort ratios, and assessments</summary>
+        <section class="va-spec-relationship-node va-spec-evidence-node">
+            <h3>Evidence for this variant across all assessments</h3>
+            <table class="va-spec-evidence-table va-spec-sortable-table">
+                <thead><tr><th><button type="button" class="va-spec-sort-button" data-column="0">Code <span aria-hidden="true"></span></button></th><th><button type="button" class="va-spec-sort-button" data-column="1">Strength <span aria-hidden="true"></span></button></th><th><button type="button" class="va-spec-sort-button" data-column="2">Curator <span aria-hidden="true"></span></button></th><th><button type="button" class="va-spec-sort-button" data-column="3">Classification <span aria-hidden="true"></span></button></th><th><button type="button" class="va-spec-sort-button" data-column="4">Created <span aria-hidden="true"></span></button></th><th><button type="button" class="va-spec-sort-button" data-column="5">Direction <span aria-hidden="true"></span></button></th><th><button type="button" class="va-spec-sort-button" data-column="6" data-sort="number">Points <span aria-hidden="true"></span></button></th><th>Curator comment</th><th>Saved VEP<br>/ VCF annotation</th><th><button type="button" class="va-spec-sort-button" data-column="9">Patient <span aria-hidden="true"></span></button></th></tr></thead>
+                <tbody>
+                    {% for record in group.records %}
+                        {% for evidence in record.summary.evidence %}
+                            <tr>
+                                <td><code>{{ evidence.code }}</code></td>
+                                <td>{{ evidence.strength }}</td>
+                                <td>{{ record.assessment.assessed_by or "Unknown reviewer" }}</td>
+                                <td>{{ record.summary.classification }}</td>
+                                <td>{{ record.assessment.created_at }}</td>
+                                <td>{{ "supports" if evidence.points > 0 else "disputes" if evidence.points < 0 else "neutral" }}</td>
+                                <td>{{ evidence.points }}</td>
+                                <td>{{ evidence.comment or "-" }}</td>
+                                <td>
+                                    {% if record.variant_annotations %}
+                                        <button type="button" class="va-spec-annotation-button" data-annotations='{{ record.variant_annotations|tojson }}'>{{ "Updated VEP" if record.annotation_source == "Refreshed VEP / VRS snapshot" else "VCF INFO" }}</button>
+                                    {% else %}
+                                        -
+                                    {% endif %}
+                                </td>
+                                <td><a class="inline-link" href="{{ url_for('expertboard.patient_detail', patient_id=record.patient.id) }}">{{ record.patient.patient_code }}</a></td>
+                            </tr>
+                        {% else %}
+                            <tr>
+                                <td colspan="9">No ACMG evidence is saved for assessment #{{ record.assessment.id }}.</td>
+                                <td><a class="inline-link" href="{{ url_for('expertboard.patient_detail', patient_id=record.patient.id) }}">{{ record.patient.patient_code }}</a></td>
+                            </tr>
+                        {% endfor %}
+                    {% endfor %}
+                </tbody>
+            </table>
+        </section>
+        <div class="va-spec-position-detail">
+            <section class="va-spec-relationship-node">
+                <h3>Patients carrying this variant</h3>
+                <div class="va-spec-patient-links">
+                    {% for patient in group.patients %}
+                        <a class="inline-link" href="{{ url_for('expertboard.patient_detail', patient_id=patient.id) }}">{{ patient.patient_code }}</a>
+                    {% endfor %}
+                </div>
+                <p class="va-spec-data-note">Sex is not collected in the current patient schema, so sex counts are unavailable.</p>
+            </section>
+            <section class="va-spec-relationship-node">
+                <h3>HPO frequency across {{ group.patients|length }} patients</h3>
+                {% if group.hpo_terms %}
+                    <ul class="va-spec-compact-list">
+                        {% for term in group.hpo_terms %}
+                            <li><code>{{ term.id }}</code> {{ term.label }} <strong>({{ term.count }}/{{ group.patients|length }}, {{ "%.0f"|format(term.count * 100 / group.patients|length) }}%)</strong></li>
+                        {% endfor %}
+                    </ul>
+                {% else %}
+                    <p class="va-spec-data-note">No confirmed HPO terms are stored for these patients.</p>
+                {% endif %}
+            </section>
+            <section class="va-spec-relationship-node va-spec-classification-node">
+                <h3>Classification by assessment</h3>
+                <ul class="va-spec-compact-list">
+                    {% for classification, count in group.classification_counts %}
+                        <li><strong>{{ classification }}</strong>: {{ count }}/{{ group.records|length }} ({{ "%.0f"|format(count * 100 / group.records|length) }}%)</li>
+                    {% endfor %}
+                </ul>
+            </section>
+            <section class="va-spec-relationship-node">
+                <h3>Diagnosis across {{ group.patients|length }} patients</h3>
+                <ul class="va-spec-compact-list">
+                    {% for diagnosis, count in group.diagnosis_counts %}
+                        <li><strong>{{ diagnosis }}</strong>: {{ count }}/{{ group.patients|length }} ({{ "%.0f"|format(count * 100 / group.patients|length) }}%)</li>
+                    {% endfor %}
+                </ul>
+            </section>
+        </div>
+        <div class="va-spec-position-assessments">
+            {% for record in group.records %}
+                {% include "_va_spec_review_record.html" %}
+            {% endfor %}
+        </div>
+    </details>
+</article>

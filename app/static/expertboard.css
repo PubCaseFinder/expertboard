@@ -408,6 +408,278 @@ h1 {
     overflow-wrap: anywhere;
 }
 
+.va-spec-review-tabs {
+    display: flex;
+    gap: 8px;
+    margin: 0 0 16px;
+    border-bottom: 1px solid var(--line);
+}
+
+.va-spec-review-tab {
+    border: 0;
+    border-bottom: 2px solid transparent;
+    background: transparent;
+    color: var(--ink-soft);
+    padding: 8px 10px;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.va-spec-review-tab.is-active {
+    border-bottom-color: #0f766e;
+    color: #0f766e;
+}
+
+.va-spec-review-view[hidden] { display: none; }
+
+.va-spec-gene-search {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 14px;
+    color: var(--ink-soft);
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.va-spec-gene-search input {
+    width: min(280px, 100%);
+    padding: 6px 9px;
+    border: 1px solid #9db8c4;
+    border-radius: 4px;
+    color: var(--ink);
+    font: inherit;
+    font-weight: 400;
+}
+
+.va-spec-review-group + .va-spec-review-group { margin-top: 22px; }
+
+.va-spec-review-group-title {
+    margin: 0 0 8px;
+    color: #45537b;
+    font-size: 14px;
+}
+
+.va-spec-review-card {
+    margin-bottom: 10px;
+    padding: 12px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: #fff;
+}
+
+.va-spec-review-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 16px;
+    margin: 0 0 10px;
+    color: var(--ink-soft);
+    font-size: 12px;
+}
+
+.va-spec-review-meta strong { color: var(--ink); }
+
+.va-spec-review-card summary {
+    cursor: pointer;
+    color: #0f766e;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.va-spec-review-card .va-json { margin: 8px 0 0; }
+
+.va-spec-position-card > details { margin-top: 10px; }
+
+.va-spec-position-detail {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin: 10px 0;
+}
+
+.va-spec-patient-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+}
+
+.va-spec-position-assessments {
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid #dbe3ec;
+}
+
+.va-spec-relationship {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin: 10px 0;
+}
+
+.va-spec-relationship-node {
+    min-width: 0;
+    padding: 10px;
+    border: 1px solid #cbd5e1;
+    border-left: 4px solid #0f766e;
+    background: #f8fafc;
+}
+
+.va-spec-relationship-node h3 {
+    margin: 0 0 8px;
+    color: #334155;
+    font-size: 12px;
+}
+
+.va-spec-evidence-node, .va-spec-curator-node { grid-column: 1 / -1; }
+
+.va-spec-data-list {
+    display: grid;
+    grid-template-columns: 92px minmax(0, 1fr);
+    gap: 4px 8px;
+    margin: 0;
+    font-size: 11px;
+}
+
+.va-spec-data-list dt { color: #64748b; font-weight: 700; }
+.va-spec-data-list dd { margin: 0; overflow-wrap: anywhere; }
+.va-spec-relationship-label { margin: 9px 0 4px; color: #64748b; font-size: 11px; font-weight: 700; }
+.va-spec-compact-list { margin: 0; padding-left: 18px; font-size: 11px; line-height: 1.55; }
+.va-spec-data-note { margin: 8px 0 0; color: #64748b; font-size: 11px; line-height: 1.4; }
+
+.va-spec-evidence-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11px;
+}
+
+.va-spec-evidence-table th,
+.va-spec-evidence-table td {
+    padding: 5px 7px;
+    border: 1px solid #dbe3ec;
+    text-align: left;
+    vertical-align: top;
+}
+
+.va-spec-evidence-table th { background: #eaf4f3; color: #334155; white-space: nowrap; }
+.va-spec-current-assessment { background: #effcf8; font-weight: 700; }
+
+.va-spec-sort-button {
+    width: 100%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    padding: 4px 6px;
+    border: 1px solid #9db8c4;
+    border-radius: 3px;
+    background: #f8fffd;
+    color: inherit;
+    font: inherit;
+    font-weight: 700;
+    text-align: left;
+    cursor: pointer;
+}
+
+.va-spec-sort-button span::after {
+    content: "sort";
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 21px;
+    min-height: 21px;
+    padding: 0 3px;
+    border: 1px solid #78a9a3;
+    border-radius: 999px;
+    background: #fff;
+    color: #0f766e;
+    font-size: 7px;
+    font-weight: 400;
+    text-transform: uppercase;
+}
+
+.va-spec-sort-button[data-direction="asc"] span::after { content: "asc"; }
+.va-spec-sort-button[data-direction="desc"] span::after { content: "desc"; }
+.va-spec-sort-button:hover { border-color: #0f766e; color: #0f766e; }
+.va-spec-sort-button:hover span::after { background: #eaf4f3; border-color: #0f766e; }
+.va-spec-sort-button:focus-visible { outline: 2px solid #0f766e; outline-offset: 1px; }
+
+.va-spec-annotation-button {
+    padding: 3px 7px;
+    border: 1px solid #78a9a3;
+    border-radius: 3px;
+    background: #fff;
+    color: #0f766e;
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.va-spec-annotation-button:hover { background: #eaf4f3; }
+
+.va-spec-annotation-modal[hidden] { display: none; }
+
+.va-spec-annotation-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    display: grid;
+    place-items: center;
+    padding: 20px;
+    background: rgba(15, 23, 42, 0.38);
+}
+
+.va-spec-annotation-modal-dialog {
+    width: min(500px, 100%);
+    max-height: min(560px, 80vh);
+    overflow: auto;
+    padding: 14px;
+    border: 1px solid #9db8c4;
+    border-radius: 6px;
+    background: #fff;
+    box-shadow: 0 18px 48px rgba(15, 23, 42, 0.25);
+}
+
+.va-spec-annotation-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.va-spec-annotation-modal-header h2 { margin: 0; font-size: 14px; }
+.va-spec-annotation-close {
+    padding: 4px 8px;
+    border: 1px solid #9db8c4;
+    border-radius: 3px;
+    background: #fff;
+    color: #475569;
+    font: inherit;
+    font-size: 11px;
+    cursor: pointer;
+}
+
+.va-spec-annotation-list {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: 6px 12px;
+    margin: 0;
+    font-size: 12px;
+}
+
+.va-spec-annotation-list dt { color: #0f766e; font-family: monospace; font-weight: 700; }
+.va-spec-annotation-list dd { margin: 0; color: #475569; overflow-wrap: anywhere; }
+}
+
+@media (max-width: 720px) {
+    .va-spec-relationship { grid-template-columns: 1fr; }
+    .va-spec-position-detail { grid-template-columns: 1fr; }
+    .va-spec-evidence-node, .va-spec-curator-node { grid-column: auto; }
+    .va-spec-evidence-table { display: block; overflow-x: auto; white-space: nowrap; }
+}
+
 .ai-suggestion-panel {
     background: #f0faf4;
     border: 1px solid #b7e4c7;

@@ -244,7 +244,9 @@
                                                 onclick="clearVfFilters()" title="Clear all filters">✕</button>
                                         <input class="th-filter" id="vf-gene" type="search" placeholder="filter…">
                                     </th>
-                                    <th>MANE HGVS c.</th>
+                                    <th>MANE HGVS c.
+                                        <input class="th-filter" id="vf-hgvs" type="search" placeholder="search HGVS…">
+                                    </th>
                                     <th>MANE HGVS p.</th>
                                     <th>Chr</th>
                                     <th>POS</th>
@@ -307,6 +309,7 @@
                                     <tr
                                         class="{{ 'shared-row' if shares else '' }}"
                                         data-gene="{{ (v.gene or '')|lower }}"
+                                        data-hgvs="{{ ((v.hgvs_c or '') ~ ' ' ~ (v.hgvs_p or ''))|lower }}"
                                         data-type="{{ (v.variant_type or '')|lower }}"
                                         data-clnsig="{{ (v.clin_sig or '')|lower|replace(' ','_') }}"
                                         data-note="{{ (v.note or '')|lower }}"
@@ -333,23 +336,17 @@
                                         <td>{{ v.variant_type or "—" }}</td>
                                         {# ── Same-variant assessments from other patients ── #}
                                         <td class="assessment-cell">
-                                            {% for entry in r_cross_assessments.get(v.id, []) %}
-                                                {% set ts = entry.assessment.created_at|string %}
-                                                <span class="assess-badge assess-{{ entry.css }} assess-past"
-                                                      title="Other patient: {{ entry.patient.patient_code if entry.patient else '?' }} · {{ entry.assessment.assessed_by or '—' }} · {{ ts[:16] }} (read-only)">
-                                                    <span class="assess-lock" aria-hidden="true">🔒</span>
-                                                    {%- if entry.group and entry.group.country -%}
-                                                        <span class="assess-country">{{ entry.group.country }}</span>
-                                                    {%- elif entry.group -%}
-                                                        <span class="assess-country">{{ entry.group.name }}</span>
-                                                    {%- endif -%}
-                                                    {{ entry.score.classification }}
-                                                    <span class="acmg-score-badge">{{ entry.score.total_score }} pt · {{ "%.1f"|format(entry.score.posterior_probability * 100) }}%</span>
-                                                    {%- if entry.assessment.acmg_codes -%}
-                                                        <span class="acmg-code-badge">{{ entry.assessment.acmg_codes }}</span>
-                                                    {%- endif -%}
-                                                </span>
-                                            {% endfor %}
+                                            {% set review_summary = r_variant_review_summaries.get(v.id) %}
+                                            {% if review_summary %}
+                                                <a class="inline-link" target="_blank" rel="noopener"
+                                                   href="{{ url_for('expertboard.variant_assessment_review', variant=v.chrom ~ ':' ~ v.pos ~ ' ' ~ v.ref ~ '>' ~ v.alt) }}"
+                                                   title="Open cohort statistics and all evidence in Variant reviews">
+                                                    <strong>Classification:</strong><br>
+                                                    {% for classification, count in review_summary.classifications %}{{ classification }} {{ "%.0f"|format(count * 100 / review_summary.assessment_count) }}%{% if not loop.last %}<br>{% endif %}{% endfor %}<br>
+                                                    <strong>Code:</strong><br>
+                                                    {% for code, count in review_summary.codes %}{{ code }}{% if count > 1 %} ({{ count }}){% endif %}{% if not loop.last %}, {% endif %}{% endfor %} ↗
+                                                </a>
+                                            {% endif %}
                                         </td>
                                         <td class="ai-cell" id="ai-{{ v.id }}"
                                             {% if not v.llm_score and v.llm_score != 0 %}style="display:none"{% endif %}>
@@ -410,6 +407,7 @@
                         (function () {
                             function applyFilters() {
                                 var gene     = document.getElementById('vf-gene').value.trim().toLowerCase();
+                                var hgvs     = document.getElementById('vf-hgvs').value.trim().toLowerCase();
                                 var type     = document.getElementById('vf-type').value.trim().toLowerCase();
                                 var clnsig   = document.getElementById('vf-clnsig').value.toLowerCase();
                                 var note     = document.getElementById('vf-note').value.trim().toLowerCase();
@@ -418,6 +416,7 @@
                                 document.querySelectorAll('#variant-tbody tr:not(.assessment-form-row)').forEach(function (row) {
                                     var match =
                                         (!gene     || row.dataset.gene.includes(gene)) &&
+                                        (!hgvs     || (row.dataset.hgvs || '').includes(hgvs)) &&
                                         (!type     || row.dataset.type.includes(type)) &&
                                         (!clnsig   || row.dataset.clnsig === clnsig) &&
                                         (!note     || (row.dataset.note || '').includes(note)) &&
@@ -426,7 +425,7 @@
                                     row.style.display = match ? '' : 'none';
                                 });
                             }
-                            ['vf-gene', 'vf-type', 'vf-clnsig', 'vf-note', 'vf-past', 'vf-assessed'].forEach(function (id) {
+                            ['vf-gene', 'vf-hgvs', 'vf-type', 'vf-clnsig', 'vf-note', 'vf-past', 'vf-assessed'].forEach(function (id) {
                                 var el = document.getElementById(id);
                                 if (el) {
                                     el.addEventListener('input', applyFilters);
@@ -874,6 +873,7 @@
                 </div>
                 <input type="hidden" name="acmg_codes" id="acmg-hidden-modal">
                 <input type="hidden" name="criterion_comments" id="criterion-comments-modal" value="{}">
+                <input type="hidden" name="annotation_snapshot" id="annotation-snapshot-modal" value="">
                 <div class="acmg-modal-footer">
                     <div class="acmg-footer-actions">
                         <span class="acmg-selected-preview" id="acmg-preview">— no ACMG criteria selected —</span>
@@ -1237,6 +1237,7 @@
         }
 
         function renderVariantAnnotation(data) {
+            document.getElementById('annotation-snapshot-modal').value = JSON.stringify(data);
             var vrs = data.vrs || {};
             document.getElementById('va-genome-build').textContent = data.genome_build || '—';
             document.getElementById('va-sequence-id').textContent = vrs.sequence_id || '—';
@@ -1693,6 +1694,7 @@
             });
             document.getElementById('acmg-hidden-modal').value = '';
             document.getElementById('criterion-comments-modal').value = '{}';
+            document.getElementById('annotation-snapshot-modal').value = '';
             document.getElementById('acmg-preview').textContent = '\u2014 no ACMG criteria selected \u2014';
             autoClassify([]);
             document.getElementById('va-data-variant').textContent = trEl.dataset.vkey;

@@ -13,6 +13,7 @@ from sqlalchemy import asc
 from app.db import Session
 from app.models import ExpertBoard
 from app.models import Patient
+from app.models import PatientPhenotype
 from app.models import Variant
 from app.models import VariantAssessment
 
@@ -341,6 +342,7 @@ def add_assessment(
     acmg_codes=None,
     reviewer_override=False,
     criterion_comments=None,
+    annotation_snapshot=None,
 ):
     """Create an assessment. Returns (assessment, error)."""
     evidence = parse_evidence(acmg_codes, criterion_comments)
@@ -364,6 +366,7 @@ def add_assessment(
         criterion_comments=json.dumps(
             criterion_comments or {}, ensure_ascii=False, separators=(",", ":")
         ),
+        annotation_snapshot=(annotation_snapshot or "").strip() or None,
         total_score=calculated["total_score"],
         posterior_probability=calculated["posterior_probability"],
         reviewer_override_lb_threshold=calculated["reviewer_override"],
@@ -389,6 +392,255 @@ def remove_assessment(assessment_id):
 def get_assessment(assessment_id):
     """Return one assessment by ID."""
     return Session().get(VariantAssessment, assessment_id)
+
+
+def _va_spec_direction(classification):
+    if classification in ("Pathogenic", "Likely pathogenic"):
+        return "supports"
+    if classification in ("Benign", "Likely benign"):
+        return "disputes"
+    return "neutral"
+
+
+def _va_spec_evidence_outcome(evidence_item):
+    if evidence_item["points"] > 0:
+        return "supports"
+    if evidence_item["points"] < 0:
+        return "disputes"
+    return "neutral"
+
+
+def _saved_variant_annotations(variant):
+    """Extract displayable VEP/VCF annotations from the persisted INFO string."""
+    annotation_keys = (
+        "GENE", "HGVSC", "HGVSP", "CLNSIG", "REVEL", "CADD_PHRED",
+        "gnomAD_AF", "gnomAD_AF_POPMAX", "LOEUF", "pLI",
+        "SpliceAI_AG", "SpliceAI_AL", "SpliceAI_DG", "SpliceAI_DL", "NOTE",
+    )
+    raw_values = {}
+    for item in (variant.raw_info or "").split(";"):
+        key, separator, value = item.partition("=")
+        if separator and key in annotation_keys and value not in ("", "."):
+            raw_values[key] = value
+    return [{"name": key, "value": value} for key, value in raw_values.items()]
+
+
+def _assessment_variant_annotations(assessment, variant):
+    """Prefer the annotation snapshot a curator viewed over imported VCF INFO."""
+    try:
+        snapshot = json.loads(assessment.annotation_snapshot or "")
+    except (TypeError, ValueError):
+        snapshot = None
+    if not isinstance(snapshot, dict) or not snapshot:
+        return _saved_variant_annotations(variant), "Imported VCF INFO"
+    annotations = [{"name": "Annotation source", "value": "Refreshed VEP / VRS snapshot"}]
+    if snapshot.get("vep"):
+        annotations.append({
+            "name": "Ensembl VEP response",
+            "value": json.dumps(snapshot["vep"], ensure_ascii=False, indent=2),
+        })
+    if snapshot.get("vrs"):
+        annotations.append({
+            "name": "GA4GH VRS response",
+            "value": json.dumps(snapshot["vrs"], ensure_ascii=False, indent=2),
+        })
+    return annotations, "Refreshed VEP / VRS snapshot"
+
+
+def _va_spec_document(assessment, variant, patient, summary):
+    """Build the reviewable VA-Spec representation from saved assessment data."""
+    classification = summary["classification"]
+    annotations, annotation_source = _assessment_variant_annotations(assessment, variant)
+    proposition = {
+        "id": f"urn:expertboard:proposition:variant-{variant.id}",
+        "type": "VariantPathogenicityProposition",
+        "subjectVariant": f"urn:expertboard:variant:{variant.id}",
+        "predicate": "isCausalFor",
+        "objectCondition": {
+            "id": f"urn:expertboard:patient:{patient.id}:condition",
+            "conceptType": "Disease",
+            "name": patient.diagnosis_name or "Unspecified condition",
+        },
+    }
+    if variant.gene:
+        proposition["geneContextQualifier"] = {
+            "conceptType": "Gene",
+            "name": variant.gene,
+        }
+
+    extensions = [
+        {"name": "tavtigianTotalScore", "value": summary["total_score"]},
+        {
+            "name": "posteriorProbability",
+            "value": summary["posterior_probability"],
+        },
+        {
+            "name": "reviewerLbThresholdOverride",
+            "value": summary["reviewer_override"],
+        },
+    ]
+    if assessment.notes:
+        extensions.append({"name": "reviewerNotes", "value": assessment.notes})
+
+    return {
+        "id": f"urn:expertboard:assessment:{assessment.id}",
+        "type": "Statement",
+        "proposition": proposition,
+        "direction": _va_spec_direction(classification),
+        "classification": {
+            "primaryCoding": {
+                "code": classification.lower(),
+                "system": "ACMG Guidelines, 2015",
+            },
+            "name": classification,
+        },
+        "contributions": [{
+            "type": "Contribution",
+            "contributor": {
+                "type": "Agent",
+                "name": assessment.assessed_by or "Unknown reviewer",
+            },
+            "activityType": "evidence evaluation",
+            "date": str(assessment.created_at)[:10],
+        }],
+        "specifiedBy": {
+            "type": "Method",
+            "name": "ACMG Guidelines, 2015",
+            "methodType": "guideline",
+            "reportedIn": {
+                "type": "Document",
+                "pmid": "25741868",
+                "name": "Richards et al., 2015, Genet Med.",
+            },
+        },
+        "hasEvidenceLines": [{
+            "type": "EvidenceLine",
+            "direction": _va_spec_evidence_outcome(item),
+            "evidence": {
+                "type": "Evidence",
+                "name": item["code"],
+                "strength": item["strength"],
+                "comment": item.get("comment"),
+                "extensions": [{
+                    "name": "expertboardSavedVcfAnnotation",
+                    "value": annotations,
+                }, {
+                    "name": "expertboardAnnotationSource",
+                    "value": annotation_source,
+                }],
+            },
+        } for item in summary["evidence"]],
+        "extensions": extensions,
+    }
+
+
+def list_va_spec_review_records():
+    """Return all saved assessments as VA-Spec documents for implementation review."""
+    session = Session()
+    rows = (
+        session.query(VariantAssessment, Variant, Patient)
+        .join(Variant, Variant.id == VariantAssessment.variant_id)
+        .join(Patient, Patient.id == Variant.patient_id)
+        .order_by(asc(Variant.gene), asc(Patient.patient_code), asc(VariantAssessment.id))
+        .all()
+    )
+    patient_ids = {patient.id for _assessment, _variant, patient in rows}
+    phenotypes_by_patient = {}
+    if patient_ids:
+        phenotype_rows = (
+            session.query(PatientPhenotype)
+            .filter(PatientPhenotype.patient_id.in_(patient_ids))
+            .order_by(asc(PatientPhenotype.hpo_id))
+            .all()
+        )
+        for phenotype in phenotype_rows:
+            phenotypes_by_patient.setdefault(phenotype.patient_id, []).append(phenotype)
+
+    result = []
+    for assessment, variant, patient in rows:
+        summary = assessment_summary(assessment)
+        annotations, annotation_source = _assessment_variant_annotations(assessment, variant)
+        document = _va_spec_document(assessment, variant, patient, summary)
+        result.append({
+            "assessment": assessment,
+            "variant": variant,
+            "patient": patient,
+            "summary": summary,
+            "document": document,
+            "document_json": json.dumps(document, ensure_ascii=False, indent=2),
+            "patient_phenotypes": phenotypes_by_patient.get(patient.id, []),
+            "variant_annotations": annotations,
+            "annotation_source": annotation_source,
+        })
+
+    assessments_by_variant = {}
+    for record in result:
+        assessments_by_variant.setdefault(record["variant"].id, []).append(record)
+    for record in result:
+        record["related_assessments"] = assessments_by_variant[record["variant"].id]
+    return result
+
+
+def group_va_spec_records_by_gene_position(records):
+    """Group review records by gene and full GRCh38 variant allele."""
+    by_gene = {}
+    for record in records:
+        variant = record["variant"]
+        gene = variant.gene or "No gene assigned"
+        variant_key = (variant.chrom, variant.pos, variant.ref, variant.alt)
+        group = by_gene.setdefault(gene, {}).setdefault(variant_key, {
+            "chrom": variant.chrom,
+            "pos": variant.pos,
+            "ref": variant.ref,
+            "alt": variant.alt,
+            "records": [],
+            "patients": {},
+            "hpo_terms": {},
+            "classification_counts": {},
+            "diagnosis_counts": {},
+        })
+        group["records"].append(record)
+        classification = record["summary"]["classification"]
+        group["classification_counts"][classification] = (
+            group["classification_counts"].get(classification, 0) + 1
+        )
+        patient = record["patient"]
+        if patient.id not in group["patients"]:
+            group["patients"][patient.id] = patient
+            diagnosis = patient.diagnosis_name or "Unspecified condition"
+            group["diagnosis_counts"][diagnosis] = (
+                group["diagnosis_counts"].get(diagnosis, 0) + 1
+            )
+            for phenotype in record["patient_phenotypes"]:
+                term = group["hpo_terms"].setdefault(phenotype.hpo_id, {
+                    "id": phenotype.hpo_id,
+                    "label": phenotype.hpo_label or "-",
+                    "count": 0,
+                })
+                term["count"] += 1
+
+    grouped = {}
+    for gene, positions in by_gene.items():
+        groups = []
+        for group in positions.values():
+            group["patients"] = sorted(
+                group["patients"].values(), key=lambda patient: patient.patient_code
+            )
+            group["hpo_terms"] = sorted(
+                group["hpo_terms"].values(),
+                key=lambda term: (-term["count"], term["id"]),
+            )
+            group["classification_counts"] = sorted(
+                group["classification_counts"].items(), key=lambda item: item[0]
+            )
+            group["diagnosis_counts"] = sorted(
+                group["diagnosis_counts"].items(), key=lambda item: (-item[1], item[0])
+            )
+            groups.append(group)
+        grouped[gene] = sorted(
+            groups, key=lambda group: (group["chrom"], group["pos"], group["ref"], group["alt"])
+        )
+    return grouped
 
 
 def list_cross_patient_for_variants(proband_variants, patient_id):
@@ -451,3 +703,56 @@ def list_cross_patient_for_variants(proband_variants, patient_id):
             }
         )
     return result
+
+
+def summarize_assessments_for_variants(variants):
+    """Summarize all saved assessments for each matching genomic variant."""
+    if not variants:
+        return {}
+
+    session = Session()
+    key_to_variant_id = {
+        (variant.chrom, variant.pos, variant.ref, variant.alt): variant.id
+        for variant in variants
+    }
+    chroms = list({variant.chrom for variant in variants})
+    matching_variants = (
+        session.query(Variant)
+        .filter(Variant.chrom.in_(chroms))
+        .all()
+    )
+    matching_ids = {
+        variant.id: key_to_variant_id[(variant.chrom, variant.pos, variant.ref, variant.alt)]
+        for variant in matching_variants
+        if (variant.chrom, variant.pos, variant.ref, variant.alt) in key_to_variant_id
+    }
+    if not matching_ids:
+        return {}
+
+    summaries = {}
+    rows = (
+        session.query(VariantAssessment)
+        .filter(VariantAssessment.variant_id.in_(matching_ids))
+        .order_by(asc(VariantAssessment.id))
+        .all()
+    )
+    for assessment in rows:
+        variant_id = matching_ids[assessment.variant_id]
+        summary = summaries.setdefault(variant_id, {
+            "assessment_count": 0,
+            "classification_counts": {},
+            "code_counts": {},
+        })
+        summary["assessment_count"] += 1
+        classification = assessment_summary(assessment)["classification"]
+        summary["classification_counts"][classification] = (
+            summary["classification_counts"].get(classification, 0) + 1
+        )
+        for evidence in assessment_summary(assessment)["evidence"]:
+            code = evidence["code"]
+            summary["code_counts"][code] = summary["code_counts"].get(code, 0) + 1
+
+    for summary in summaries.values():
+        summary["classifications"] = sorted(summary.pop("classification_counts").items())
+        summary["codes"] = sorted(summary.pop("code_counts").items())
+    return summaries

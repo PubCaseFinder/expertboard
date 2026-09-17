@@ -292,6 +292,7 @@ class VariantAssessment(Base):
     acmg_codes: Mapped[str | None] = mapped_column(String(255), nullable=True)
     evidence_points: Mapped[str | None] = mapped_column(Text(), nullable=True)
     criterion_comments: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    annotation_snapshot: Mapped[str | None] = mapped_column(LONGTEXT(), nullable=True)
     total_score: Mapped[float | None] = mapped_column(Float(), nullable=True)
     posterior_probability: Mapped[float | None] = mapped_column(Float(), nullable=True)
     reviewer_override_lb_threshold: Mapped[bool] = mapped_column(
