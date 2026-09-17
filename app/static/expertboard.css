@@ -236,6 +236,44 @@ h1 {
     white-space: nowrap;
 }
 
+.patient-guide-toolbar {
+    min-height: 10px;
+}
+
+.patient-guide-button {
+    display: inline-flex;
+    margin: 0;
+    background: #2d6a4f;
+    box-shadow: 0 0 0 3px rgba(116, 198, 157, .18), 0 0 18px rgba(82, 183, 136, .58);
+    animation: patient-guide-glow 2.4s ease-in-out infinite;
+}
+
+.patient-guide-button:hover { background: #1b4332; }
+
+.patient-guide-launch {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin: 0 0 16px;
+}
+
+.patient-guide-fairy {
+    font-size: 21px;
+    line-height: 1;
+    filter: drop-shadow(0 0 5px rgba(82, 183, 136, .7));
+    animation: patient-guide-fairy-glow 2.4s ease-in-out infinite;
+}
+
+@keyframes patient-guide-fairy-glow {
+    0%, 100% { filter: drop-shadow(0 0 3px rgba(82, 183, 136, .45)); }
+    50% { filter: drop-shadow(0 0 9px rgba(82, 183, 136, .9)); }
+}
+
+@keyframes patient-guide-glow {
+    0%, 100% { box-shadow: 0 0 0 3px rgba(116, 198, 157, .18), 0 0 12px rgba(82, 183, 136, .38); }
+    50% { box-shadow: 0 0 0 5px rgba(116, 198, 157, .25), 0 0 24px rgba(82, 183, 136, .72); }
+}
+
 .priority-sort-btn {
     background: #2d6a4f;
 }
@@ -2651,6 +2689,20 @@ h1 {
     line-height: 1;
 }
 
+.assessment-guide-button {
+    margin-right: 12px;
+    padding: 4px 8px;
+    border: 1px solid #78a9a3;
+    border-radius: 4px;
+    background: #f0fdfa;
+    color: #0f766e;
+    font: inherit;
+    font-size: 11px;
+    cursor: pointer;
+}
+
+.assessment-guide-button:hover { background: #ccfbf1; }
+
 .acmg-modal-body {
     flex: 1;
     height: 0;
@@ -3207,6 +3259,55 @@ h1 {
     overflow-wrap: anywhere;
     word-break: break-word;
     color: #6a7486;
+}
+
+.raw-info-cell { min-width: 180px; max-width: 360px; white-space: normal !important; }
+.francis-inputs-cell { min-width: 150px; max-width: 300px; white-space: normal !important; }
+.raw-info-details summary {
+    color: #0f766e;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 700;
+}
+.raw-info-details pre {
+    background: #f8fafc;
+    border: 1px solid #dbe4ea;
+    border-radius: 4px;
+    color: #334155;
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    font-size: 11px;
+    line-height: 1.45;
+    margin: 6px 0 0;
+    max-height: 180px;
+    overflow: auto;
+    overflow-wrap: anywhere;
+    padding: 7px;
+    white-space: pre-wrap;
+}
+.francis-input-list {
+    background: #f8fafc;
+    border: 1px solid #dbe4ea;
+    border-radius: 4px;
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: 2px 8px;
+    margin: 6px 0 0;
+    max-height: 240px;
+    overflow: auto;
+    padding: 7px;
+}
+.francis-input-list dt {
+    color: #0f766e;
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    font-size: 10px;
+    font-weight: 700;
+}
+.francis-input-list dd {
+    color: #334155;
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    font-size: 11px;
+    margin: 0;
+    overflow-wrap: anywhere;
 }
 
 .note-cell > div {

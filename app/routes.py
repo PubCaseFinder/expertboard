@@ -138,6 +138,14 @@ def patient_detail(patient_id):
     # Proband variants
     proband_variants = patients.get_patient_variants(patient_id)
     r_variant_priority = variant_priority.evaluation_priorities(proband_variants)
+    r_variant_info = {
+        variant.id: variant_priority.display_info_values(variant)
+        for variant in proband_variants
+    }
+    r_variant_rule_scores = {
+        variant.id: variant_priority.display_rule_scores(variant)
+        for variant in proband_variants
+    }
     proband_key_map = {_vkey(v): v.id for v in proband_variants}
 
     # Linked patient variants (deduplicated by patient id)
@@ -173,6 +181,8 @@ def patient_detail(patient_id):
         r_confirmed_phenotypes=patients.list_confirmed_phenotypes(patient_id),
         r_variants=proband_variants,
         r_variant_priority=r_variant_priority,
+        r_variant_info=r_variant_info,
+        r_variant_rule_scores=r_variant_rule_scores,
         r_variant_shares=variant_shares,
         r_proband_vkeys=list(proband_key_map.keys()),
         r_shared_vkeys=list(shared_vkeys_set),

@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Variant reviews | ExpertBoard</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='expertboard.css', v='20260917b') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='driver.css', v='1.3.1') }}">
 </head>
 <body>
     {% include "_role_bar.html" %}
@@ -16,6 +17,9 @@
             <a class="active" href="{{ url_for('expertboard.variant_assessment_review') }}">Variant reviews</a>
             <a href="{{ url_for('expertboard.admin_panel') }}">Admin</a>
         </nav>
+        <div class="patient-guide-launch">
+            <button class="inline-button patient-guide-button" id="variant-review-guide-start" type="button" aria-label="Start guide">Start guide</button>
+        </div>
 
         <section class="section section-wide">
             <h1>VA-Spec assessment review</h1>
@@ -147,6 +151,105 @@
         annotationModal.addEventListener('click', function(event) {
             if (event.target === annotationModal) annotationModal.hidden = true;
         });
+    </script>
+    <script src="{{ url_for('static', filename='driver.js.iife.js', v='1.3.1') }}" defer></script>
+    <script>
+        (function () {
+            function startVariantReviewGuide() {
+                if (!window.driver || !window.driver.js ||
+                    typeof window.driver.js.driver !== 'function') {
+                    alert('Driver.js failed to load.');
+                    return;
+                }
+                var guide = window.driver.js.driver({
+                    showProgress: true,
+                    steps: [
+                        {
+                            element: '.page-nav .active',
+                            popover: {
+                                title: 'Variant reviews',
+                                description: 'This page presents saved VA-Spec assessment results grouped by gene and patient.',
+                                side: 'bottom',
+                                align: 'center'
+                            }
+                        },
+                        {
+                            element: '#gene-view',
+                            popover: {
+                                title: 'Gene view',
+                                description: 'Use the Gene view to inspect variants shared across patients and their cohort statistics.',
+                                side: 'top',
+                                align: 'center'
+                            }
+                        },
+                        {
+                            element: '#va-spec-gene-query',
+                            popover: {
+                                title: 'Search gene',
+                                description: 'Enter a gene symbol to filter the Gene view.',
+                                side: 'bottom',
+                                align: 'start'
+                            }
+                        },
+                        {
+                            element: '.va-spec-position-card > details > summary',
+                            popover: {
+                                title: 'Show patients, cohort ratios, and assessments',
+                                description: 'Open this section to view the patients, cohort ratios, evidence, and curator assessments for the variant.',
+                                side: 'bottom',
+                                align: 'start'
+                            }
+                        },                        {
+                            element: '.va-spec-position-card',
+                            popover: {
+                                title: 'Variant statistics',
+                                description: 'Each card represents one GRCh38 variant and shows patient, classification, diagnosis, and HPO statistics.',
+                                side: 'top',
+                                align: 'start'
+                            }
+                        },
+                        {
+                            element: '.va-spec-position-card .va-spec-evidence-node',
+                            popover: {
+                                title: 'Evidence across assessments',
+                                description: 'Review the combined evidence from all curator assessments.',
+                                side: 'top',
+                                align: 'center'
+                            }
+                        },
+                        {
+                            element: '.va-spec-annotation-button',
+                            popover: {
+                                title: 'VEP / VCF annotation',
+                                description: 'Select this button to open the saved annotation details in a small window.',
+                                side: 'bottom',
+                                align: 'center'
+                            }
+                        },
+                        {
+                            element: '.va-spec-position-card .va-spec-evidence-node a.inline-link',
+                            popover: {
+                                title: 'Patient details',
+                                description: 'Select a Patient ID to open that patient\'s detail page.',
+                                side: 'left',
+                                align: 'center'
+                            }
+                        }
+                    ]
+                });
+                guide.drive();
+            }
+
+            function initVariantReviewGuide() {
+                var button = document.getElementById('variant-review-guide-start');
+                if (button) button.addEventListener('click', startVariantReviewGuide);
+            }
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', initVariantReviewGuide, {once: true});
+            } else {
+                initVariantReviewGuide();
+            }
+        }());
     </script>
 </body>
 </html>

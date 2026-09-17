@@ -5,16 +5,20 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Patients | ExpertBoard</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='expertboard.css', v='20260729x') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='driver.css', v='1.3.1') }}">
 </head>
 <body>
     {% include "_role_bar.html" %}
     <main class="landing">
         <nav class="page-nav">
             <a href="{{ url_for('expertboard.board_list') }}">Expert boards</a>
-            <a class="active" href="{{ url_for('expertboard.patient_list') }}">Patients</a>
+            <a class="active" id="patient-nav-link" href="{{ url_for('expertboard.patient_list') }}">Patients</a>
             <a href="{{ url_for('expertboard.patient_queue') }}">Review queue</a>
             <a href="{{ url_for('expertboard.admin_panel') }}">Admin</a>
         </nav>
+        <div class="patient-guide-launch">
+            <button class="inline-button patient-guide-button" id="patient-guide-start" type="button" aria-label="Start guide">Start guide</button>
+        </div>
 
         {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
@@ -27,8 +31,7 @@
         {% endwith %}
 
         <section class="workspace" style="display:block; padding: 0 24px;">
-
-            <article class="section" style="margin-bottom: 24px;">
+            <article class="section" id="patient-import-section" style="margin-bottom: 24px;">
                 <h2 class="section-title">Add Patient / Import VCF</h2>
                 <form class="import-form import-form-inline" method="POST"
                       action="{{ url_for('expertboard.patient_import') }}"
@@ -53,7 +56,7 @@
                 </form>
             </article>
 
-            <article class="section section-wide">
+            <article class="section section-wide" id="patient-list-section">
                 <h2 class="section-title">Patient list <span class="count-badge">{{ r_patients|length }}</span></h2>
                 {% if r_patients %}
                     <div class="table-wrap">
@@ -80,7 +83,7 @@
                                             </span>
                                         </td>
                                         <td style="text-align:right;">{{ row.variant_count }}</td>
-                                        <td>
+                                        <td class="patient-open-cell">
                                             <a class="inline-link" href="{{ url_for('expertboard.patient_detail', patient_id=row.patient.id) }}">Open →</a>
                                         </td>
                                     </tr>
@@ -95,5 +98,70 @@
 
         </section>
     </main>
+    <script src="{{ url_for('static', filename='driver.js.iife.js', v='1.3.1') }}" defer></script>
+    <script>
+        (function () {
+            function startGuide() {
+                if (!window.driver || !window.driver.js ||
+                    typeof window.driver.js.driver !== 'function') {
+                    alert('Driver.js failed to load.');
+                    return;
+                }
+                var guide = window.driver.js.driver({
+                    showProgress: true,
+                    steps: [
+                        {
+                            element: 'a#patient-nav-link',
+                            popover: {
+                                title: 'Patients guide',
+                                description: 'This short guide explains how to register a case and open an existing case.',
+                                showButtons: ['next', 'close'],
+                                side: 'bottom',
+                                align: 'center'
+                            }
+                        },
+                        {
+                            element: '#patient-list-section',
+                            popover: {
+                                title: 'Registered cases',
+                                description: 'This page shows a list of registered cases.',
+                                side: 'top',
+                                align: 'center'
+                            }
+                        },
+                        {
+                            element: '#patient-import-section',
+                            popover: {
+                                title: 'Add a new case',
+                                description: 'To register a new case, upload a VCF file here. The expected input VCF has already been filtered once, for example by allele frequency.',
+                                side: 'bottom',
+                                align: 'start'
+                            }
+                        },
+                        {
+                            element: '.patient-open-cell',
+                            popover: {
+                                title: 'Open a case',
+                                description: 'Choose a registered case and select Open to continue to its case page.',
+                                side: 'left',
+                                align: 'center'
+                            }
+                        }
+                    ]
+                });
+                guide.drive();
+            }
+
+            function initGuideButton() {
+                var startButton = document.getElementById('patient-guide-start');
+                if (startButton) startButton.addEventListener('click', startGuide);
+            }
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', initGuideButton, {once: true});
+            } else {
+                initGuideButton();
+            }
+        }());
+    </script>
 </body>
 </html>

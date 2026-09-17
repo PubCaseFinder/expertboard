@@ -5,11 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ r_patient.display_name or r_patient.patient_code }} | ExpertBoard</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='expertboard.css', v='20260729v') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='driver.css', v='1.3.1') }}">
 </head>
 <body>
     {% include "_role_bar.html" %}
     <main class="landing">
         <a class="page-back-link" href="{{ url_for('expertboard.patient_list') }}">Back to Patients</a>
+        <div class="patient-guide-launch">
+            <button class="inline-button patient-guide-button" id="patient-guide-start" type="button" aria-label="Start guide">Start guide</button>
+        </div>
 
         {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
@@ -32,7 +36,7 @@
                 <div class="patient-hero-stat-row">
                     <div class="stat-card"><span>Variants</span><strong>{{ r_variants|length }}</strong></div>
                 </div>
-                <form class="inline-form" method="POST"
+                <form class="inline-form" id="patient-status-form" method="POST"
                       action="{{ url_for('expertboard.patient_status', patient_id=r_patient.id) }}">
                     <span class="inline-label">Status</span>
                     <select class="inline-select" name="review_status">
@@ -45,7 +49,7 @@
                     </select>
                     <button class="inline-button" type="submit">Update</button>
                 </form>
-                <form class="inline-form" method="POST"
+                <form class="inline-form" id="patient-expert-board-form" method="POST"
                       action="{{ url_for('expertboard.patient_expert_group', patient_id=r_patient.id) }}">
                     <span class="inline-label">Expert board</span>
                     <select class="inline-select" name="expert_board_id">
@@ -67,7 +71,7 @@
         </section>
 
         <section class="workspace">
-            <article class="section section-wide">
+            <article class="section section-wide" id="clinical-free-text-section">
                 <h2 class="section-title">Clinical free text</h2>
                 <div class="clinical-hpo-layout">
                     <form class="clinical-form" method="POST"
@@ -85,8 +89,8 @@
                         <div id="clinical-context-candidates" class="hpo-candidate-list"></div>
                         <div class="hpo-review-actions"><button class="inline-button" id="clinical-context-confirm-btn" type="button" onclick="confirmClinicalContext(this)" disabled>Apply selected</button></div>
                         <div id="clinical-context-confirmed" class="hpo-confirmed-list">
-                            {% for item in r_clinical_context.ancestry or [] %}<div class="hpo-confirmed-item"><div><strong>Ancestry: {{ item.value }}</strong><span>{{ item.source_text }}</span></div><button class="hpo-remove-btn" type="button" title="Remove confirmed ancestry" aria-label="Remove {{ item.value }}" onclick="removeClinicalContext(this, 'ancestry', {{ item.value|tojson }})">&#x2715;</button></div>{% endfor %}
-                            {% for item in r_clinical_context.diseases or [] %}<div class="hpo-confirmed-item"><div><strong>Disease: {{ item.value }}</strong><span>{{ item.source_text }}</span></div><button class="hpo-remove-btn" type="button" title="Remove confirmed disease" aria-label="Remove {{ item.value }}" onclick="removeClinicalContext(this, 'diseases', {{ item.value|tojson }})">&#x2715;</button></div>{% endfor %}
+                            {% for item in r_clinical_context.ancestry or [] %}<div class="hpo-confirmed-item"><div><strong>Ancestry: {{ item.value }}</strong><span>{{ item.source_text }}</span></div><button class="hpo-remove-btn" type="button" title="Remove confirmed ancestry" aria-label="Remove {{ item.value }}" data-context-value="{{ item.value }}" onclick="removeClinicalContext(this, 'ancestry', this.dataset.contextValue)">&#x2715;</button></div>{% endfor %}
+                            {% for item in r_clinical_context.diseases or [] %}<div class="hpo-confirmed-item"><div><strong>Disease: {{ item.value }}</strong><span>{{ item.source_text }}</span></div><button class="hpo-remove-btn" type="button" title="Remove confirmed disease" aria-label="Remove {{ item.value }}" data-context-value="{{ item.value }}" onclick="removeClinicalContext(this, 'diseases', this.dataset.contextValue)">&#x2715;</button></div>{% endfor %}
                         </div>
                     </section>
                     <section class="hpo-review-panel patient-hpo-panel" aria-labelledby="hpo-review-title">
@@ -141,7 +145,7 @@
                 </div>
             </article>
 
-            <article class="section section-wide">
+            <article class="section section-wide" id="family-section">
                 <h2 class="section-title">Family</h2>
                 <form class="inline-form" method="POST"
                       action="{{ url_for('expertboard.patient_family', patient_id=r_patient.id) }}">
@@ -221,7 +225,7 @@
                 {% endif %}
             </article>
 
-            <article class="section section-wide">
+            <article class="section section-wide" id="vcf-variants-section">
                 <h2 class="section-title">VCF variants</h2>
                 <div class="vcf-toolbar">
                     <form method="POST"
@@ -234,7 +238,7 @@
                     {% if not r_llm_configured %}
                         <span class="status-hint">Configure LLM Base URL and model in Admin to enable Analyze with AI.</span>
                     {% elif r_variants and r_patient.clinical_text %}
-                        <button class="inline-button ai-analyze-btn" type="button"
+                        <button class="inline-button ai-analyze-btn" id="ai-analyze-btn" type="button"
                                 data-url="{{ url_for('expertboard.api_patient_llm_analyze', patient_id=r_patient.id) }}"
                                 onclick="runLlmAnalysis(this)">
                             ✦ Analyze with AI
@@ -315,6 +319,8 @@
                                     </th>
                                     <th>GT</th>
                                     <th>DP</th>
+                                    <th>Francis inputs</th>
+                                    <th>VCF raw INFO</th>
                                     <th>Note
                                         <input class="th-filter" id="vf-note" type="search" placeholder="filter…">
                                     </th>
@@ -399,6 +405,27 @@
                                         <td><span class="clnsig clnsig-{{ (v.clin_sig or 'unknown')|lower|replace('_','-') }}">{{ v.clin_sig or "—" }}</span></td>
                                         <td>{{ v.genotype or "—" }}</td>
                                         <td>{{ v.depth if v.depth is not none else "—" }}</td>
+                                        <td class="francis-inputs-cell">
+                                            <details class="raw-info-details">
+                                                <summary>View fields</summary>
+                                                <dl class="francis-input-list">
+                                                    {% for name in ("CLNSIG", "REVIEW_STAR", "CLNREVSTAT", "MANE_HIT", "VEP_IMPACT", "GNOMAD_AF", "GNOMAD_AF_GRPMAX", "GNOMAD_AF_EAS", "GNOMAD_AF_SAS", "gnomAD_AF_POPMAX", "REVEL", "CADD", "CADD_PHRED", "SpliceAI_AG", "SpliceAI_AL", "SpliceAI_DG", "SpliceAI_DL", "AlphaMissense", "AF") %}
+                                                        <dt>{{ name }}</dt><dd>{{ r_variant_info.get(v.id, {}).get(name, "—") }}</dd>
+                                                    {% endfor %}
+                                                    {% for name in ("score_clinvar", "score_gnomad", "score_alphamissense", "score_cadd", "score_revel", "score_spliceai") %}
+                                                        <dt>{{ name }}</dt><dd>{{ r_variant_rule_scores.get(v.id, {}).get(name, "—") }}</dd>
+                                                    {% endfor %}
+                                                </dl>
+                                            </details>
+                                        </td>
+                                        <td class="raw-info-cell">
+                                            {% if v.raw_info %}
+                                                <details class="raw-info-details">
+                                                    <summary>View INFO</summary>
+                                                    <pre>{{ v.raw_info }}</pre>
+                                                </details>
+                                            {% else %}—{% endif %}
+                                        </td>
                                         <td class="note-cell">
                                             {% if v.note %}<div><strong>VCF:</strong> {{ v.note|replace('_', ' ') }}</div>{% endif %}
                                             {% for entry in va_list if entry.assessment.notes %}
@@ -783,6 +810,7 @@
         <div class="acmg-modal-box">
             <form id="assess-form" method="POST" action="">
                 <div class="acmg-modal-header">
+                    <button type="button" class="assessment-guide-button" id="assessment-guide-start">Start guide</button>
                     <h3>Add Assessment</h3>
                     <button type="button" class="acmg-modal-close" onclick="closeAssessModal()">&#x2715;</button>
                 </div>
@@ -938,7 +966,7 @@
                 <div class="acmg-modal-footer">
                     <div class="acmg-footer-actions">
                         <span class="acmg-selected-preview" id="acmg-preview">— no ACMG criteria selected —</span>
-                        <button type="submit" class="inline-button">Save</button>
+                            <button type="submit" class="inline-button" id="assessment-save-button">Save</button>
                         <button type="button" class="vf-clear" onclick="closeAssessModal()">Cancel</button>
                     </div>
                 </div>
@@ -946,17 +974,18 @@
         </div>
     </div>
     <script type="application/json" id="acmg-default-weights">{{ r_acmg_default_weights|tojson|safe }}</script>
+    <script type="application/json" id="va-spec-context">{{ {
+        "reviewer": r_current_user_display,
+        "patientId": r_patient.id,
+        "condition": r_patient.diagnosis_name,
+        "clinicalText": r_patient.clinical_text,
+        "clinicalContext": r_clinical_context
+    }|tojson|safe }}</script>
     <script>
         var currentAssessmentRow = null;
         var hpoCandidates = [];
         var clinicalContextCandidates = {ancestry: [], diseases: []};
-        var vaSpecContext = {{ {
-            "reviewer": r_current_user_display,
-            "patientId": r_patient.id,
-            "condition": r_patient.diagnosis_name,
-            "clinicalText": r_patient.clinical_text,
-            "clinicalContext": r_clinical_context
-        }|tojson|safe }};
+        var vaSpecContext = JSON.parse(document.getElementById('va-spec-context').textContent);
 
         function confirmedPhenotypeContext() {
             return Array.from(document.querySelectorAll('#hpo-confirmed-list .hpo-confirmed-item'))
@@ -1991,6 +2020,292 @@
                 markPhenotypeRelatedGenes();
             }
         });
+    </script>
+    <script src="{{ url_for('static', filename='driver.js.iife.js', v='1.3.1') }}"></script>
+    <script>
+        (function () {
+            var startButton = document.getElementById('patient-guide-start');
+            if (!startButton) return;
+            var guideResumeKey = 'expertboardPatientGuideResume';
+
+            function saveGuideResume(stepIndex) {
+                try {
+                    sessionStorage.setItem(guideResumeKey, JSON.stringify({
+                        stepIndex: stepIndex,
+                        timestamp: Date.now()
+                    }));
+                } catch (error) {}
+            }
+
+            function consumeGuideResume() {
+                try {
+                    var saved = JSON.parse(sessionStorage.getItem(guideResumeKey) || 'null');
+                    sessionStorage.removeItem(guideResumeKey);
+                    if (saved && Date.now() - saved.timestamp < 120000) return saved.stepIndex;
+                } catch (error) {}
+                return 0;
+            }
+
+            function startPatientGuide(startIndex) {
+                var driverFactory = window.driver && window.driver.js &&
+                    (window.driver.js.driver || window.driver);
+                if (typeof driverFactory !== 'function') return false;
+                var guide = driverFactory({
+                    showProgress: true,
+                    disableActiveInteraction: false,
+                    steps: [
+                        {
+                            element: '.patient-hero',
+                            popover: {
+                                title: 'Patient case',
+                                description: 'This page shows the individual patient case information.',
+                                side: 'bottom',
+                                align: 'center'
+                            }
+                        },
+                        {
+                            element: '#patient-status-form',
+                            popover: {
+                                title: 'Status',
+                                description: 'Use this to track review progress. The current status is also shown in the Review queue kanban view.',
+                                side: 'left',
+                                align: 'center'
+                            }
+                        },
+                        {
+                            element: '#patient-expert-board-form',
+                            popover: {
+                                title: 'Expert board',
+                                description: 'Select the expert board to request variant assessment. Boards represent specialist panels organized by disease area and expertise.',
+                                side: 'left',
+                                align: 'center'
+                            }
+                        },
+                        {
+                            element: '#clinical-free-text-section',
+                            popover: {
+                                title: 'Clinical free text',
+                                description: 'Enter the patient case information from the VCF or clinical record here as free text.',
+                                side: 'top',
+                                align: 'center'
+                            }
+                        },
+                        {
+                            element: '#clinical-context-extract-btn',
+                            popover: {
+                                title: 'Extract',
+                                description: 'Extract ancestry and disease candidates from the saved clinical note.',
+                                side: 'bottom',
+                                align: 'end'
+                            }
+                        },
+                        {
+                            element: '#clinical-context-confirm-btn',
+                            popover: {
+                                title: 'Apply selected',
+                                description: 'Review the candidates and apply them only when they are correct.',
+                                side: 'bottom',
+                                align: 'end'
+                            },
+                            onHighlightStarted: function(element) {
+                                element.addEventListener('click', function() {
+                                    saveGuideResume(6);
+                                }, {once: true, capture: true});
+                            }
+                        },
+                        {
+                            element: '#hpo-extract-btn',
+                            popover: {
+                                title: 'Extract candidates',
+                                description: 'Extract symptoms from the clinical note and resolve their HPO terms through TogoMCP and PubCaseFinder.',
+                                side: 'bottom',
+                                align: 'end'
+                            }
+                        },
+                        {
+                            element: '#hpo-confirm-btn',
+                            popover: {
+                                title: 'Confirm selected HPO',
+                                description: 'Select the correct HPO candidates, then confirm them to save the patient phenotype set.',
+                                side: 'bottom',
+                                align: 'end'
+                            }
+                        },
+                        {
+                            element: '#family-section',
+                            popover: {
+                                title: 'Family',
+                                description: 'Add family information here. Add the individual family member VCF first. When this page represents the proband, selecting a father or mother VCF enables variant comparison.',
+                                side: 'top',
+                                align: 'center'
+                            }
+                        },
+                        {
+                            element: '#vcf-variants-section',
+                            popover: {
+                                title: 'VCF variants',
+                                description: 'The variants from the registered VCF files are displayed here.',
+                                side: 'top',
+                                align: 'center'
+                            }
+                        },
+                        {
+                            element: '#ai-analyze-btn',
+                            popover: {
+                                title: 'Analyze with AI',
+                                description: 'Click this button to use the VCF variant information and ACMG guidelines to support the review. Each variant can also be analyzed later from its individual assessment view.',
+                                side: 'bottom',
+                                align: 'center'
+                            }
+                        },
+                        {
+                            element: '#ai-col-header',
+                            popover: {
+                                title: 'AI analysis complete',
+                                description: 'When the diamond mark appears in the AI column, the AI analysis is complete.',
+                                side: 'bottom',
+                                align: 'center'
+                            }
+                        },
+                        {
+                            element: '.assess-add-btn',
+                            popover: {
+                                title: 'Open variant assessment',
+                                description: 'Click the plus button to open the assessment screen for this variant.',
+                                side: 'bottom',
+                                align: 'center'
+                            }
+                        }
+                    ]
+                });
+                guide.drive(startIndex || 0);
+                return true;
+            }
+
+            startButton.addEventListener('click', function () {
+                if (startPatientGuide(0)) return;
+                startButton.disabled = true;
+                startButton.textContent = 'Loading guide...';
+                var script = document.createElement('script');
+                script.src = "{{ url_for('static', filename='driver.js.iife.js', v='1.3.1') }}";
+                script.onload = function () {
+                    if (!startPatientGuide(0)) startButton.textContent = 'Guide unavailable';
+                };
+                script.onerror = function () { startButton.textContent = 'Guide unavailable'; };
+                document.head.appendChild(script);
+            });
+            var resumeStep = consumeGuideResume();
+            if (resumeStep) setTimeout(function () { startPatientGuide(resumeStep); }, 300);
+        }());
+    </script>
+    <script>
+        (function () {
+            function startAssessmentGuide() {
+                if (!window.driver || !window.driver.js ||
+                    typeof window.driver.js.driver !== 'function') {
+                    alert('Driver.js failed to load.');
+                    return;
+                }
+                var guide = window.driver.js.driver({
+                    showProgress: true,
+                    steps: [
+                        {
+                            element: '#acmg-modal .acmg-modal-header',
+                            popover: {
+                                title: 'Add Assessment',
+                                description: 'Use this window to review one variant and save a curator assessment.',
+                                side: 'bottom',
+                                align: 'start'
+                            }
+                        },
+                        {
+                            element: 'section.va-review-panel',
+                            popover: {
+                                title: 'Variant annotation and AI input',
+                                description: 'Review the original VCF data, refreshed VEP/VRS data, clinical note, HPO, and patient context used for the assessment.',
+                                side: 'right',
+                                align: 'start'
+                            }
+                        },
+                        {
+                            element: '#va-refresh-btn',
+                            popover: {
+                                title: 'Refresh VEP / VRS',
+                                description: 'Refresh the current variant annotation before assessing it.',
+                                side: 'bottom',
+                                align: 'center'
+                            }
+                        },
+                        {
+                            element: '#ai-refresh-btn',
+                            popover: {
+                                title: 'Update AI criteria',
+                                description: 'Use the current VEP/VRS annotation to request AI-supported ACMG criteria suggestions.',
+                                side: 'bottom',
+                                align: 'center'
+                            }
+                        },
+                        {
+                            element: '#ai-pubcasefinder-btn',
+                            popover: {
+                                title: 'Suggest with PubCaseFinder',
+                                description: 'Use the confirmed HPO and PubCaseFinder candidate disease or gene information as additional context.',
+                                side: 'bottom',
+                                align: 'center'
+                            }
+                        },
+                        {
+                            element: '#ai-suggestion-panel',
+                            popover: {
+                                title: 'AI Reasoning',
+                                description: 'Review the AI reasoning, suggested criteria, missing data, and evidence used for each suggestion.',
+                                side: 'left',
+                                align: 'start'
+                            }
+                        },
+                                                {
+                            element: '#ai-apply-btn.ai-apply-btn',
+                            popover: {
+                                title: 'Apply AI suggestions',
+                                description: 'Apply the AI-suggested criteria to the assessment.',
+                                side: 'left',
+                                align: 'start'
+                            }
+                        },
+                        {
+                            element: 'div.acmg-group',
+                            popover: {
+                                title: 'ACMG criteria',
+                                description: 'Select the criteria supported by the available evidence and adjust their strength when needed.',
+                                side: 'left',
+                                align: 'start'
+                            }
+                        },
+                        {
+                            element: '#acmg-modal .acmg-notes-row',
+                            popover: {
+                                title: 'Assessment notes',
+                                description: 'Add curator comments or other notes that explain the assessment.',
+                                side: 'left',
+                                align: 'center'
+                            }
+                        },
+                        {
+                            element: '#assessment-save-button',
+                            popover: {
+                                title: 'Save assessment',
+                                description: 'Save the selected criteria, comments, annotation snapshot, and assessment result.',
+                                side: 'top',
+                                align: 'center'
+                            }
+                        }
+                    ]
+                });
+                guide.drive();
+            }
+
+            document.getElementById('assessment-guide-start').addEventListener('click', startAssessmentGuide);
+        }());
     </script>
 </body>
 </html>
