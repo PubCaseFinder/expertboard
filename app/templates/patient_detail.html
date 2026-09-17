@@ -245,6 +245,11 @@
                     {% else %}
                         <span class="status-hint">Import a VCF file to enable Analyze with AI.</span>
                     {% endif %}
+                    {% if r_variants %}
+                        <button class="inline-button priority-sort-btn" id="priority-sort-btn" type="button" onclick="sortByEvaluationPriority(this)">
+                            Sort by evaluation priority
+                        </button>
+                    {% endif %}
                 </div>
                 {% if r_variants %}
                     <p class="section-copy">{{ r_variants|length }} variants parsed from the uploaded VCF.</p>
@@ -252,6 +257,7 @@
                         <table class="variant-table" id="variant-table">
                             <thead>
                                 <tr>
+                                    <th class="priority-rank-col">Rank</th>
                                     <th>
                                         Gene
                                         <button class="th-clear-btn" type="button"
@@ -330,6 +336,7 @@
                                         data-past="{% for e in r_cross_assessments.get(v.id, []) %}{{ e.score.classification|lower|replace(' ','_') }}{% if not loop.last %}|{% endif %}{% endfor %}"
                                         data-assessed="{% for e in va_list %}{{ e.score.classification|lower|replace(' ','_') }}{% if not loop.last %}|{% endif %}{% endfor %}"
                                         data-vkey="{{ v.chrom }}:{{ v.pos }}:{{ v.ref }}:{{ v.alt }}"
+                                        data-priority="{{ r_variant_priority.get(v.id, 99) }}"
                                         data-raw-info="{{ v.raw_info or '' }}"
                                         data-vid="{{ v.id }}"
                                         data-ai-score="{{ v.llm_score if v.llm_score is not none else '' }}"
@@ -338,6 +345,7 @@
                                         data-ai-review-url="{{ url_for('expertboard.api_variant_ai_review', patient_id=r_patient.id, variant_id=v.id) }}"
                                         data-pubcasefinder-ai-review-url="{{ url_for('expertboard.api_variant_pubcasefinder_ai_review', patient_id=r_patient.id, variant_id=v.id) }}"
                                     >
+                                        <td class="priority-rank-col priority-rank-value">{{ r_variant_priority.get(v.id, 99) }}</td>
                                         <td class="variant-gene-cell">
                                             <strong>{{ v.gene or "—" }}</strong>
                                             <span class="hpo-gene-rank-badge" hidden></span>
@@ -391,7 +399,13 @@
                                         <td><span class="clnsig clnsig-{{ (v.clin_sig or 'unknown')|lower|replace('_','-') }}">{{ v.clin_sig or "—" }}</span></td>
                                         <td>{{ v.genotype or "—" }}</td>
                                         <td>{{ v.depth if v.depth is not none else "—" }}</td>
-                                        <td class="note-cell">{{ (v.note or "")|replace('_', ' ') }}</td>
+                                        <td class="note-cell">
+                                            {% if v.note %}<div><strong>VCF:</strong> {{ v.note|replace('_', ' ') }}</div>{% endif %}
+                                            {% for entry in va_list if entry.assessment.notes %}
+                                                <div class="reviewer-note"><strong>Reviewer:</strong> {{ entry.assessment.notes }}</div>
+                                            {% endfor %}
+                                            {% if not v.note and not (va_list|selectattr('assessment.notes')|list) %}—{% endif %}
+                                        </td>
                                         {% if r_linked_variants %}
                                             <td>{% for label in shares %}<span class="shared-badge">{{ label }}</span>{% endfor %}</td>
                                         {% endif %}
@@ -506,7 +520,7 @@
                         })();
 
                         function clearVfFilters() {
-                            ['vf-gene', 'vf-type', 'vf-note'].forEach(function (id) {
+                            ['vf-gene', 'vf-hgvs', 'vf-type', 'vf-note'].forEach(function (id) {
                                 var el = document.getElementById(id);
                                 if (el) el.value = '';
                             });
@@ -517,6 +531,22 @@
                             document.querySelectorAll('#variant-tbody tr:not(.assessment-form-row)').forEach(function (row) {
                                 row.style.display = '';
                             });
+                        }
+
+                        function sortByEvaluationPriority(button) {
+                            var tbody = document.getElementById('variant-tbody');
+                            document.getElementById('variant-table').classList.add('priority-ranked');
+                            var rows = Array.from(tbody.querySelectorAll('tr:not(.assessment-form-row)'));
+                            rows.sort(function(a, b) {
+                                return Number(a.dataset.priority || 99) - Number(b.dataset.priority || 99);
+                            });
+                            rows.forEach(function(row) {
+                                tbody.appendChild(row);
+                                var formRow = document.getElementById('af-' + row.dataset.vid);
+                                if (formRow) tbody.appendChild(formRow);
+                            });
+                            button.textContent = 'Sorted by evaluation priority';
+                            button.disabled = true;
                         }
 
                         function toggleAssessForm(id) {

@@ -236,6 +236,16 @@ h1 {
     white-space: nowrap;
 }
 
+.priority-sort-btn {
+    background: #2d6a4f;
+}
+
+.priority-sort-btn:hover { background: #1b4332; }
+.priority-sort-btn:disabled { cursor: default; opacity: .75; }
+.priority-rank-col { display: none; }
+.priority-ranked .priority-rank-col { display: table-cell; }
+.priority-rank-value { color: #2d6a4f; font-weight: 800; text-align: center; }
+
 .inline-link {
     flex-shrink: 0;
     font-size: 12px;
@@ -3186,11 +3196,19 @@ h1 {
 
 .note-cell {
     white-space: normal;
-    width: 220px;
-    max-width: 220px;
+    width: 60ch;
+    max-width: 60ch;
     overflow-wrap: anywhere;
     color: #6a7486;
 }
+
+.note-cell > div + div {
+    margin-top: 5px;
+    padding-top: 5px;
+    border-top: 1px solid #eef2f7;
+}
+
+.reviewer-note { color: #475569; }
 
 .clnsig {
     display: inline-block;

@@ -24,6 +24,7 @@ from app import vep_api
 from app.db import Session
 from app.models import Case
 from app.models import Variant
+from app import variant_priority
 
 
 bp = Blueprint("expertboard", __name__)
@@ -136,6 +137,7 @@ def patient_detail(patient_id):
 
     # Proband variants
     proband_variants = patients.get_patient_variants(patient_id)
+    r_variant_priority = variant_priority.evaluation_priorities(proband_variants)
     proband_key_map = {_vkey(v): v.id for v in proband_variants}
 
     # Linked patient variants (deduplicated by patient id)
@@ -170,6 +172,7 @@ def patient_detail(patient_id):
         r_llm_configured=llm_module.is_configured(),
         r_confirmed_phenotypes=patients.list_confirmed_phenotypes(patient_id),
         r_variants=proband_variants,
+        r_variant_priority=r_variant_priority,
         r_variant_shares=variant_shares,
         r_proband_vkeys=list(proband_key_map.keys()),
         r_shared_vkeys=list(shared_vkeys_set),
