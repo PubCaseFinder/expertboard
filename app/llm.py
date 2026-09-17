@@ -18,6 +18,17 @@ from app import hpo_client
 log = logging.getLogger(__name__)
 
 _TIMEOUT = 900  # seconds — LLM inference can be slow if running at higher context sizes
+_HPO_EXTRACTION_CHUNK_SIZE = 1000
+
+
+def _vcf_info_values(raw_info):
+    """Parse persisted VCF INFO values needed for structured LLM context."""
+    values = {}
+    for item in (raw_info or "").split(";"):
+        key, separator, value = item.partition("=")
+        if separator and value not in ("", "."):
+            values[key] = value
+    return values
 
 
 def _normalize_base_url(raw_url):
@@ -88,6 +99,15 @@ Rules:
 - Return an empty phenotypes array only when the text contains no explicit patient phenotype.
 """
 
+_CLINICAL_CONTEXT_EXTRACTION_SYSTEM = """\
+Extract only an explicitly stated patient ancestry, ethnicity, country of origin,
+or diagnosis/disease from the supplied clinical note. Do not infer ancestry from
+a name, language, location of care, or diagnosis. Return ONLY valid JSON:
+{"ancestry": [{"value": "...", "source_text": "exact phrase"}],
+ "diseases": [{"value": "...", "source_text": "exact phrase"}]}
+Use empty arrays when the note does not explicitly state a value.
+"""
+
 
 def extract_hpo_phenotypes(clinical_text):
     """Use the configured LLM to extract HPO candidates from clinical text."""
@@ -97,41 +117,76 @@ def extract_hpo_phenotypes(clinical_text):
     if not base_url:
         raise RuntimeError("Ollama is not configured. Set the URL in Admin.")
 
-    raw = _chat(
-        [
-            {"role": "system", "content": _HPO_EXTRACTION_SYSTEM},
-            {"role": "user", "content": clinical_text.strip()},
-        ],
-        base_url,
-        model,
-        api_key,
-    ).strip()
-    if raw.startswith("```"):
-        raw = raw.split("```", 2)[1]
-        if raw.startswith("json"):
-            raw = raw[4:]
-    try:
-        payload = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise RuntimeError("Ollama returned invalid JSON for HPO extraction.") from exc
-
     candidates = []
-    for item in payload.get("phenotypes", []):
-        if not isinstance(item, dict):
+    text = clinical_text.strip()
+    for start in range(0, len(text), _HPO_EXTRACTION_CHUNK_SIZE):
+        chunk = text[start:start + _HPO_EXTRACTION_CHUNK_SIZE]
+        raw = _chat(
+            [
+                {"role": "system", "content": _HPO_EXTRACTION_SYSTEM},
+                {"role": "user", "content": chunk},
+            ],
+            base_url,
+            model,
+            api_key,
+        ).strip()
+        if raw.startswith("```"):
+            raw = raw.split("```", 2)[1]
+            if raw.startswith("json"):
+                raw = raw[4:]
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError("Ollama returned invalid JSON for HPO extraction.") from exc
+        for item in payload.get("phenotypes", []):
+            if not isinstance(item, dict):
+                continue
+            label = str(item.get("label") or "").strip()
+            if not label:
+                continue
+            candidates.append(
+                {
+                    "label": label,
+                    "source_text": str(item.get("source_text") or ""),
+                }
+            )
+
+    unique_candidates = []
+    seen_labels = set()
+    for candidate in candidates:
+        normalized = candidate["label"].casefold()
+        if normalized in seen_labels:
             continue
-        label = str(item.get("label") or "").strip()
-        if not label:
-            continue
-        candidates.append(
-            {
-                "label": label,
-                "source_text": str(item.get("source_text") or ""),
-            }
-        )
+        seen_labels.add(normalized)
+        unique_candidates.append(candidate)
     try:
-        return hpo_client.resolve_candidates(candidates)
+        return hpo_client.resolve_candidates(unique_candidates)
     except requests.RequestException as exc:
         raise RuntimeError(f"HPO terminology lookup failed: {exc}") from exc
+
+
+def extract_clinical_context(clinical_text):
+    """Extract reviewable ancestry and disease candidates from a clinical note."""
+    if not (clinical_text or "").strip():
+        return {"ancestry": [], "diseases": []}
+    base_url, model, api_key = _get_client_settings()
+    if not base_url:
+        raise RuntimeError("Ollama is not configured. Set the URL in Admin.")
+    raw = _chat(
+        [{"role": "system", "content": _CLINICAL_CONTEXT_EXTRACTION_SYSTEM},
+         {"role": "user", "content": clinical_text.strip()}],
+        base_url, model, api_key,
+    ).strip()
+    if raw.startswith("```"):
+        raw = raw.split("```", 2)[1].removeprefix("json")
+    try:
+        context = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("Ollama returned invalid JSON for clinical context extraction.") from exc
+    return {
+        key: [item for item in context.get(key, []) if isinstance(item, dict)]
+        for key in ("ancestry", "diseases")
+    }
 
 
 def _chat(messages, base_url, model, api_key):
@@ -231,10 +286,19 @@ Interpret variants according to:
 
 Do not invent evidence. Only recommend criteria that are directly supported by the available data.
 Prefer latest_external_annotation over older VCF INFO values when they conflict.
+For population frequency, first use the explicit vcf_population_frequency field when provided.
+It is the imported gnomAD annotation and is valid even if live VEP omits frequency data.
+Use a population-specific gnomAD AF only when the patient's clinical description explicitly
+states a matching country, ethnicity, ancestry, or population. Do not infer ancestry from a
+name, diagnosis, language, or location of care. If no explicit match is available, use
+gnomAD_AF_ALL. If gnomAD_AF_ALL is available, do not report population frequency as NotProvided.
 Use the VRS identifier to establish variant identity only; it is not pathogenicity evidence.
 Treat PubCaseFinder rankings as diagnostic-support signals, not proof of causality.
 A case-report citation alone does not establish PS3, PS4, or any other ACMG criterion;
 apply a criterion only when the supplied evidence contains the required study details.
+For every suggested criterion, provide evidence_basis entries naming the exact source field,
+observed value, criterion, and a short explanation of how the value supports the suggestion.
+If a criterion has no direct supporting value, do not include it in suggested_acmg.
 
 == Analysis tasks ==
 
@@ -304,6 +368,15 @@ Common examples:
       "<criterion>",
       "<criterion>"
     ],
+        "evidence_basis": [
+            {
+                "criterion": "<criterion>",
+                "source": "<VCF INFO, live VEP, PubCaseFinder, or clinical note>",
+                "field": "<exact field name>",
+                "value": "<observed value>",
+                "explanation": "<why this supports the criterion>"
+            }
+        ],
     "missing_data": [
       "<Criterion>: <required data>"
     ],
@@ -314,7 +387,11 @@ Common examples:
 
 
 def analyze_variants(
-    clinical_text, variants, annotations_by_variant=None, case_evidence=None
+    clinical_text,
+    variants,
+    annotations_by_variant=None,
+    case_evidence=None,
+    clinical_context=None,
 ):
     """Analyze variants against clinical text using the configured Ollama model.
 
@@ -338,6 +415,7 @@ def analyze_variants(
     annotations_by_variant = annotations_by_variant or {}
     variant_list = []
     for v in variants:
+        info_values = _vcf_info_values(v.raw_info)
         variant_data = {
             "id": v.id,
             "gene": v.gene or "",
@@ -349,6 +427,16 @@ def analyze_variants(
             "depth": v.depth,
             "raw_info": v.raw_info or "",
         }
+        population_frequency = {}
+        if "gnomAD_AF" in info_values:
+            population_frequency["gnomAD_AF_ALL"] = info_values["gnomAD_AF"]
+        if "gnomAD_AF_POPMAX" in info_values:
+            population_frequency["gnomAD_AF_POPMAX"] = info_values["gnomAD_AF_POPMAX"]
+        for key, value in info_values.items():
+            if key.startswith("gnomAD_AF_") and key not in population_frequency:
+                population_frequency[key] = value
+        if population_frequency:
+            variant_data["vcf_population_frequency"] = population_frequency
         annotation = annotations_by_variant.get(v.id) or annotations_by_variant.get(
             str(v.id)
         )
@@ -364,6 +452,11 @@ def analyze_variants(
         user_message += (
             "\n\nCase external evidence:\n"
             + json.dumps(case_evidence, ensure_ascii=False)
+        )
+    if clinical_context:
+        user_message += (
+            "\n\nReviewer-confirmed clinical context (use for population selection):\n"
+            + json.dumps(clinical_context, ensure_ascii=False)
         )
 
     messages = [
@@ -394,6 +487,7 @@ def analyze_variants(
                 "family_history": item.get("family_history", ""),
                 "score_rationale": item.get("score_rationale", ""),
                 "suggested_acmg": item.get("suggested_acmg", []),
+                "evidence_basis": item.get("evidence_basis", []),
                 "missing_data": item.get("missing_data", []),
             }
         return out

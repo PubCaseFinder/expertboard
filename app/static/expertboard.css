@@ -372,6 +372,8 @@ h1 {
 }
 .ai-refresh-btn:hover { background: #1b4332; }
 .ai-refresh-btn:disabled { cursor: not-allowed; opacity: .45; }
+.ai-pubcasefinder-btn { background: #1d4e89; border-color: #1d4e89; }
+.ai-pubcasefinder-btn:hover { background: #163d6c; }
 .va-data-status { padding: 10px 0 2px; color: #4b5563; font-size: 12px; }
 .va-data-status.is-error, .va-data-error { color: #b91c1c; }
 .va-data-error {
@@ -715,6 +717,39 @@ h1 {
     line-height: 1.5;
 }
 
+.ai-input-preview {
+    margin: 0 0 12px;
+    padding: 9px 11px;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    background: #f8fafc;
+    font-size: 11px;
+}
+
+.ai-input-preview summary {
+    cursor: pointer;
+    color: #334155;
+    font-weight: 700;
+}
+
+.ai-input-preview-list {
+    display: grid;
+    grid-template-columns: 115px minmax(0, 1fr);
+    gap: 6px 9px;
+    margin: 9px 0 0;
+}
+
+.ai-input-preview-list dt { color: #64748b; font-weight: 700; }
+.ai-input-preview-list dd { min-width: 0; margin: 0; color: #334155; }
+.ai-input-preview-list pre {
+    max-height: 100px;
+    margin: 0;
+    overflow: auto;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    font: inherit;
+}
+
 .ai-acmg-suggest {
     display: flex;
     flex-wrap: wrap;
@@ -748,6 +783,30 @@ h1 {
     color: #6c757d;
     font-style: italic;
 }
+
+.ai-evidence-basis {
+    margin-top: 9px;
+    padding-top: 8px;
+    border-top: 1px solid #b7e4c7;
+    color: #1b4332;
+    font-size: 11px;
+}
+
+.ai-evidence-basis summary {
+    cursor: pointer;
+    font-weight: 700;
+}
+
+.ai-evidence-basis-item {
+    display: grid;
+    gap: 2px;
+    margin-top: 7px;
+    padding: 6px 8px;
+    border-left: 3px solid #74c69d;
+    background: #f7fcf8;
+}
+
+.ai-evidence-basis-item span { line-height: 1.4; }
 
 .ai-missing-data {
     margin-top: 8px;
@@ -2365,15 +2424,26 @@ h1 {
 
 /* ── Variant assessment column ─────────────────────────────────────────── */
 .assessment-cell {
-    white-space: nowrap;
+    width: 210px;
+    max-width: 210px;
+    white-space: normal;
     vertical-align: top;
     padding-top: 6px;
 }
 
 .assessment-cell .assess-badge {
-    display: block;
-    width: fit-content;
+    display: inline-flex;
+    max-width: 100%;
+    white-space: normal;
     margin-bottom: 2px;
+}
+
+.other-review-summary {
+    display: inline-block;
+    max-width: 20ch;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    line-height: 1.35;
 }
 
 .assess-badge {
@@ -2386,7 +2456,8 @@ h1 {
     font-weight: 600;
     border: 1px solid transparent;
     margin: 0;
-    white-space: nowrap;
+    white-space: normal;
+    overflow-wrap: anywhere;
     cursor: default;
 }
 
@@ -2655,6 +2726,20 @@ h1 {
 .acmg-criterion-comment:disabled {
     display: none;
 }
+
+.ai-criterion-evidence {
+    display: grid;
+    gap: 2px;
+    margin: 2px 0;
+    padding: 5px 7px;
+    border-left: 3px solid #74c69d;
+    background: #f7fcf8;
+    color: #1b4332;
+    font-size: 10px;
+    line-height: 1.4;
+}
+
+.ai-criterion-evidence[hidden] { display: none; }
 
 .acmg-modal-footer {
     border-top: 1px solid #e5e7eb;
@@ -3060,7 +3145,9 @@ h1 {
 
 .note-cell {
     white-space: normal;
-    min-width: 200px;
+    width: 220px;
+    max-width: 220px;
+    overflow-wrap: anywhere;
     color: #6a7486;
 }
 

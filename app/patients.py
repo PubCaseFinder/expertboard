@@ -56,6 +56,7 @@ def review_status_label(status):
 def ensure_schema():
     """Add columns introduced after the patients table was first created."""
     _add_column_if_missing("clinical_text TEXT NULL")
+    _add_column_if_missing("clinical_context LONGTEXT NULL")
     _add_column_if_missing(
         "review_status VARCHAR(32) NOT NULL DEFAULT 'pending_review'"
     )
@@ -161,6 +162,29 @@ def save_clinical_text(patient_id, clinical_text):
     patient.clinical_text = clinical_text or None
     session.commit()
     return patient
+
+
+def save_clinical_context(patient_id, context):
+    """Store reviewer-confirmed clinical context with its note provenance."""
+    import json
+
+    session = Session()
+    patient = session.get(Patient, patient_id)
+    if patient is None:
+        return None
+    patient.clinical_context = json.dumps(context, ensure_ascii=False)
+    session.commit()
+    return patient
+
+
+def get_clinical_context(patient):
+    import json
+
+    try:
+        context = json.loads(patient.clinical_context or "{}")
+    except (TypeError, ValueError):
+        context = {}
+    return context if isinstance(context, dict) else {}
 
 
 def list_confirmed_phenotypes(patient_id):

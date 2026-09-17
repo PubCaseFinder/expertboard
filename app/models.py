@@ -37,6 +37,7 @@ class Patient(Base):
     vcf_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
     clinical_text_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
     clinical_text: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    clinical_context: Mapped[str | None] = mapped_column(LONGTEXT(), nullable=True)
     summary: Mapped[str | None] = mapped_column(Text(), nullable=True)
     review_status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending_review")
     requested_expert_board_id: Mapped[int | None] = mapped_column(

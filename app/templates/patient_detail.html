@@ -76,6 +76,19 @@
                                   placeholder="e.g. 12-year-old with progressive muscle weakness, ptosis, and exercise intolerance...">{{ r_patient.clinical_text or "" }}</textarea>
                         <button class="inline-button" type="submit">Save clinical text</button>
                     </form>
+                    <section class="hpo-review-panel" aria-labelledby="clinical-context-title">
+                        <div class="hpo-review-header">
+                            <div><h3 id="clinical-context-title">Patient context</h3><p>Review ancestry and disease candidates from the saved note.</p></div>
+                            <button class="link-button" id="clinical-context-extract-btn" type="button" data-llm-configured="{{ '1' if r_llm_configured else '0' }}" onclick="extractClinicalContext(this)">Extract</button>
+                        </div>
+                        <div id="clinical-context-status" class="va-data-status" role="status"></div>
+                        <div id="clinical-context-candidates" class="hpo-candidate-list"></div>
+                        <div class="hpo-review-actions"><button class="inline-button" id="clinical-context-confirm-btn" type="button" onclick="confirmClinicalContext(this)" disabled>Apply selected</button></div>
+                        <div id="clinical-context-confirmed" class="hpo-confirmed-list">
+                            {% for item in r_clinical_context.ancestry or [] %}<div class="hpo-confirmed-item"><div><strong>Ancestry: {{ item.value }}</strong><span>{{ item.source_text }}</span></div><button class="hpo-remove-btn" type="button" title="Remove confirmed ancestry" aria-label="Remove {{ item.value }}" onclick="removeClinicalContext(this, 'ancestry', {{ item.value|tojson }})">&#x2715;</button></div>{% endfor %}
+                            {% for item in r_clinical_context.diseases or [] %}<div class="hpo-confirmed-item"><div><strong>Disease: {{ item.value }}</strong><span>{{ item.source_text }}</span></div><button class="hpo-remove-btn" type="button" title="Remove confirmed disease" aria-label="Remove {{ item.value }}" onclick="removeClinicalContext(this, 'diseases', {{ item.value|tojson }})">&#x2715;</button></div>{% endfor %}
+                        </div>
+                    </section>
                     <section class="hpo-review-panel" aria-labelledby="hpo-review-title">
                         <div class="hpo-review-header">
                             <div>
@@ -86,6 +99,7 @@
                                     data-llm-configured="{{ '1' if r_llm_configured else '0' }}"
                                     onclick="extractHpoCandidates(this)">Extract candidates</button>
                         </div>
+                        <a class="inline-link" href="https://pubcasefinder.dbcls.jp/" target="_blank" rel="noopener">Open PubCaseFinder DiseaseSearch ↗</a>
                         <div id="hpo-review-status" class="va-data-status" role="status"></div>
                            <div class="hpo-manual-row">
                             <input id="hpo-manual-input" type="text" placeholder="HP:0001250"
@@ -316,11 +330,13 @@
                                         data-past="{% for e in r_cross_assessments.get(v.id, []) %}{{ e.score.classification|lower|replace(' ','_') }}{% if not loop.last %}|{% endif %}{% endfor %}"
                                         data-assessed="{% for e in va_list %}{{ e.score.classification|lower|replace(' ','_') }}{% if not loop.last %}|{% endif %}{% endfor %}"
                                         data-vkey="{{ v.chrom }}:{{ v.pos }}:{{ v.ref }}:{{ v.alt }}"
+                                        data-raw-info="{{ v.raw_info or '' }}"
                                         data-vid="{{ v.id }}"
                                         data-ai-score="{{ v.llm_score if v.llm_score is not none else '' }}"
                                         data-ai-reason="{{ v.llm_reason or '' }}"
                                         data-annotation-url="{{ url_for('expertboard.api_variant_annotation', patient_id=r_patient.id, variant_id=v.id) }}"
                                         data-ai-review-url="{{ url_for('expertboard.api_variant_ai_review', patient_id=r_patient.id, variant_id=v.id) }}"
+                                        data-pubcasefinder-ai-review-url="{{ url_for('expertboard.api_variant_pubcasefinder_ai_review', patient_id=r_patient.id, variant_id=v.id) }}"
                                     >
                                         <td class="variant-gene-cell">
                                             <strong>{{ v.gene or "—" }}</strong>
@@ -338,7 +354,7 @@
                                         <td class="assessment-cell">
                                             {% set review_summary = r_variant_review_summaries.get(v.id) %}
                                             {% if review_summary %}
-                                                <a class="inline-link" target="_blank" rel="noopener"
+                                                <a class="inline-link other-review-summary" target="_blank" rel="noopener"
                                                    href="{{ url_for('expertboard.variant_assessment_review', variant=v.chrom ~ ':' ~ v.pos ~ ' ' ~ v.ref ~ '>' ~ v.alt) }}"
                                                    title="Open cohort statistics and all evidence in Variant reviews">
                                                     <strong>Classification:</strong><br>
@@ -361,16 +377,7 @@
                                                 {% set by = entry.assessment.assessed_by or "—" %}
                                                 <span class="assess-badge assess-{{ entry.css }}"
                                                       title="{{ by }} · {{ ts[:16] }}{% if entry.assessment.notes %} · {{ entry.assessment.notes }}{% endif %}{% if entry.assessment.acmg_codes %} [{{ entry.assessment.acmg_codes }}]{% endif %}">
-                                                    {%- if entry.group and entry.group.country -%}
-                                                        <span class="assess-country">{{ entry.group.country }}</span>
-                                                    {%- elif entry.group -%}
-                                                        <span class="assess-country">{{ entry.group.name }}</span>
-                                                    {%- endif -%}
                                                     {{ entry.score.classification }}
-                                                    <span class="acmg-score-badge">{{ entry.score.total_score }} pt · {{ "%.1f"|format(entry.score.posterior_probability * 100) }}%</span>
-                                                    {%- if entry.assessment.acmg_codes -%}
-                                                        <span class="acmg-code-badge">{{ entry.assessment.acmg_codes }}</span>
-                                                    {%- endif -%}
                                                     <form method="POST" style="display:inline"
                                                           action="{{ url_for('expertboard.patient_variant_assessment_remove', patient_id=r_patient.id, variant_id=v.id, assessment_id=entry.assessment.id) }}">
                                                         <button class="badge-remove" type="submit" title="Remove">×</button>
@@ -763,8 +770,21 @@
                             <button class="ai-refresh-btn" id="ai-refresh-btn" type="button"
                                     data-llm-configured="{{ '1' if r_llm_configured else '0' }}"
                                     onclick="refreshAiCriteria(this)" disabled>Update AI criteria</button>
+                                <button class="ai-refresh-btn ai-pubcasefinder-btn" id="ai-pubcasefinder-btn" type="button"
+                                    data-llm-configured="{{ '1' if r_llm_configured else '0' }}"
+                                    onclick="refreshAiCriteria(this, true)" disabled>Suggest with PubCaseFinder</button>
                         </div>
                         <div id="va-data-loading" class="va-data-status" style="display:none"></div>
+                        <details class="ai-input-preview" open>
+                            <summary>Data sent to AI</summary>
+                            <dl class="ai-input-preview-list">
+                                <dt>Clinical note</dt><dd id="ai-input-clinical-note"></dd>
+                                <dt>Original VCF INFO</dt><dd><pre id="ai-input-vcf-info"></pre></dd>
+                                <dt>Confirmed HPO</dt><dd><pre id="ai-input-hpo"></pre></dd>
+                                <dt>Patient context</dt><dd><pre id="ai-input-context"></pre></dd>
+                                <dt>PubCaseFinder</dt><dd id="ai-input-pubcasefinder">Not requested yet. Use “Suggest with PubCaseFinder” to retrieve it.</dd>
+                            </dl>
+                        </details>
                         <div id="va-data-content" style="display:none">
                             <dl class="va-data-summary">
                                 <dt>Genome build</dt><dd id="va-genome-build"></dd>
@@ -802,6 +822,10 @@
                             <span id="ai-acmg-badges"></span>
                             <button type="button" class="ai-apply-btn" id="ai-apply-btn" onclick="applyAiAcmg()">Apply suggestions</button>
                         </div>
+                        <details class="ai-evidence-basis" id="ai-evidence-basis" style="display:none">
+                            <summary>Evidence used for suggestions</summary>
+                            <div id="ai-evidence-basis-list"></div>
+                        </details>
                         <div class="ai-missing-data" id="ai-missing-data" style="display:none">
                             <span class="ai-missing-label">⚠ Missing annotation data:</span>
                             <ul id="ai-missing-list" class="ai-missing-list"></ul>
@@ -830,6 +854,7 @@
                                             <option value="{{ weight_key }}">{{ weight_label }}</option>
                                         {% endfor %}
                                     </select>
+                                    <div class="ai-criterion-evidence" data-criterion="{{ code }}" hidden></div>
                                     <textarea class="acmg-criterion-comment" rows="2"
                                               aria-label="{{ code }} comment"
                                               placeholder="Comment for {{ code }}..." disabled></textarea>
@@ -851,6 +876,7 @@
                                             <option value="{{ weight_key }}">{{ weight_label }}</option>
                                         {% endfor %}
                                     </select>
+                                    <div class="ai-criterion-evidence" data-criterion="{{ code }}" hidden></div>
                                     <textarea class="acmg-criterion-comment" rows="2"
                                               aria-label="{{ code }} comment"
                                               placeholder="Comment for {{ code }}..." disabled></textarea>
@@ -888,10 +914,13 @@
     <script>
         var currentAssessmentRow = null;
         var hpoCandidates = [];
+        var clinicalContextCandidates = {ancestry: [], diseases: []};
         var vaSpecContext = {{ {
             "reviewer": r_current_user_display,
             "patientId": r_patient.id,
-            "condition": r_patient.diagnosis_name
+            "condition": r_patient.diagnosis_name,
+            "clinicalText": r_patient.clinical_text,
+            "clinicalContext": r_clinical_context
         }|tojson|safe }};
 
         function confirmedPhenotypeContext() {
@@ -906,6 +935,47 @@
                         confirmed_at: item.dataset.confirmedAt
                     };
                 });
+        }
+
+        function extractClinicalContext(button) {
+            var status = document.getElementById('clinical-context-status');
+            if (button.dataset.llmConfigured !== '1') { status.textContent = 'Ollama is not configured.'; return; }
+            button.disabled = true;
+            status.textContent = 'Extracting clinical context candidates...';
+            fetch("{{ url_for('expertboard.api_patient_clinical_context_extract', patient_id=r_patient.id) }}", {method: 'POST', headers: {'Accept': 'application/json'}})
+                .then(function(response) { return response.json().then(function(data) { if (!response.ok) throw new Error(data.error); return data; }); })
+                .then(function(data) {
+                    clinicalContextCandidates = data.candidates || {ancestry: [], diseases: []};
+                    var list = document.getElementById('clinical-context-candidates'); list.replaceChildren();
+                    ['ancestry', 'diseases'].forEach(function(kind) { clinicalContextCandidates[kind].forEach(function(item, index) {
+                        var row = document.createElement('label'); row.className = 'hpo-candidate-item';
+                        var checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.checked = true; checkbox.dataset.kind = kind; checkbox.dataset.index = index;
+                        var copy = document.createElement('span'); copy.className = 'hpo-candidate-copy'; copy.textContent = (kind === 'ancestry' ? 'Ancestry: ' : 'Disease: ') + item.value + ' | ' + item.source_text;
+                        row.append(checkbox, copy); list.appendChild(row);
+                    }); });
+                    document.getElementById('clinical-context-confirm-btn').disabled = !list.children.length;
+                    status.textContent = list.children.length ? 'Select items to apply.' : 'No explicit ancestry or disease found.';
+                }).catch(function(error) { status.textContent = error.message; }).finally(function() { button.disabled = false; });
+        }
+
+        function confirmClinicalContext(button) {
+            var selected = {ancestry: [], diseases: []};
+            document.querySelectorAll('#clinical-context-candidates input:checked').forEach(function(box) { selected[box.dataset.kind].push(clinicalContextCandidates[box.dataset.kind][Number(box.dataset.index)]); });
+            fetch("{{ url_for('expertboard.api_patient_clinical_context_confirm', patient_id=r_patient.id) }}", {method: 'POST', headers: {'Content-Type': 'application/json', 'Accept': 'application/json'}, body: JSON.stringify(selected)})
+                .then(function(response) { return response.json().then(function(data) { if (!response.ok) throw new Error(data.error); return data; }); })
+                .then(function(data) { document.getElementById('clinical-context-status').textContent = 'Selected context saved.'; location.reload(); })
+                .catch(function(error) { document.getElementById('clinical-context-status').textContent = error.message; });
+        }
+
+        function removeClinicalContext(button, kind, value) {
+            fetch("{{ url_for('expertboard.api_patient_clinical_context_remove', patient_id=r_patient.id, kind='ancestry') }}".replace('ancestry', encodeURIComponent(kind)), {
+                method: 'DELETE',
+                headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+                body: JSON.stringify({value: value})
+            })
+                .then(function(response) { return response.json().then(function(data) { if (!response.ok) throw new Error(data.error); return data; }); })
+                .then(function() { button.closest('.hpo-confirmed-item').remove(); })
+                .catch(function(error) { document.getElementById('clinical-context-status').textContent = error.message; });
         }
 
         function renderHpoCandidates(candidates) {
@@ -1236,8 +1306,19 @@
             element.style.display = message ? 'block' : 'none';
         }
 
-        function renderVariantAnnotation(data) {
-            document.getElementById('annotation-snapshot-modal').value = JSON.stringify(data);
+        function renderVariantAnnotation(data, pubcasefinder) {
+            var snapshot = Object.assign({}, data);
+            if (pubcasefinder) snapshot.pubcasefinder = pubcasefinder;
+            if (vaSpecContext.clinicalContext &&
+                ((vaSpecContext.clinicalContext.ancestry || []).length ||
+                 (vaSpecContext.clinicalContext.diseases || []).length)) {
+                snapshot.confirmed_clinical_context = vaSpecContext.clinicalContext;
+            }
+            document.getElementById('annotation-snapshot-modal').value = JSON.stringify(snapshot);
+            if (pubcasefinder) {
+                document.getElementById('ai-input-pubcasefinder').textContent =
+                    JSON.stringify(pubcasefinder, null, 2);
+            }
             var vrs = data.vrs || {};
             document.getElementById('va-genome-build').textContent = data.genome_build || '—';
             document.getElementById('va-sequence-id').textContent = vrs.sequence_id || '—';
@@ -1294,6 +1375,13 @@
         }
 
         function renderAiReasoning(reasoning) {
+            var snapshotField = document.getElementById('annotation-snapshot-modal');
+            var snapshot = {};
+            try { snapshot = JSON.parse(snapshotField.value || '{}'); } catch (e) { snapshot = {}; }
+            snapshot.ai_reasoning = reasoning || {};
+            snapshot.evidence_basis = reasoning && reasoning.evidence_basis
+                ? reasoning.evidence_basis : [];
+            snapshotField.value = JSON.stringify(snapshot);
             var panel = document.getElementById('ai-suggestion-panel');
             document.getElementById('ai-r-symptoms').textContent = reasoning.patient_symptoms || '—';
             document.getElementById('ai-r-gene').textContent = reasoning.gene_diseases || '—';
@@ -1325,6 +1413,44 @@
             suggestPanel.dataset.codes = JSON.stringify(suggested);
             suggestPanel.style.display = 'flex';
 
+            var evidenceBasis = reasoning.evidence_basis || [];
+            var evidencePanel = document.getElementById('ai-evidence-basis');
+            var evidenceList = document.getElementById('ai-evidence-basis-list');
+            evidenceList.replaceChildren();
+            evidenceBasis.forEach(function(item) {
+                var row = document.createElement('div');
+                row.className = 'ai-evidence-basis-item';
+                var title = document.createElement('strong');
+                title.textContent = item.criterion || 'Evidence';
+                var detail = document.createElement('span');
+                detail.textContent = (item.source || 'Unknown source') + ' / ' +
+                    (item.field || 'unknown field') + ': ' + (item.value || 'Not provided');
+                var explanation = document.createElement('span');
+                explanation.textContent = item.explanation || '';
+                row.append(title, detail, explanation);
+                evidenceList.appendChild(row);
+            });
+            evidencePanel.style.display = evidenceBasis.length ? 'block' : 'none';
+            document.querySelectorAll('.ai-criterion-evidence').forEach(function(element) {
+                var matches = evidenceBasis.filter(function(item) {
+                    return (item.criterion || '').split('_')[0] === element.dataset.criterion;
+                });
+                element.replaceChildren();
+                if (!matches.length) {
+                    element.hidden = true;
+                    return;
+                }
+                matches.forEach(function(item) {
+                    var detail = document.createElement('span');
+                    detail.textContent = (item.source || 'Unknown source') + ' / ' +
+                        (item.field || 'unknown field') + ': ' + (item.value || 'Not provided');
+                    var explanation = document.createElement('span');
+                    explanation.textContent = item.explanation || '';
+                    element.append(detail, explanation);
+                });
+                element.hidden = false;
+            });
+
             var missingPanel = document.getElementById('ai-missing-data');
             var missingList = document.getElementById('ai-missing-list');
             var missing = reasoning.missing_data || [];
@@ -1338,16 +1464,20 @@
             panel.style.display = 'block';
         }
 
-        function refreshAiCriteria(button) {
+        function refreshAiCriteria(button, includePubCaseFinder) {
             var requestRow = currentAssessmentRow;
             if (!requestRow) return;
             var loading = document.getElementById('va-data-loading');
             button.disabled = true;
-            loading.textContent = 'Updating AI criteria from fresh VEP / VRS data...';
+            loading.textContent = includePubCaseFinder
+                ? 'Updating AI criteria with PubCaseFinder evidence...'
+                : 'Updating AI criteria from fresh VEP / VRS data...';
             loading.classList.remove('is-error');
             loading.style.display = 'block';
 
-            fetch(requestRow.dataset.aiReviewUrl, {
+            fetch(includePubCaseFinder
+                ? requestRow.dataset.pubcasefinderAiReviewUrl
+                : requestRow.dataset.aiReviewUrl, {
                 method: 'POST',
                 headers: {'Accept': 'application/json'}
             })
@@ -1359,7 +1489,7 @@
                 })
                 .then(function(data) {
                     if (currentAssessmentRow !== requestRow) return;
-                    renderVariantAnnotation(data.annotation || {});
+                    renderVariantAnnotation(data.annotation || {}, data.pubcasefinder);
                     renderAiReasoning(data.analysis);
                     requestRow.dataset.aiScore = data.analysis.score;
                     requestRow.dataset.aiReason = JSON.stringify(data.analysis);
@@ -1367,7 +1497,9 @@
                     aiCell.style.display = '';
                     aiCell.innerHTML = '<span class="ai-badge" title="AI analysis available">\u2726</span>';
                     document.getElementById('ai-col-header').style.display = '';
-                    loading.textContent = 'AI criteria updated from current annotations.';
+                    loading.textContent = includePubCaseFinder
+                        ? 'AI criteria updated with PubCaseFinder evidence.'
+                        : 'AI criteria updated from current annotations.';
                 })
                 .catch(function(error) {
                     if (currentAssessmentRow !== requestRow) return;
@@ -1698,12 +1830,23 @@
             document.getElementById('acmg-preview').textContent = '\u2014 no ACMG criteria selected \u2014';
             autoClassify([]);
             document.getElementById('va-data-variant').textContent = trEl.dataset.vkey;
+            document.getElementById('ai-input-clinical-note').textContent =
+                vaSpecContext.clinicalText || 'Not provided';
+            document.getElementById('ai-input-vcf-info').textContent =
+                trEl.dataset.rawInfo || 'No original VCF INFO';
+            document.getElementById('ai-input-hpo').textContent =
+                JSON.stringify(confirmedPhenotypeContext(), null, 2);
+            document.getElementById('ai-input-context').textContent =
+                JSON.stringify(vaSpecContext.clinicalContext || {}, null, 2);
+            document.getElementById('ai-input-pubcasefinder').textContent =
+                'Not requested yet. Use "Suggest with PubCaseFinder" to retrieve it.';
             document.getElementById('va-data-loading').style.display = 'none';
             document.getElementById('va-data-loading').classList.remove('is-error');
             document.getElementById('va-data-content').style.display = 'none';
             document.getElementById('va-vrs-id').textContent = '';
             document.getElementById('va-refresh-btn').disabled = false;
             document.getElementById('ai-refresh-btn').disabled = true;
+            document.getElementById('ai-pubcasefinder-btn').disabled = true;
 
             var panel = document.getElementById('ai-suggestion-panel');
             var aiScore = trEl ? trEl.dataset.aiScore : '';
@@ -1719,6 +1862,9 @@
             }
 
             document.getElementById('acmg-modal').style.display = 'flex';
+            var canUsePubCaseFinder = confirmedPhenotypeContext().length > 0 &&
+                document.getElementById('ai-pubcasefinder-btn').dataset.llmConfigured === '1';
+            document.getElementById('ai-pubcasefinder-btn').disabled = !canUsePubCaseFinder;
             updateVaSpecPreview();
         }
 

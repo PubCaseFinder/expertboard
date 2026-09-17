@@ -165,6 +165,7 @@ def patient_detail(patient_id):
     return render_template(
         "patient_detail.html",
         r_patient=patient,
+        r_clinical_context=patients.get_clinical_context(patient),
         r_current_user_display=auth.current_user_display(),
         r_llm_configured=llm_module.is_configured(),
         r_confirmed_phenotypes=patients.list_confirmed_phenotypes(patient_id),
@@ -290,6 +291,7 @@ def api_variant_ai_review(patient_id, variant_id):
         annotations_by_variant={
             variant.id: vep_api.compact_annotation_for_llm(annotation)
         },
+        clinical_context=patients.get_clinical_context(patient),
     )
     if "error" in result:
         return jsonify({"error": result["error"], "annotation": annotation}), 502
@@ -299,6 +301,55 @@ def api_variant_ai_review(patient_id, variant_id):
     if analysis is None:
         return jsonify({"error": "AI returned no result for this variant."}), 502
     return jsonify({"annotation": annotation, "analysis": analysis})
+
+
+@bp.route(
+    "/api/patients/<int:patient_id>/variants/<int:variant_id>/pubcasefinder-ai-review",
+    methods=["POST"],
+)
+def api_variant_pubcasefinder_ai_review(patient_id, variant_id):
+    """Suggest criteria using current annotation and PubCaseFinder rankings."""
+    if not llm_module.is_configured():
+        return jsonify({"error": "Ollama is not configured. Set the URL in Admin."}), 503
+
+    patient = patients.get_patient(patient_id)
+    variant = Session().get(Variant, variant_id)
+    if patient is None or variant is None or variant.patient_id != patient_id:
+        abort(404)
+
+    hpo_ids = [item.hpo_id for item in patients.list_confirmed_phenotypes(patient_id)]
+    if not hpo_ids:
+        return jsonify({"error": "Confirm at least one HPO phenotype before using PubCaseFinder AI criteria."}), 400
+
+    annotation = vep_api.annotate_variant(
+        variant.chrom, variant.pos, variant.ref, variant.alt, genome_build="GRCh38"
+    )
+    if not annotation.get("vep") and not annotation.get("vrs"):
+        return jsonify({"error": "VEP and VRS annotation failed.", "annotation": annotation}), 502
+
+    try:
+        evidence = togomcp_client.collect_pubcasefinder_evidence(hpo_ids)
+        gene_ranking = togomcp_client.collect_pubcasefinder_gene_ranking(hpo_ids)
+    except (RuntimeError, ValueError) as exc:
+        return jsonify({"error": str(exc), "annotation": annotation}), 502
+    evidence["candidate_gene_ranking"] = gene_ranking.get("ranking")
+    evidence["candidate_disease_ranking"] = gene_ranking.get("disease_ranking")
+
+    result = llm_module.analyze_variants(
+        patient.clinical_text,
+        [variant],
+        annotations_by_variant={variant.id: vep_api.compact_annotation_for_llm(annotation)},
+        case_evidence=evidence,
+        clinical_context=patients.get_clinical_context(patient),
+    )
+    if "error" in result:
+        return jsonify({"error": result["error"], "annotation": annotation}), 502
+
+    patients.save_llm_scores(patient_id, result)
+    analysis = result.get(variant.id) or result.get(str(variant.id))
+    if analysis is None:
+        return jsonify({"error": "AI returned no result for this variant."}), 502
+    return jsonify({"annotation": annotation, "analysis": analysis, "pubcasefinder": evidence})
 
 
 @bp.route("/api/assessments/<int:assessment_id>")
@@ -432,6 +483,56 @@ def patient_clinical_text(patient_id):
     patients.save_clinical_text(patient_id, clinical_text)
     flash("Clinical text saved.", "success")
     return redirect(url_for("expertboard.patient_detail", patient_id=patient_id))
+
+
+@bp.route("/api/patients/<int:patient_id>/clinical-context/extract", methods=["POST"])
+def api_patient_clinical_context_extract(patient_id):
+    patient = patients.get_patient(patient_id)
+    if patient is None:
+        abort(404)
+    try:
+        return jsonify({"candidates": llm_module.extract_clinical_context(patient.clinical_text)})
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 502
+
+
+@bp.route("/api/patients/<int:patient_id>/clinical-context/confirm", methods=["POST"])
+def api_patient_clinical_context_confirm(patient_id):
+    patient = patients.get_patient(patient_id)
+    if patient is None:
+        abort(404)
+    payload = request.get_json(silent=True) or {}
+    clinical_text = patient.clinical_text or ""
+    context = {"ancestry": [], "diseases": []}
+    for key in context:
+        for item in payload.get(key, [])[:20]:
+            if not isinstance(item, dict):
+                continue
+            value = str(item.get("value") or "").strip()[:255]
+            source_text = str(item.get("source_text") or "").strip()[:1000]
+            if value and source_text and source_text.casefold() in clinical_text.casefold():
+                context[key].append({"value": value, "source_text": source_text})
+    context["confirmed_by"] = auth.current_user_display()
+    patients.save_clinical_context(patient_id, context)
+    return jsonify({"confirmed": context})
+
+
+@bp.route("/api/patients/<int:patient_id>/clinical-context/<kind>", methods=["DELETE"])
+def api_patient_clinical_context_remove(patient_id, kind):
+    patient = patients.get_patient(patient_id)
+    if patient is None:
+        abort(404)
+    if kind not in ("ancestry", "diseases"):
+        return jsonify({"error": "Unknown clinical context type."}), 400
+    payload = request.get_json(silent=True) or {}
+    value = str(payload.get("value") or "").strip()
+    context = patients.get_clinical_context(patient)
+    context[kind] = [
+        item for item in context.get(kind, [])
+        if str(item.get("value") or "") != value
+    ]
+    patients.save_clinical_context(patient_id, context)
+    return jsonify({"confirmed": context})
 
 
 @bp.route("/admin")

@@ -52,9 +52,11 @@ def ensure_schema():
         "reviewer_override_lb_threshold BOOLEAN NOT NULL DEFAULT 0",
     )
     _add_table_column_if_missing("patients", "requested_expert_board_id INT NULL")
+    _add_table_column_if_missing("patients", "clinical_context LONGTEXT NULL")
     _add_table_column_if_missing("variants", "llm_score INT NULL")
     _add_table_column_if_missing("variants", "llm_reason TEXT NULL")
     _expand_variant_allele_columns()
+    _expand_annotation_snapshot_column()
     _create_app_settings_if_missing()
 
 
@@ -119,6 +121,28 @@ def _expand_variant_allele_columns():
                 "ALTER TABLE variants "
                 "MODIFY COLUMN ref LONGTEXT NOT NULL, "
                 "MODIFY COLUMN alt LONGTEXT NOT NULL"
+            ))
+            session.commit()
+    except OperationalError:
+        session.rollback()
+    finally:
+        session.close()
+
+
+def _expand_annotation_snapshot_column():
+    """Expand legacy TEXT snapshots before saving full VEP responses."""
+    session = Session()
+    try:
+        row = session.execute(text(
+            "SELECT DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS "
+            "WHERE TABLE_SCHEMA = DATABASE() "
+            "AND TABLE_NAME = 'variant_assessments' "
+            "AND COLUMN_NAME = 'annotation_snapshot'"
+        )).mappings().first()
+        if row and row["DATA_TYPE"] != "longtext":
+            session.execute(text(
+                "ALTER TABLE variant_assessments "
+                "MODIFY COLUMN annotation_snapshot LONGTEXT NULL"
             ))
             session.commit()
     except OperationalError:

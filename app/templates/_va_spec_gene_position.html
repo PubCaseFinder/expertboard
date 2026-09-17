@@ -26,7 +26,7 @@
                                 <td>{{ evidence.comment or "-" }}</td>
                                 <td>
                                     {% if record.variant_annotations %}
-                                        <button type="button" class="va-spec-annotation-button" data-annotations='{{ record.variant_annotations|tojson }}'>{{ "Updated VEP" if record.annotation_source == "Refreshed VEP / VRS snapshot" else "VCF INFO" }}</button>
+                                        <button type="button" class="va-spec-annotation-button" data-annotations='{{ record.variant_annotations|tojson }}'>{{ "Updated VEP" if record.annotation_source.startswith("Refreshed VEP") else "VCF INFO" }}</button>
                                     {% else %}
                                         -
                                     {% endif %}

@@ -425,32 +425,89 @@ def _saved_variant_annotations(variant):
     return [{"name": key, "value": value} for key, value in raw_values.items()]
 
 
-def _assessment_variant_annotations(assessment, variant):
+def _assessment_variant_annotations(assessment, variant, patient=None):
     """Prefer the annotation snapshot a curator viewed over imported VCF INFO."""
     try:
         snapshot = json.loads(assessment.annotation_snapshot or "")
     except (TypeError, ValueError):
         snapshot = None
     if not isinstance(snapshot, dict) or not snapshot:
-        return _saved_variant_annotations(variant), "Imported VCF INFO"
-    annotations = [{"name": "Annotation source", "value": "Refreshed VEP / VRS snapshot"}]
-    if snapshot.get("vep"):
+        annotations = _saved_variant_annotations(variant)
+        source = "Imported VCF INFO"
+    else:
+        annotations = [{"name": "Annotation source", "value": "Refreshed VEP / VRS snapshot"}]
+        if snapshot.get("vep"):
+            annotations.append({
+                "name": "Ensembl VEP response",
+                "value": json.dumps(snapshot["vep"], ensure_ascii=False, indent=2),
+            })
+        if snapshot.get("vrs"):
+            annotations.append({
+                "name": "GA4GH VRS response",
+                "value": json.dumps(snapshot["vrs"], ensure_ascii=False, indent=2),
+            })
+        source = "Refreshed VEP / VRS snapshot"
+
+    context = snapshot.get("confirmed_clinical_context") if isinstance(snapshot, dict) else None
+    if not context and patient is not None:
+        context = _patient_clinical_context_annotation(patient)
+    if context and (context.get("ancestry") or context.get("diseases")):
         annotations.append({
-            "name": "Ensembl VEP response",
-            "value": json.dumps(snapshot["vep"], ensure_ascii=False, indent=2),
+            "name": "Confirmed clinical context",
+            "value": json.dumps(context, ensure_ascii=False, indent=2),
         })
-    if snapshot.get("vrs"):
+        source += " + confirmed clinical context"
+    evidence_basis = _assessment_evidence_basis_annotation(assessment)
+    if evidence_basis:
         annotations.append({
-            "name": "GA4GH VRS response",
-            "value": json.dumps(snapshot["vrs"], ensure_ascii=False, indent=2),
+            "name": "AI evidence basis",
+            "value": json.dumps(evidence_basis["value"], ensure_ascii=False, indent=2),
         })
-    return annotations, "Refreshed VEP / VRS snapshot"
+    return annotations, source
+
+
+def _assessment_pubcasefinder_annotation(assessment):
+    """Return PubCaseFinder context saved when the curator requested it."""
+    try:
+        snapshot = json.loads(assessment.annotation_snapshot or "")
+    except (TypeError, ValueError):
+        snapshot = None
+    if not isinstance(snapshot, dict) or not snapshot.get("pubcasefinder"):
+        return None
+    return {
+        "name": "expertboardPubCaseFinderAnnotation",
+        "value": snapshot["pubcasefinder"],
+    }
+
+
+def _assessment_evidence_basis_annotation(assessment):
+    """Return AI's per-criterion source/value explanations saved at assessment time."""
+    try:
+        snapshot = json.loads(assessment.annotation_snapshot or "")
+    except (TypeError, ValueError):
+        snapshot = None
+    if not isinstance(snapshot, dict) or not snapshot.get("evidence_basis"):
+        return None
+    return {
+        "name": "expertboardAIEvidenceBasis",
+        "value": snapshot["evidence_basis"],
+    }
+
+
+def _patient_clinical_context_annotation(patient):
+    from app import patients as patients_module
+
+    context = patients_module.get_clinical_context(patient)
+    return context or None
 
 
 def _va_spec_document(assessment, variant, patient, summary):
     """Build the reviewable VA-Spec representation from saved assessment data."""
     classification = summary["classification"]
-    annotations, annotation_source = _assessment_variant_annotations(assessment, variant)
+    annotations, annotation_source = _assessment_variant_annotations(assessment, variant, patient)
+    pubcasefinder_annotation = _assessment_pubcasefinder_annotation(assessment)
+    evidence_basis_annotation = _assessment_evidence_basis_annotation(assessment)
+    clinical_context = _patient_clinical_context_annotation(patient)
     proposition = {
         "id": f"urn:expertboard:proposition:variant-{variant.id}",
         "type": "VariantPathogenicityProposition",
@@ -521,13 +578,16 @@ def _va_spec_document(assessment, variant, patient, summary):
                 "name": item["code"],
                 "strength": item["strength"],
                 "comment": item.get("comment"),
-                "extensions": [{
+                "extensions": ([{
                     "name": "expertboardSavedVcfAnnotation",
                     "value": annotations,
                 }, {
                     "name": "expertboardAnnotationSource",
                     "value": annotation_source,
-                }],
+                    }] + ([pubcasefinder_annotation] if pubcasefinder_annotation else [])
+                    + ([evidence_basis_annotation] if evidence_basis_annotation else [])
+                     + ([{"name": "expertboardConfirmedClinicalContext", "value": clinical_context}]
+                         if clinical_context else [])),
             },
         } for item in summary["evidence"]],
         "extensions": extensions,
@@ -559,7 +619,7 @@ def list_va_spec_review_records():
     result = []
     for assessment, variant, patient in rows:
         summary = assessment_summary(assessment)
-        annotations, annotation_source = _assessment_variant_annotations(assessment, variant)
+        annotations, annotation_source = _assessment_variant_annotations(assessment, variant, patient)
         document = _va_spec_document(assessment, variant, patient, summary)
         result.append({
             "assessment": assessment,
