@@ -759,6 +759,11 @@
                 <div class="acmg-modal-body">
                     <div class="acmg-modal-columns">
                     <div class="acmg-left-column">
+                        <div class="ai-input-search">
+                            <label for="ai-input-search-field">Search AI input</label>
+                            <input id="ai-input-search-field" type="search" placeholder="Search clinical note, VCF, HPO, VEP..." autocomplete="off">
+                            <span id="ai-input-search-status" role="status"></span>
+                        </div>
                         <section class="va-review-panel">
                         <div class="va-review-toolbar">
                             <div>
@@ -778,10 +783,10 @@
                         <details class="ai-input-preview" open>
                             <summary>Data sent to AI</summary>
                             <dl class="ai-input-preview-list">
-                                <dt>Clinical note</dt><dd id="ai-input-clinical-note"></dd>
-                                <dt>Original VCF INFO</dt><dd><pre id="ai-input-vcf-info"></pre></dd>
-                                <dt>Confirmed HPO</dt><dd><pre id="ai-input-hpo"></pre></dd>
-                                <dt>Patient context</dt><dd><pre id="ai-input-context"></pre></dd>
+                                <dt>Clinical note</dt><dd id="ai-input-clinical-note" data-ai-searchable></dd>
+                                <dt>Original VCF INFO</dt><dd><pre id="ai-input-vcf-info" data-ai-searchable></pre></dd>
+                                <dt>Confirmed HPO</dt><dd><pre id="ai-input-hpo" data-ai-searchable></pre></dd>
+                                <dt>Patient context</dt><dd id="ai-input-context" data-ai-searchable><pre></pre></dd>
                                 <dt>PubCaseFinder</dt><dd id="ai-input-pubcasefinder">Not requested yet. Use “Suggest with PubCaseFinder” to retrieve it.</dd>
                             </dl>
                         </details>
@@ -794,11 +799,11 @@
                             </dl>
                             <div id="va-vrs-error" class="va-data-error" style="display:none"></div>
                             <div id="va-vep-error" class="va-data-error" style="display:none"></div>
-                            <details>
+                            <details data-ai-searchable>
                                 <summary>Normalized VRS Allele JSON</summary>
                                 <pre id="va-vrs-json" class="va-json"></pre>
                             </details>
-                            <details>
+                            <details data-ai-searchable>
                                 <summary>Ensembl VEP JSON</summary>
                                 <pre id="va-vep-json" class="va-json"></pre>
                             </details>
@@ -1918,6 +1923,37 @@
         document.querySelector('#assess-form [name=notes]')
             .addEventListener('input', updateVaSpecPreview);
         document.getElementById('assess-form').addEventListener('submit', collectCriterionComments);
+
+        document.getElementById('ai-input-search-field').addEventListener('input', function(event) {
+            var query = event.target.value.trim().toLowerCase();
+            var status = document.getElementById('ai-input-search-status');
+            var matches = Array.from(document.querySelectorAll('.acmg-left-column [data-ai-searchable]'))
+                .filter(function(element) { return query && element.textContent.toLowerCase().includes(query); });
+            document.querySelectorAll('.acmg-left-column [data-ai-searchable]').forEach(function(element) {
+                element.classList.remove('ai-search-match');
+            });
+            if (!query) {
+                status.textContent = '';
+                return;
+            }
+            status.textContent = matches.length + ' match' + (matches.length === 1 ? '' : 'es');
+            if (matches.length) {
+                matches[0].classList.add('ai-search-match');
+                matches[0].scrollIntoView({block: 'center'});
+            }
+        });
+        document.getElementById('ai-input-search-field').addEventListener('keydown', function(event) {
+            if (event.key === 'Enter') event.preventDefault();
+        });
+        document.getElementById('ai-input-search-field').addEventListener('keypress', function(event) {
+            if (event.key === 'Enter') event.preventDefault();
+        });
+        document.getElementById('assess-form').addEventListener('submit', function(event) {
+            if (document.activeElement && document.activeElement.id === 'ai-input-search-field') {
+                event.preventDefault();
+                event.stopImmediatePropagation();
+            }
+        }, true);
         
         // Auto-trigger gene marking on page load if confirmed phenotypes exist
         document.addEventListener('DOMContentLoaded', function() {
