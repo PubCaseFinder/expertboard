@@ -376,6 +376,8 @@
                                         data-annotation-url="{{ url_for('expertboard.api_variant_annotation', patient_id=r_patient.id, variant_id=v.id) }}"
                                         data-ai-review-url="{{ url_for('expertboard.api_variant_ai_review', patient_id=r_patient.id, variant_id=v.id) }}"
                                         data-pubcasefinder-ai-review-url="{{ url_for('expertboard.api_variant_pubcasefinder_ai_review', patient_id=r_patient.id, variant_id=v.id) }}"
+                                        data-clinvar-url="{{ url_for('expertboard.api_variant_clinvar', patient_id=r_patient.id, variant_id=v.id) }}"
+                                        data-clinvar-updated-at="{{ v.clinvar_annotation_updated_at or '' }}"
                                     >
                                         <td class="priority-rank-col priority-rank-value">{{ r_variant_priority.get(v.id, 99) }}</td>
                                         <td class="variant-gene-cell">
@@ -881,6 +883,7 @@
                     <div class="acmg-left-column">
                         <section class="curator-source-inline" aria-labelledby="curator-source-links-title">
                             <h3 id="curator-source-links-title">Curator source links</h3>
+                            <p class="curator-source-note">AI has not read the linked sources. Please check the latest information at the linked sources during curation.</p>
                             <dl id="curator-source-variant-context" class="curator-source-variant-context"></dl>
                             <div id="curator-source-links-inline-list" class="curator-source-links-inline-list"></div>
                         </section>
@@ -891,15 +894,18 @@
                         </div>
                         <section class="va-review-panel">
                         <div class="va-review-toolbar">
-                            <div>
-                                <strong>Latest variant annotation</strong>
-                                <span class="va-data-variant" id="va-data-variant"></span>
-                            </div>
+                            <span class="va-data-variant" id="va-data-variant" hidden></span>
                                 <div class="annotation-refresh-individual-group">
                                 <button class="va-data-btn" id="va-refresh-btn" type="button"
                                     onclick="fetchVariantAnnotation(this)">Refresh VEP / VRS</button>
-                                <span class="annotation-last-updated" id="va-last-updated">Last updated: Not yet</span>
+                                <span class="annotation-last-updated" id="va-last-updated">Last updated:\nNot yet</span>
                                 </div>
+                            <div class="annotation-refresh-individual-group">
+                                <button class="va-data-btn" id="clinvar-refresh-btn" type="button"
+                                    onclick="fetchVariantClinvar(this)">Fetch ClinVar</button>
+                                <span class="annotation-last-updated" id="clinvar-last-updated">Last updated:\nNot yet</span>
+                                <span class="ai-status" id="clinvar-status" role="status"></span>
+                            </div>
                             <button class="ai-refresh-btn" id="ai-refresh-btn" type="button"
                                     data-llm-configured="{{ '1' if r_llm_configured else '0' }}"
                                     onclick="refreshAiCriteria(this)" disabled>Update AI criteria</button>
@@ -915,6 +921,7 @@
                                 <dt>Original VCF INFO</dt><dd><pre id="ai-input-vcf-info" data-ai-searchable></pre></dd>
                                 <dt>Confirmed HPO</dt><dd><pre id="ai-input-hpo" data-ai-searchable></pre></dd>
                                 <dt>Patient context</dt><dd id="ai-input-context" data-ai-searchable><pre></pre></dd>
+                                <dt>ClinVar evidence</dt><dd id="ai-input-clinvar" data-ai-searchable><pre>Not fetched yet.</pre></dd>
                                 <dt>PubCaseFinder</dt><dd id="ai-input-pubcasefinder">Not requested yet. Use “Suggest with PubCaseFinder” to retrieve it.</dd>
                             </dl>
                         </details>
@@ -1054,6 +1061,7 @@
         "clinicalContext": r_clinical_context
     }|tojson|safe }}</script>
     <script type="application/json" id="saved-vep-annotations">{{ r_variant_annotations|tojson|safe }}</script>
+    <script type="application/json" id="saved-clinvar-annotations">{{ r_clinvar_annotations|tojson|safe }}</script>
     <script>
         var currentAssessmentRow = null;
         var hpoCandidates = [];
@@ -1061,6 +1069,9 @@
         var vaSpecContext = JSON.parse(document.getElementById('va-spec-context').textContent);
         var savedVepAnnotations = JSON.parse(
             document.getElementById('saved-vep-annotations').textContent || '{}'
+        );
+        var savedClinvarAnnotations = JSON.parse(
+            document.getElementById('saved-clinvar-annotations').textContent || '{}'
         );
 
         function confirmedPhenotypeContext() {
@@ -1606,7 +1617,7 @@
                     if (currentAssessmentRow !== requestRow) return;
                     renderVariantAnnotation(data);
                     document.getElementById('va-last-updated').textContent =
-                        'Last updated: ' + formatAnnotationTimestamp(new Date());
+                        'Last updated:\n' + formatAnnotationTimestamp(new Date());
                     loading.style.display = 'none';
                     content.style.display = 'block';
                     document.getElementById('ai-refresh-btn').disabled =
@@ -1672,7 +1683,7 @@
             }
             var updated = row.querySelector('.live-vep-cell .annotation-last-updated');
             if (updated) {
-                updated.textContent = 'Last updated: ' + formatAnnotationTimestamp(new Date());
+                updated.textContent = 'Last updated:\n' + formatAnnotationTimestamp(new Date());
             }
         }
 
@@ -1723,6 +1734,48 @@
                 button.disabled = false;
             } catch (error) {
                 status.textContent = 'VEP refresh status failed: ' + error.message;
+                button.disabled = false;
+            }
+        }
+
+        async function fetchVariantClinvar(button) {
+            var requestRow = currentAssessmentRow;
+            if (!requestRow) return;
+            var status = document.getElementById('clinvar-status');
+            var url = requestRow.dataset.clinvarUrl;
+            button.disabled = true;
+            status.textContent = 'Fetching ClinVar...';
+            try {
+                var response = await fetch(url, {
+                    method: 'POST', headers: {'Accept': 'application/json'}
+                });
+                var data = await response.json();
+                if (!response.ok) throw new Error(data.error || 'ClinVar lookup failed.');
+                document.getElementById('clinvar-last-updated').textContent =
+                    'Last updated:\n' + (data.updated_at || 'now');
+                document.getElementById('ai-input-clinvar').textContent =
+                    JSON.stringify(data.result || {}, null, 2);
+                var clinvarResult = data.result || {};
+                var clinvarQuery = clinvarResult.query || '';
+                var clinvarMessage = clinvarResult.summary ||
+                    (clinvarResult.submissions || []).length
+                    ? 'ClinVar evidence saved for AI analysis.'
+                    : 'No ClinVar summary or SCV evidence found for this query.';
+                status.replaceChildren();
+                status.appendChild(document.createTextNode(clinvarMessage));
+                if (clinvarQuery) {
+                    var clinvarLink = document.createElement('a');
+                    clinvarLink.href = 'https://www.ncbi.nlm.nih.gov/clinvar/?term=' + encodeURIComponent(clinvarQuery);
+                    clinvarLink.target = '_blank';
+                    clinvarLink.rel = 'noopener noreferrer';
+                    clinvarLink.className = 'ai-source-link';
+                    clinvarLink.textContent = 'Open ClinVar search';
+                    status.appendChild(document.createTextNode(' '));
+                    status.appendChild(clinvarLink);
+                }
+            } catch (error) {
+                status.textContent = 'Error: ' + error.message;
+            } finally {
                 button.disabled = false;
             }
         }
@@ -2365,13 +2418,20 @@
                 JSON.stringify(confirmedPhenotypeContext(), null, 2);
             document.getElementById('ai-input-context').textContent =
                 JSON.stringify(vaSpecContext.clinicalContext || {}, null, 2);
+            document.getElementById('ai-input-clinvar').textContent =
+                JSON.stringify(savedClinvarAnnotations[String(trEl.dataset.vid)] || {
+                    status: 'Not fetched yet.'
+                }, null, 2);
             document.getElementById('ai-input-pubcasefinder').textContent =
                 'Not requested yet. Use "Suggest with PubCaseFinder" to retrieve it.';
             document.getElementById('va-data-loading').style.display = 'none';
             document.getElementById('va-data-loading').classList.remove('is-error');
             document.getElementById('va-data-content').style.display = 'none';
             document.getElementById('va-vrs-id').textContent = '';
-            document.getElementById('va-last-updated').textContent = 'Last updated: Not yet';
+                    document.getElementById('va-last-updated').textContent = 'Last updated:\nNot yet';
+                document.getElementById('clinvar-last-updated').textContent =
+                    'Last updated:\n' + (trEl.dataset.clinvarUpdatedAt || 'Not yet');
+            document.getElementById('clinvar-status').textContent = '';
             document.getElementById('va-refresh-btn').disabled = false;
             document.getElementById('ai-refresh-btn').disabled =
                 document.getElementById('ai-refresh-btn').dataset.llmConfigured !== '1';
@@ -2384,7 +2444,7 @@
                 document.getElementById('va-data-loading').style.display = 'none';
                 document.getElementById('va-data-content').style.display = 'block';
                 document.getElementById('va-last-updated').textContent =
-                    'Last updated: ' + (trEl.dataset.vepUpdatedAt || 'Unknown');
+                    'Last updated:\n' + (trEl.dataset.vepUpdatedAt || 'Unknown');
                 document.getElementById('ai-refresh-btn').disabled =
                     document.getElementById('ai-refresh-btn').dataset.llmConfigured !== '1';
             }

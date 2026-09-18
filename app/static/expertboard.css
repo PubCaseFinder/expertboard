@@ -366,6 +366,26 @@ h1 {
     text-align: right;
 }
 
+.clinvar-refresh-button { margin-left: 4px; }
+
+.clinvar-row-btn {
+    margin-left: 4px;
+    padding: 3px 6px;
+    border: 1px solid #1769aa;
+    border-radius: 4px;
+    background: #e8f3ff;
+    color: #0b4f82;
+    font: inherit;
+    font-size: 11px;
+    cursor: pointer;
+}
+
+.clinvar-row-status {
+    display: block;
+    font-size: 10px;
+    color: var(--muted, #6b7688);
+}
+
 .annotation-refresh-individual-group {
     display: flex;
     flex-direction: column;
@@ -377,7 +397,8 @@ h1 {
     display: block;
     font-size: 11px;
     color: var(--muted, #6b7688);
-    white-space: nowrap;
+    white-space: pre-line;
+    line-height: 1.35;
 }
 
 .annotation-refresh-dialog {
@@ -462,6 +483,11 @@ h1 {
     background: #f8fafc;
 }
 .curator-source-inline h3 { margin: 0 0 8px; font-size: 13px; }
+.curator-source-note {
+    margin: 0 0 8px;
+    color: #92400e;
+    font-size: 11px;
+}
 .curator-source-links-inline-list {
     display: flex;
     flex-wrap: wrap;

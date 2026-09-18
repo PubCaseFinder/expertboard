@@ -15,6 +15,7 @@ import requests
 
 from app import auth
 from app import cases
+from app import clinvar_client
 from app import patients
 from app import admin
 from app import panel
@@ -176,8 +177,16 @@ def patient_detail(patient_id):
         for variant in proband_variants
     }
     r_variant_annotations = {}
+    r_clinvar_annotations = {}
     r_variant_annotation_summaries = {}
     for variant in proband_variants:
+        if variant.clinvar_annotation:
+            try:
+                clinvar_annotation = json.loads(variant.clinvar_annotation)
+            except (TypeError, ValueError):
+                clinvar_annotation = None
+            if isinstance(clinvar_annotation, dict):
+                r_clinvar_annotations[variant.id] = clinvar_annotation
         if not variant.vep_annotation:
             continue
         try:
@@ -253,6 +262,7 @@ def patient_detail(patient_id):
         r_variant_priority=r_variant_priority,
         r_variant_info=r_variant_info,
         r_variant_annotations=r_variant_annotations,
+        r_clinvar_annotations=r_clinvar_annotations,
         r_variant_annotation_summaries=r_variant_annotation_summaries,
         r_variant_rule_scores=r_variant_rule_scores,
         r_variant_shares=variant_shares,
@@ -350,6 +360,40 @@ def api_variant_annotation(patient_id, variant_id):
         result["francis_info"] = variant_priority.display_info_values(variant, result)
         result["francis_priority"] = variant_priority.evaluation_priority(variant, result)
     return jsonify(result), status
+
+
+@bp.route("/api/patients/<int:patient_id>/clinvar-refresh", methods=["POST"])
+def api_patient_clinvar_refresh(patient_id):
+    variant_list = patients.get_patient_variants(patient_id)
+    if not variant_list:
+        return jsonify({"error": "No variants for this patient."}), 400
+    results = {}
+    failures = {}
+    for variant in variant_list:
+        try:
+            result = clinvar_client.fetch_variant(variant)
+            patients.save_clinvar_annotation(patient_id, variant.id, result)
+            results[str(variant.id)] = result
+        except requests.RequestException as exc:
+            failures[str(variant.id)] = str(exc)
+    return jsonify({"results": results, "failures": failures})
+
+
+@bp.route("/api/patients/<int:patient_id>/variants/<int:variant_id>/clinvar", methods=["POST"])
+def api_variant_clinvar(patient_id, variant_id):
+    variant = Session().get(Variant, variant_id)
+    if variant is None or variant.patient_id != patient_id:
+        abort(404)
+    try:
+        result = clinvar_client.fetch_variant(variant)
+        saved = patients.save_clinvar_annotation(patient_id, variant_id, result)
+    except requests.RequestException as exc:
+        return jsonify({"error": str(exc)}), 502
+    return jsonify({
+        "result": result,
+        "updated_at": saved.clinvar_annotation_updated_at.isoformat()
+        if saved and saved.clinvar_annotation_updated_at else None,
+    })
 
 
 @bp.route("/api/patients/<int:patient_id>/vep-refresh", methods=["POST"])

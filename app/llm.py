@@ -309,6 +309,11 @@ apply a criterion only when the supplied evidence contains the required study de
 For every suggested criterion, provide evidence_basis entries naming the exact source field,
 observed value, criterion, and a short explanation of how the value supports the suggestion.
 If a criterion has no direct supporting value, do not include it in suggested_acmg.
+When clinvar_evidence is available, inspect SCV comments/descriptions for segregation
+and phase language such as in trans, compound heterozygous, biallelic, co-segregation,
+affected relatives, and unaffected relatives. Treat these as leads only: suggest PM3 or
+PP1 only when the supplied ClinVar details contain the required phase or segregation
+evidence, and cite the exact ClinVar field in evidence_basis.
 
 == Analysis tasks ==
 
@@ -453,6 +458,11 @@ def analyze_variants(
         )
         if annotation:
             variant_data["latest_external_annotation"] = annotation
+        if getattr(v, "clinvar_annotation", None):
+            try:
+                variant_data["clinvar_evidence"] = json.loads(v.clinvar_annotation)
+            except (TypeError, ValueError):
+                pass
         if compact_input:
             variant_data.pop("raw_info", None)
             variant_data["vcf_info"] = {

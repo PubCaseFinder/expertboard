@@ -69,6 +69,10 @@ def ensure_schema():
     _add_column_if_missing(
         "vep_annotation_updated_at TIMESTAMP NULL", table_name="variants"
     )
+    _add_column_if_missing("clinvar_annotation LONGTEXT NULL", table_name="variants")
+    _add_column_if_missing(
+        "clinvar_annotation_updated_at TIMESTAMP NULL", table_name="variants"
+    )
 
 
 def _add_column_if_missing(column_definition, table_name="patients"):
@@ -291,6 +295,18 @@ def save_vep_annotation(patient_id, variant_id, annotation):
         return None
     variant.vep_annotation = json.dumps(annotation, ensure_ascii=False)
     variant.vep_annotation_updated_at = datetime.utcnow()
+    session.commit()
+    return variant
+
+
+def save_clinvar_annotation(patient_id, variant_id, annotation):
+    """Persist the latest ClinVar query result for a patient variant."""
+    session = Session()
+    variant = session.get(Variant, variant_id)
+    if variant is None or variant.patient_id != patient_id:
+        return None
+    variant.clinvar_annotation = json.dumps(annotation, ensure_ascii=False)
+    variant.clinvar_annotation_updated_at = datetime.utcnow()
     session.commit()
     return variant
 
