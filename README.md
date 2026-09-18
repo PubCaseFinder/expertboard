@@ -6,6 +6,16 @@ A web application for expert panel review of undiagnosed disease cases, built du
 
 ExpertBoard is an experimental, standalone prototype for AI-assisted complex case review. It explores reusable expert boards organized by gene, disease, or clinical domain, with ACMG-based variant assessment and Ollama LLM integration.
 
+## BH26.9 Hackathon Results
+
+The BH26.9 work expanded ExpertBoard with VEP/VRS refresh and persistence,
+ClinVar SCV evidence for PM3/PP1 review, reviewer-mediated HPO resolution via
+OLS4MCP, explicit PubCaseFinder/TogoMCP actions, per-variant AI analysis,
+curator source links, and improved assessment workflows.
+
+Full details are documented in [BH26.9 Hackathon Results](docs/bh26.9-hackathon-results.md),
+including the commit range, data-flow policy, validation notes, and tool versions.
+
 ---
 
 ## Change Log
@@ -90,6 +100,27 @@ Changes were made to criteria assignment so that it is more aligned to current A
 | LLM | Ollama local/cloud API or OpenAI-compatible API |
 | Frontend | Vanilla HTML/CSS/JS |
 | Container | Docker Compose |
+
+## Tool and service versions
+
+| Tool or service | Version or endpoint |
+|---|---|
+| Python base image | `python:3.11-slim` |
+| Flask | `3.0.3` |
+| SQLAlchemy | `2.0.31` |
+| PyMySQL | `1.1.1` |
+| Requests | `2.32.3` |
+| cryptography | `43.0.0` |
+| python-dotenv | `1.0.1` |
+| GA4GH VRS | `2.3.3` |
+| MySQL | `8.4` |
+| SeqRepo REST service | `biocommons/seqrepo-rest-service:0.2.2` |
+| SeqRepo data | `2024-12-20` by default |
+| OLS4MCP | `https://www.ebi.ac.uk/ols4/api/mcp` |
+| TogoMCP | `https://togomcp.rdfportal.org/mcp` |
+| Ensembl VEP | GRCh38 REST region API |
+| ClinVar | NCBI E-utilities `esearch`, `esummary`, and `efetch` |
+| Ollama | Configured at runtime in Admin |
 
 ---
 
