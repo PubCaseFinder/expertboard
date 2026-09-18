@@ -1,3 +1,7 @@
+import json
+import threading
+import uuid
+
 from flask import Blueprint
 from flask import abort
 from flask import flash
@@ -28,6 +32,36 @@ from app import variant_priority
 
 
 bp = Blueprint("expertboard", __name__)
+
+_vep_jobs = {}
+_vep_jobs_lock = threading.Lock()
+
+
+def _run_vep_refresh_job(job_id, patient_id, variant_ids):
+    for variant_id in variant_ids:
+        try:
+            variant = Session().get(Variant, variant_id)
+            if variant is None or variant.patient_id != patient_id:
+                raise RuntimeError("Variant no longer belongs to this patient.")
+            annotation = vep_api.annotate_variant(
+                variant.chrom, variant.pos, variant.ref, variant.alt, genome_build="GRCh38"
+            )
+            if not annotation.get("vep") and not annotation.get("vrs"):
+                raise RuntimeError(annotation.get("vep_error") or annotation.get("vrs_error") or "Annotation failed.")
+            patients.save_vep_annotation(patient_id, variant_id, annotation)
+            annotation["francis_info"] = variant_priority.display_info_values(variant, annotation)
+            annotation["francis_priority"] = variant_priority.evaluation_priority(variant, annotation)
+            with _vep_jobs_lock:
+                _vep_jobs[job_id]["results"][str(variant_id)] = annotation
+                _vep_jobs[job_id]["completed"] += 1
+        except Exception as exc:
+            with _vep_jobs_lock:
+                _vep_jobs[job_id]["failures"][str(variant_id)] = str(exc)
+                _vep_jobs[job_id]["completed"] += 1
+        finally:
+            Session.remove()
+    with _vep_jobs_lock:
+        _vep_jobs[job_id]["status"] = "completed"
 
 
 def _vkey(v):
@@ -137,13 +171,49 @@ def patient_detail(patient_id):
 
     # Proband variants
     proband_variants = patients.get_patient_variants(patient_id)
-    r_variant_priority = variant_priority.evaluation_priorities(proband_variants)
     r_variant_info = {
         variant.id: variant_priority.display_info_values(variant)
         for variant in proband_variants
     }
+    r_variant_annotations = {}
+    r_variant_annotation_summaries = {}
+    for variant in proband_variants:
+        if not variant.vep_annotation:
+            continue
+        try:
+            annotation = json.loads(variant.vep_annotation)
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(annotation, dict):
+            continue
+        r_variant_annotations[variant.id] = annotation
+        vep = annotation.get("vep") or {}
+        transcript = next(
+            (
+                item
+                for item in (vep.get("transcript_consequences") or [])
+                if item.get("mane_select") or item.get("mane_plus_clinical")
+            ),
+            None,
+        ) or ((vep.get("transcript_consequences") or [None])[0] or {})
+        r_variant_annotation_summaries[variant.id] = {
+            "impact": transcript.get("impact") or "",
+            "hgvsc": transcript.get("hgvsc") or "",
+            "hgvsp": transcript.get("hgvsp") or "",
+        }
+        if transcript.get("impact"):
+            r_variant_info[variant.id]["VEP_IMPACT"] = transcript["impact"]
+        if transcript.get("hgvsc"):
+            r_variant_info[variant.id]["VEP_HGVSC"] = transcript["hgvsc"]
+        if transcript.get("hgvsp"):
+            r_variant_info[variant.id]["VEP_HGVSP"] = transcript["hgvsp"]
+    r_variant_priority = variant_priority.evaluation_priorities(
+        proband_variants, r_variant_annotations
+    )
     r_variant_rule_scores = {
-        variant.id: variant_priority.display_rule_scores(variant)
+        variant.id: variant_priority.display_rule_scores(
+            variant, r_variant_annotations.get(variant.id)
+        )
         for variant in proband_variants
     }
     proband_key_map = {_vkey(v): v.id for v in proband_variants}
@@ -182,6 +252,8 @@ def patient_detail(patient_id):
         r_variants=proband_variants,
         r_variant_priority=r_variant_priority,
         r_variant_info=r_variant_info,
+        r_variant_annotations=r_variant_annotations,
+        r_variant_annotation_summaries=r_variant_annotation_summaries,
         r_variant_rule_scores=r_variant_rule_scores,
         r_variant_shares=variant_shares,
         r_proband_vkeys=list(proband_key_map.keys()),
@@ -272,7 +344,57 @@ def api_variant_annotation(patient_id, variant_id):
         genome_build="GRCh38",
     )
     status = 200 if result.get("vep") or result.get("vrs") else 502
+    if status == 200:
+        patients.save_vep_annotation(patient_id, variant_id, result)
+        result["persisted"] = True
+        result["francis_info"] = variant_priority.display_info_values(variant, result)
+        result["francis_priority"] = variant_priority.evaluation_priority(variant, result)
     return jsonify(result), status
+
+
+@bp.route("/api/patients/<int:patient_id>/vep-refresh", methods=["POST"])
+def api_start_vep_refresh(patient_id):
+    if patients.get_patient(patient_id) is None:
+        abort(404)
+    variant_ids = [variant.id for variant in patients.get_patient_variants(patient_id)]
+    if not variant_ids:
+        return jsonify({"error": "No variants for this patient."}), 400
+    with _vep_jobs_lock:
+        for job_id, job in _vep_jobs.items():
+            if job["patient_id"] == patient_id and job["status"] == "running":
+                return jsonify({"job_id": job_id, "status": job["status"]}), 202
+        job_id = uuid.uuid4().hex
+        _vep_jobs[job_id] = {
+            "patient_id": patient_id,
+            "status": "running",
+            "total": len(variant_ids),
+            "completed": 0,
+            "failures": {},
+            "results": {},
+        }
+    worker = threading.Thread(
+        target=_run_vep_refresh_job,
+        args=(job_id, patient_id, variant_ids),
+        daemon=True,
+        name=f"vep-refresh-{job_id[:8]}",
+    )
+    worker.start()
+    return jsonify({"job_id": job_id, "status": "running"}), 202
+
+
+@bp.route("/api/patients/<int:patient_id>/vep-refresh/<job_id>")
+def api_vep_refresh_status(patient_id, job_id):
+    with _vep_jobs_lock:
+        job = _vep_jobs.get(job_id)
+        if job is None or job["patient_id"] != patient_id:
+            abort(404)
+        return jsonify({
+            "status": job["status"],
+            "total": job["total"],
+            "completed": job["completed"],
+            "failures": job["failures"],
+            "results": job["results"],
+        })
 
 
 @bp.route(
@@ -637,9 +759,37 @@ def api_patient_llm_analyze(patient_id):
     if not variant_list:
         return jsonify({"error": "No variants for this patient."}), 400
 
-    result = llm_module.analyze_variants(patient.clinical_text, variant_list)
-    if "error" in result:
-        return jsonify({"error": result["error"]}), 502
+    annotations_by_variant = {}
+    for variant in variant_list:
+        if not variant.vep_annotation:
+            continue
+        try:
+            annotation = json.loads(variant.vep_annotation)
+        except (TypeError, ValueError):
+            continue
+        if isinstance(annotation, dict):
+            annotations_by_variant[variant.id] = annotation
+
+    compact_input = request.args.get("compact") == "1"
+    result = {}
+    for variant in variant_list:
+        one_result = llm_module.analyze_variants(
+            patient.clinical_text,
+            [variant],
+            annotations_by_variant={variant.id: annotations_by_variant.get(variant.id)},
+            clinical_context=patients.get_clinical_context(patient),
+            compact_input=compact_input,
+        )
+        if "error" in one_result:
+            message = one_result["error"]
+            if not compact_input and len(message) > 0:
+                return jsonify({
+                    "error": message,
+                    "prompt_too_large": "context length" in message.lower()
+                    or "prompt is too long" in message.lower(),
+                }), 413 if "context length" in message.lower() or "prompt is too long" in message.lower() else 502
+            return jsonify({"error": message}), 502
+        result.update(one_result)
 
     # Persist scores back to DB
     patients.save_llm_scores(patient_id, result)

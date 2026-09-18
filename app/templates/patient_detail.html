@@ -106,7 +106,7 @@
                         <a class="inline-link" href="https://pubcasefinder.dbcls.jp/" target="_blank" rel="noopener">Open PubCaseFinder DiseaseSearch ↗</a>
                         <div id="hpo-review-status" class="va-data-status" role="status"></div>
                            <div class="hpo-manual-row">
-                            <input id="hpo-manual-input" type="text" placeholder="HP:0001250"
+                            <input id="hpo-manual-input" type="text" placeholder="HP:0001250,HP:0003022"
                                 aria-label="HPO identifier">
                             <button class="link-button" type="button"
                                  onclick="addManualHpoCandidate(this)">Add HPO</button>
@@ -253,6 +253,22 @@
                         <button class="inline-button priority-sort-btn" id="priority-sort-btn" type="button" onclick="sortByEvaluationPriority(this)">
                             Sort by evaluation priority
                         </button>
+                        <div class="annotation-refresh-group">
+                            <button class="inline-button" id="refresh-all-annotations-btn" type="button"
+                                    data-start-url="{{ url_for('expertboard.api_start_vep_refresh', patient_id=r_patient.id) }}"
+                                    data-status-url-template="{{ url_for('expertboard.api_vep_refresh_status', patient_id=r_patient.id, job_id='JOB_ID') }}"
+                                    onclick="refreshAllAnnotations(this)">
+                                Refresh all VEP / VRS
+                            </button>
+                            <span class="annotation-last-updated" id="annotation-last-updated">Last updated: Not yet</span>
+                            <span class="ai-status" id="annotation-refresh-status" role="status"></span>
+                            <span class="status-hint annotation-refresh-hint">
+                                Annotating many variants can take time.<br>
+                                ExpertBoard assumes a pre-annotated VCF narrowed to <br>
+                                <strong>a few dozen variants</strong>; <br>
+                                use this API refresh when the latest annotation data is needed.</strong>
+                            </span>
+                        </div>
                     {% endif %}
                 </div>
                 {% if r_variants %}
@@ -281,6 +297,7 @@
                                         Type
                                         <input class="th-filter" id="vf-type" type="search" placeholder="filter…">
                                     </th>
+                                    <th>Live VEP</th>
                                     <th>
                                         <abbr title="Same variant assessed in other patients registered in this system">Other pt. reviews</abbr>
                                         <select class="th-filter" id="vf-past">
@@ -332,6 +349,7 @@
                                 {% for v in r_variants %}
                                     {% set shares = r_variant_shares.get(v.id, []) %}
                                     {% set va_list = r_assessments.get(v.id, []) %}
+                                    {% set live_vep = r_variant_annotation_summaries.get(v.id, {}) %}
                                     <tr
                                         class="{{ 'shared-row' if shares else '' }}"
                                         data-gene="{{ (v.gene or '')|lower }}"
@@ -345,6 +363,7 @@
                                         data-priority="{{ r_variant_priority.get(v.id, 99) }}"
                                         data-raw-info="{{ v.raw_info or '' }}"
                                         data-vid="{{ v.id }}"
+                                        data-vep-updated-at="{{ v.vep_annotation_updated_at or '' }}"
                                         data-ai-score="{{ v.llm_score if v.llm_score is not none else '' }}"
                                         data-ai-reason="{{ v.llm_reason or '' }}"
                                         data-annotation-url="{{ url_for('expertboard.api_variant_annotation', patient_id=r_patient.id, variant_id=v.id) }}"
@@ -364,6 +383,10 @@
                                         <td>{{ v.ref }}</td>
                                         <td>{{ v.alt }}</td>
                                         <td>{{ v.variant_type or "—" }}</td>
+                                        <td class="live-vep-cell">
+                                            <span class="live-vep-summary">{{ live_vep.impact or "Not refreshed" }}{% if live_vep.hgvsc %} · {{ live_vep.hgvsc }}{% endif %}</span>
+                                            <span class="annotation-last-updated">Last updated: {{ v.vep_annotation_updated_at or "Not yet" }}</span>
+                                        </td>
                                         {# ── Same-variant assessments from other patients ── #}
                                         <td class="assessment-cell">
                                             {% set review_summary = r_variant_review_summaries.get(v.id) %}
@@ -410,7 +433,7 @@
                                                 <summary>View fields</summary>
                                                 <dl class="francis-input-list">
                                                     {% for name in ("CLNSIG", "REVIEW_STAR", "CLNREVSTAT", "MANE_HIT", "VEP_IMPACT", "GNOMAD_AF", "GNOMAD_AF_GRPMAX", "GNOMAD_AF_EAS", "GNOMAD_AF_SAS", "gnomAD_AF_POPMAX", "REVEL", "CADD", "CADD_PHRED", "SpliceAI_AG", "SpliceAI_AL", "SpliceAI_DG", "SpliceAI_DL", "AlphaMissense", "AF") %}
-                                                        <dt>{{ name }}</dt><dd>{{ r_variant_info.get(v.id, {}).get(name, "—") }}</dd>
+                                                        <dt>{{ name }}</dt><dd data-francis-field="{{ name }}">{{ r_variant_info.get(v.id, {}).get(name, "—") }}</dd>
                                                     {% endfor %}
                                                     {% for name in ("score_clinvar", "score_gnomad", "score_alphamissense", "score_cadd", "score_revel", "score_spliceai") %}
                                                         <dt>{{ name }}</dt><dd>{{ r_variant_rule_scores.get(v.id, {}).get(name, "—") }}</dd>
@@ -638,7 +661,23 @@
                             statusEl.textContent = 'Sending to Ollama…';
 
                             fetch(url, {method: 'POST', headers: {'X-Requested-With': 'XMLHttpRequest'}})
-                                .then(function(r) { return r.json(); })
+                                .then(async function(r) {
+                                    var data = await r.json();
+                                    if (r.status === 413 && data.prompt_too_large) {
+                                        var shrink = window.confirm(
+                                            '送付データを小さくしていいですか？'
+                                        );
+                                        if (!shrink) throw new Error('AI analysis cancelled.');
+                                        statusEl.textContent = 'Sending smaller per-variant data to Ollama...';
+                                        var compactResponse = await fetch(url + '?compact=1', {
+                                            method: 'POST',
+                                            headers: {'X-Requested-With': 'XMLHttpRequest'}
+                                        });
+                                        data = await compactResponse.json();
+                                        if (!compactResponse.ok) throw new Error(data.error || 'AI analysis failed.');
+                                    }
+                                    return data;
+                                })
                                 .then(function(data) {
                                     if (data.error) {
                                         statusEl.textContent = '✖ ' + data.error;
@@ -668,6 +707,7 @@
                                                 family_history: info.family_history || '',
                                                 score_rationale: info.score_rationale || '',
                                                 suggested_acmg: info.suggested_acmg || [],
+                                                evidence_basis: info.evidence_basis || [],
                                                 missing_data: info.missing_data || [],
                                             });
                                             tr.dataset.aiReason = reasoning;
@@ -805,6 +845,21 @@
         </section>
     </main>
 
+    <div id="annotation-refresh-confirm" class="annotation-refresh-dialog" role="dialog"
+         aria-modal="true" aria-labelledby="annotation-refresh-confirm-title" hidden>
+        <div class="annotation-refresh-dialog-card">
+            <h3 id="annotation-refresh-confirm-title">IT TAKES TIME! and your VCF annotation will be updated</h3>
+            <p> We will update the table once the new VEP annotation is available.
+                It may take some time.
+                Are you sure you want to proceed?
+            </p>
+            <div class="annotation-refresh-dialog-actions">
+                <button class="inline-button" id="annotation-refresh-confirm-yes" type="button">YES, I WILL UPDATE</button>
+                <button class="vf-clear" id="annotation-refresh-confirm-no" type="button">NO</button>
+            </div>
+        </div>
+    </div>
+
     {# ── Assessment + ACMG popup modal (shared, one per page) ── #}
     <div id="acmg-modal" class="acmg-modal-overlay" style="display:none" onclick="if(event.target===this)closeAssessModal()">
         <div class="acmg-modal-box">
@@ -828,8 +883,11 @@
                                 <strong>Latest variant annotation</strong>
                                 <span class="va-data-variant" id="va-data-variant"></span>
                             </div>
-                            <button class="va-data-btn" id="va-refresh-btn" type="button"
+                                <div class="annotation-refresh-individual-group">
+                                <button class="va-data-btn" id="va-refresh-btn" type="button"
                                     onclick="fetchVariantAnnotation(this)">Refresh VEP / VRS</button>
+                                <span class="annotation-last-updated" id="va-last-updated">Last updated: Not yet</span>
+                                </div>
                             <button class="ai-refresh-btn" id="ai-refresh-btn" type="button"
                                     data-llm-configured="{{ '1' if r_llm_configured else '0' }}"
                                     onclick="refreshAiCriteria(this)" disabled>Update AI criteria</button>
@@ -981,11 +1039,15 @@
         "clinicalText": r_patient.clinical_text,
         "clinicalContext": r_clinical_context
     }|tojson|safe }}</script>
+    <script type="application/json" id="saved-vep-annotations">{{ r_variant_annotations|tojson|safe }}</script>
     <script>
         var currentAssessmentRow = null;
         var hpoCandidates = [];
         var clinicalContextCandidates = {ancestry: [], diseases: []};
         var vaSpecContext = JSON.parse(document.getElementById('va-spec-context').textContent);
+        var savedVepAnnotations = JSON.parse(
+            document.getElementById('saved-vep-annotations').textContent || '{}'
+        );
 
         function confirmedPhenotypeContext() {
             return Array.from(document.querySelectorAll('#hpo-confirmed-list .hpo-confirmed-item'))
@@ -1152,40 +1214,52 @@
 
         function addManualHpoCandidate(button) {
             var field = document.getElementById('hpo-manual-input');
-            var hpoId = field.value.trim().toUpperCase();
+            var hpoIds = field.value.split(',')
+                .map(function(value) { return value.trim().toUpperCase(); })
+                .filter(Boolean);
             var status = document.getElementById('hpo-review-status');
-            if (!/^HP:\d{7}$/.test(hpoId)) {
-                status.textContent = 'Enter an HPO ID such as HP:0001250.';
+            if (!hpoIds.length || hpoIds.some(function(hpoId) { return !/^HP:\d{7}$/.test(hpoId); })) {
+                status.textContent = 'Enter HPO IDs separated by commas, such as HP:0001250,HP:0003022.';
                 status.classList.add('is-error');
                 return;
             }
-            if (confirmedPhenotypeContext().some(function(item) { return item.hpo_id === hpoId; })) {
-                status.textContent = hpoId + ' is already confirmed.';
-                status.classList.add('is-error');
+            hpoIds = hpoIds.filter(function(hpoId, index, items) {
+                return items.indexOf(hpoId) === index;
+            });
+            var existingIds = confirmedPhenotypeContext().map(function(item) { return item.hpo_id; });
+            var candidateIds = hpoCandidates.map(function(item) { return item.hpo_id; });
+            var pendingIds = hpoIds.filter(function(hpoId) {
+                return !existingIds.includes(hpoId) && !candidateIds.includes(hpoId);
+            });
+            if (!pendingIds.length) {
+                status.textContent = 'All entered HPO IDs are already confirmed or listed as candidates.';
+                status.classList.remove('is-error');
                 return;
             }
             button.disabled = true;
-            status.textContent = 'Validating ' + hpoId + ' against HPO...';
+            status.textContent = 'Validating ' + pendingIds.length + ' HPO ID(s) against HPO...';
             status.classList.remove('is-error');
-            fetch("{{ url_for('expertboard.api_patient_phenotypes_resolve', patient_id=r_patient.id) }}", {
-                method: 'POST',
-                headers: {'Accept': 'application/json', 'Content-Type': 'application/json'},
-                body: JSON.stringify({hpo_id: hpoId})
-            })
-                .then(function(response) {
+            Promise.all(pendingIds.map(function(hpoId) {
+                return fetch("{{ url_for('expertboard.api_patient_phenotypes_resolve', patient_id=r_patient.id) }}", {
+                    method: 'POST',
+                    headers: {'Accept': 'application/json', 'Content-Type': 'application/json'},
+                    body: JSON.stringify({hpo_id: hpoId})
+                }).then(function(response) {
                     return response.json().then(function(data) {
-                        if (!response.ok) throw new Error(data.error || 'HPO lookup failed.');
-                        return data;
+                        if (!response.ok) throw new Error(hpoId + ': ' + (data.error || 'HPO lookup failed.'));
+                        return data.candidate;
                     });
-                })
-                .then(function(data) {
-                    var candidate = data.candidate;
-                    if (!hpoCandidates.some(function(item) { return item.hpo_id === candidate.hpo_id; })) {
-                        hpoCandidates.push(candidate);
-                    }
+                });
+            }))
+                .then(function(candidates) {
+                    candidates.forEach(function(candidate) {
+                        if (!hpoCandidates.some(function(item) { return item.hpo_id === candidate.hpo_id; })) {
+                            hpoCandidates.push(candidate);
+                        }
+                    });
                     renderHpoCandidates(hpoCandidates);
                     field.value = '';
-                    status.textContent = candidate.hpo_id + ' added as a candidate. Confirm it to save.';
+                    status.textContent = candidates.length + ' HPO candidate(s) added. Confirm selected HPO to save.';
                 })
                 .catch(function(error) {
                     status.textContent = error.message;
@@ -1423,6 +1497,8 @@
                 .then(function(data) {
                     if (currentAssessmentRow !== requestRow) return;
                     renderVariantAnnotation(data);
+                    document.getElementById('va-last-updated').textContent =
+                        'Last updated: ' + formatAnnotationTimestamp(new Date());
                     loading.style.display = 'none';
                     content.style.display = 'block';
                     document.getElementById('ai-refresh-btn').disabled =
@@ -1436,6 +1512,142 @@
                 .finally(function() {
                     if (currentAssessmentRow === requestRow) button.disabled = false;
                 });
+        }
+
+        function liveVepFields(annotation) {
+            var vep = annotation.vep || {};
+            var transcripts = vep.transcript_consequences || [];
+            var transcript = transcripts.find(function(item) {
+                return item.mane_select || item.mane_plus_clinical;
+            }) || transcripts[0] || {};
+            var spliceai = transcript.spliceai || {};
+            return {
+                VEP_IMPACT: transcript.impact || '',
+                MANE_HIT: transcript.mane_select || transcript.mane_plus_clinical ? 'Yes' : '',
+                VEP_HGVSC: transcript.hgvsc || '',
+                VEP_HGVSP: transcript.hgvsp || '',
+                REVEL: transcript.revel_score,
+                CADD_PHRED: transcript.cadd_phred,
+                AlphaMissense: transcript.alphamissense,
+                SpliceAI_AG: spliceai.AG,
+                SpliceAI_AL: spliceai.AL,
+                SpliceAI_DG: spliceai.DG,
+                SpliceAI_DL: spliceai.DL
+            };
+        }
+
+        function applyLiveAnnotationToRow(row, annotation) {
+            var fields = liveVepFields(annotation);
+            var francisInfo = annotation.francis_info || {};
+            row.dataset.annotation = JSON.stringify(annotation);
+            row.dataset.liveVep = JSON.stringify(fields);
+            Object.keys(Object.assign({}, fields, francisInfo)).forEach(function(name) {
+                var value = francisInfo[name] !== undefined ? francisInfo[name] : fields[name];
+                if (value === undefined || value === null || value === '') return;
+                var target = row.querySelector('[data-francis-field="' + name + '"]');
+                if (target) target.textContent = value;
+            });
+            if (annotation.francis_priority !== undefined) {
+                row.dataset.priority = String(annotation.francis_priority);
+                row.querySelector('.priority-rank-value').textContent = annotation.francis_priority;
+            }
+            if (fields.VEP_IMPACT) {
+                row.dataset.vepImpact = String(fields.VEP_IMPACT).toLowerCase();
+                row.querySelector('.live-vep-summary').textContent =
+                    fields.VEP_IMPACT + (fields.VEP_HGVSC ? ' · ' + fields.VEP_HGVSC : '');
+                if (annotation.francis_priority === undefined &&
+                    (row.dataset.priority === '5' || row.dataset.priority === '6')) {
+                    row.dataset.priority = ['high', 'moderate'].includes(row.dataset.vepImpact)
+                        ? '5' : '6';
+                    row.querySelector('.priority-rank-value').textContent = row.dataset.priority;
+                }
+            }
+            var updated = row.querySelector('.live-vep-cell .annotation-last-updated');
+            if (updated) {
+                updated.textContent = 'Last updated: ' + formatAnnotationTimestamp(new Date());
+            }
+        }
+
+        async function refreshAllAnnotations(button) {
+            var confirmed = await confirmAnnotationRefresh();
+            if (!confirmed) return;
+
+            var rows = Array.from(
+                document.querySelectorAll('#variant-tbody tr[data-annotation-url]')
+            );
+            var status = document.getElementById('annotation-refresh-status');
+            if (!rows.length) return;
+
+            button.disabled = true;
+            status.textContent = 'Starting background VEP refresh...';
+            try {
+                var response = await fetch(button.dataset.startUrl, {
+                    method: 'POST', headers: {'Accept': 'application/json'}
+                });
+                var job = await response.json();
+                if (!response.ok) throw new Error(job.error || 'Could not start VEP refresh.');
+                pollVepRefresh(button, job.job_id, rows, status);
+            } catch (error) {
+                status.textContent = 'VEP refresh failed to start: ' + error.message;
+                button.disabled = false;
+            }
+        }
+
+        async function pollVepRefresh(button, jobId, rows, status) {
+            try {
+                var url = button.dataset.statusUrlTemplate.replace('JOB_ID', jobId);
+                var response = await fetch(url, {headers: {'Accept': 'application/json'}});
+                var job = await response.json();
+                if (!response.ok) throw new Error(job.error || 'Could not read VEP refresh status.');
+                Object.keys(job.results || {}).forEach(function(variantId) {
+                    var row = document.querySelector('#variant-tbody tr[data-vid="' + variantId + '"]');
+                    if (row) applyLiveAnnotationToRow(row, job.results[variantId]);
+                });
+                status.textContent = 'Refreshing ' + job.completed + ' / ' + job.total + ' annotations...';
+                if (job.status === 'running') {
+                    window.setTimeout(function() { pollVepRefresh(button, jobId, rows, status); }, 1000);
+                    return;
+                }
+                var failures = Object.keys(job.failures || {});
+                status.textContent = failures.length
+                    ? 'Completed with errors for variant(s): ' + failures.join(', ')
+                    : 'All VEP / VRS annotations refreshed and saved.';
+                button.disabled = false;
+            } catch (error) {
+                status.textContent = 'VEP refresh status failed: ' + error.message;
+                button.disabled = false;
+            }
+        }
+
+        function formatAnnotationTimestamp(date) {
+            return date.toLocaleString([], {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+        }
+
+        function confirmAnnotationRefresh() {
+            var dialog = document.getElementById('annotation-refresh-confirm');
+            return new Promise(function(resolve) {
+                var finish = function(value) {
+                    dialog.hidden = true;
+                    resolve(value);
+                };
+                document.getElementById('annotation-refresh-confirm-yes').onclick = function() {
+                    finish(true);
+                };
+                document.getElementById('annotation-refresh-confirm-no').onclick = function() {
+                    finish(false);
+                };
+                dialog.oncancel = function() {
+                    finish(false);
+                };
+                dialog.hidden = false;
+            });
         }
 
         function renderAiReasoning(reasoning) {
@@ -1539,9 +1751,11 @@
             loading.classList.remove('is-error');
             loading.style.display = 'block';
 
-            fetch(includePubCaseFinder
+            var requestPath = includePubCaseFinder
                 ? requestRow.dataset.pubcasefinderAiReviewUrl
-                : requestRow.dataset.aiReviewUrl, {
+                : requestRow.dataset.aiReviewUrl;
+            var requestUrl = new URL(requestPath, window.location.origin).toString();
+            fetch(requestUrl, {
                 method: 'POST',
                 headers: {'Accept': 'application/json'}
             })
@@ -1908,9 +2122,22 @@
             document.getElementById('va-data-loading').classList.remove('is-error');
             document.getElementById('va-data-content').style.display = 'none';
             document.getElementById('va-vrs-id').textContent = '';
+            document.getElementById('va-last-updated').textContent = 'Last updated: Not yet';
             document.getElementById('va-refresh-btn').disabled = false;
-            document.getElementById('ai-refresh-btn').disabled = true;
+            document.getElementById('ai-refresh-btn').disabled =
+                document.getElementById('ai-refresh-btn').dataset.llmConfigured !== '1';
             document.getElementById('ai-pubcasefinder-btn').disabled = true;
+
+            var savedAnnotation = savedVepAnnotations[String(trEl.dataset.vid)];
+            if (savedAnnotation) {
+                renderVariantAnnotation(savedAnnotation);
+                document.getElementById('va-data-loading').style.display = 'none';
+                document.getElementById('va-data-content').style.display = 'block';
+                document.getElementById('va-last-updated').textContent =
+                    'Last updated: ' + (trEl.dataset.vepUpdatedAt || 'Unknown');
+                document.getElementById('ai-refresh-btn').disabled =
+                    document.getElementById('ai-refresh-btn').dataset.llmConfigured !== '1';
+            }
 
             var panel = document.getElementById('ai-suggestion-panel');
             var aiScore = trEl ? trEl.dataset.aiScore : '';
@@ -2013,7 +2240,7 @@
                 event.stopImmediatePropagation();
             }
         }, true);
-        
+
         // Auto-trigger gene marking on page load if confirmed phenotypes exist
         document.addEventListener('DOMContentLoaded', function() {
             if (confirmedPhenotypeContext().length) {

@@ -4,7 +4,9 @@ Each patient row links to its uploaded VCF file by path. Variants are parsed out
 of the VCF and stored in the ``variants`` table so they can be listed per patient.
 """
 
+import json
 import os
+from datetime import datetime
 
 from werkzeug.utils import secure_filename
 from sqlalchemy import text
@@ -63,12 +65,16 @@ def ensure_schema():
     _add_column_if_missing("requested_expert_board_id INT NULL")
     _add_column_if_missing("family_id VARCHAR(64) NULL")
     _add_column_if_missing("family_history TEXT NULL")
+    _add_column_if_missing("vep_annotation LONGTEXT NULL", table_name="variants")
+    _add_column_if_missing(
+        "vep_annotation_updated_at TIMESTAMP NULL", table_name="variants"
+    )
 
 
-def _add_column_if_missing(column_definition):
+def _add_column_if_missing(column_definition, table_name="patients"):
     session = Session()
     try:
-        session.execute(text(f"ALTER TABLE patients ADD COLUMN {column_definition}"))
+        session.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column_definition}"))
         session.commit()
     except OperationalError:
         session.rollback()
@@ -277,6 +283,18 @@ def get_patient_variants(patient_id):
     )
 
 
+def save_vep_annotation(patient_id, variant_id, annotation):
+    """Persist the latest successful VEP/VRS annotation for a patient variant."""
+    session = Session()
+    variant = session.get(Variant, variant_id)
+    if variant is None or variant.patient_id != patient_id:
+        return None
+    variant.vep_annotation = json.dumps(annotation, ensure_ascii=False)
+    variant.vep_annotation_updated_at = datetime.utcnow()
+    session.commit()
+    return variant
+
+
 def save_llm_scores(patient_id, result):
     """Persist LLM analysis reasoning to variant rows.
 
@@ -300,6 +318,7 @@ def save_llm_scores(patient_id, result):
             "family_history": info.get("family_history", ""),
             "score_rationale": info.get("score_rationale", ""),
             "suggested_acmg": info.get("suggested_acmg", []),
+            "evidence_basis": info.get("evidence_basis", []),
             "missing_data": info.get("missing_data", []),
         }, ensure_ascii=False)
     session.commit()

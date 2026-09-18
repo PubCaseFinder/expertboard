@@ -14,6 +14,7 @@ import requests
 
 from app import admin as admin_module
 from app import hpo_client
+from app import vep_api
 
 log = logging.getLogger(__name__)
 
@@ -66,6 +67,18 @@ def _is_ollama_cloud(base_url):
         return urlparse(base_url).netloc.lower().endswith("ollama.com")
     except Exception:
         return False
+
+
+def _format_http_error(url, model, response):
+    """Return an actionable LLM error without exposing request credentials."""
+    detail = (response.text or "").strip().replace("\n", " ")
+    if len(detail) > 500:
+        detail = detail[:500] + "..."
+    return (
+        f"LLM request failed with HTTP {response.status_code} for model '{model}'. "
+        f"Server response: {detail or 'No response body.'} "
+        f"Check the model name and endpoint settings."
+    )
 
 
 def is_configured():
@@ -229,7 +242,7 @@ def _chat(messages, base_url, model, api_key):
             log.error(
                 f"HTTP error from {url}: {status}. Response: {exc.response.text[:500]}"
             )
-            raise
+            raise RuntimeError(_format_http_error(url, model, exc.response)) from exc
     else:
         if base_url.endswith("/api"):
             url = f"{base_url}/chat"
@@ -261,7 +274,7 @@ def _chat(messages, base_url, model, api_key):
             log.error(
                 f"HTTP error from {url}: {status}. Response: {exc.response.text[:500]}"
             )
-            raise
+            raise RuntimeError(_format_http_error(url, model, exc.response)) from exc
 
 
 _ANALYZE_SYSTEM = """\
@@ -392,6 +405,7 @@ def analyze_variants(
     annotations_by_variant=None,
     case_evidence=None,
     clinical_context=None,
+    compact_input=False,
 ):
     """Analyze variants against clinical text using the configured Ollama model.
 
@@ -442,6 +456,21 @@ def analyze_variants(
         )
         if annotation:
             variant_data["latest_external_annotation"] = annotation
+        if compact_input:
+            variant_data.pop("raw_info", None)
+            variant_data["vcf_info"] = {
+                key: value for key, value in info_values.items()
+                if key in {
+                    "CLNSIG", "REVIEW_STAR", "CLNREVSTAT", "MANE_HIT",
+                    "VEP_IMPACT", "VEP_HGVSC", "VEP_HGVSP", "GNOMAD_AF",
+                    "gnomAD_AF_POPMAX", "GNOMAD_AF_GRPMAX", "GNOMAD_AF_EAS",
+                    "GNOMAD_AF_SAS", "REVEL", "CADD", "CADD_PHRED",
+                    "SpliceAI_AG", "SpliceAI_AL", "SpliceAI_DG", "SpliceAI_DL",
+                    "AlphaMissense", "AF",
+                }
+            }
+            if annotation:
+                variant_data["latest_external_annotation"] = vep_api.compact_annotation_for_llm(annotation)
         variant_list.append(variant_data)
 
     user_message = (

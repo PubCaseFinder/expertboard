@@ -48,7 +48,43 @@ def _info_value(info, key):
     return None
 
 
-def display_info_values(variant):
+def live_annotation_info(annotation):
+    """Map live VEP fields into the INFO names used by Francis rules."""
+    annotation = annotation or {}
+    vep = annotation.get("vep") or {}
+    transcripts = vep.get("transcript_consequences") or []
+    transcript = next(
+        (
+            item for item in transcripts
+            if item.get("mane_select") or item.get("mane_plus_clinical")
+        ),
+        None,
+    ) or (transcripts[0] if transcripts else {})
+    values = {}
+    mappings = {
+        "VEP_IMPACT": "impact",
+        "VEP_HGVSC": "hgvsc",
+        "VEP_HGVSP": "hgvsp",
+        "REVEL": "revel_score",
+        "CADD_PHRED": "cadd_phred",
+        "AlphaMissense": "alphamissense",
+    }
+    for info_key, vep_key in mappings.items():
+        value = transcript.get(vep_key)
+        if value not in (None, "", "."):
+            values[info_key] = value
+    if transcript.get("mane_select") or transcript.get("mane_plus_clinical"):
+        values["MANE_HIT"] = "Yes"
+    spliceai = transcript.get("spliceai") or {}
+    if isinstance(spliceai, dict):
+        for suffix in ("AG", "AL", "DG", "DL"):
+            value = spliceai.get(suffix)
+            if value not in (None, "", "."):
+                values[f"SpliceAI_{suffix}"] = value
+    return values
+
+
+def display_info_values(variant, annotation=None):
     """Return the Francis script's INFO fields for display in the patient table."""
     raw_values = {}
     for item in (variant.raw_info or "").split(";"):
@@ -61,13 +97,14 @@ def display_info_values(variant):
                 break
     if "CLNSIG" not in raw_values and variant.clin_sig:
         raw_values["CLNSIG"] = variant.clin_sig
+    raw_values.update(live_annotation_info(annotation))
     return raw_values
 
 
-def display_rule_scores(variant):
+def display_rule_scores(variant, annotation=None):
     """Return all scoring function results, including currently stubbed zeros."""
     rules = _load_rules()
-    info = _scoring_info(variant)
+    info = _scoring_info(variant, annotation)
     try:
         clinvar_score = rules["score_clinvar"](info)[0]
     except (IndexError, KeyError, TypeError, ValueError):
@@ -99,7 +136,7 @@ def _canonical_clnsig(value):
     return labels.get((value or "").strip().lower().replace(" ", "_"), value)
 
 
-def _scoring_info(variant):
+def _scoring_info(variant, annotation=None):
     """Build the INFO input expected by the original scoring script."""
     info = variant.raw_info or ""
     fields = [] if not info else info.split(";")
@@ -117,12 +154,19 @@ def _scoring_info(variant):
     ) is not None:
         fields.append("REVIEW_STAR=0")
 
+    live_values = live_annotation_info(annotation)
+    for key, value in live_values.items():
+        fields = [
+            field for field in fields
+            if field.partition("=")[0].upper() != key.upper()
+        ]
+        fields.append(f"{key}={value}")
     return ";".join(fields)
 
 
-def _evaluation_priority(variant, rules):
+def _evaluation_priority(variant, rules, annotation=None):
     """Return the original script's rank using already-loaded rules."""
-    info = _scoring_info(variant)
+    info = _scoring_info(variant, annotation)
     try:
         clinvar_score, _clnsig = rules["score_clinvar"](info)
         gnomad_score, _af, _grpmax, _eas, _sas = rules["score_gnomad"](info)
@@ -144,12 +188,18 @@ def _evaluation_priority(variant, rules):
     return rank
 
 
-def evaluation_priority(variant):
+def evaluation_priority(variant, annotation=None):
     """Return the current script's rank, with missing fields ranked last."""
-    return _evaluation_priority(variant, _load_rules())
+    return _evaluation_priority(variant, _load_rules(), annotation)
 
 
-def evaluation_priorities(variants):
+def evaluation_priorities(variants, annotations_by_variant=None):
     """Calculate ranks for one page using one current script load."""
     rules = _load_rules()
-    return {variant.id: _evaluation_priority(variant, rules) for variant in variants}
+    annotations_by_variant = annotations_by_variant or {}
+    return {
+        variant.id: _evaluation_priority(
+            variant, rules, annotations_by_variant.get(variant.id)
+        )
+        for variant in variants
+    }

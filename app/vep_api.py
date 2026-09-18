@@ -26,6 +26,11 @@ VEP_OPTIONS = {
 }
 
 
+def _is_sequence_allele(value):
+    """Return whether a REF/ALT value is valid for VEP/VRS sequence input."""
+    return bool(value) and all(base in "ACGTN*-" for base in str(value).upper())
+
+
 def get_vep_annotations(variants, genome_build="GRCh38"):
     """Fetch VEP annotations using Ensembl's batch region endpoint."""
     build = genome_build.upper()
@@ -52,6 +57,10 @@ def get_vep_annotations(variants, genome_build="GRCh38"):
 
 def get_vrs_allele(chrom, pos, ref, alt, genome_build="GRCh38"):
     """Resolve the sequence, normalize an Allele, and compute its VRS identifier."""
+    if not _is_sequence_allele(ref) or not _is_sequence_allele(alt):
+        raise ValueError(
+            f"VRS skipped: REF/ALT must contain DNA bases; received REF={ref!r}, ALT={alt!r}."
+        )
     from ga4gh.core import ga4gh_digest
     from ga4gh.core import ga4gh_identify
     from ga4gh.vrs import models
@@ -95,17 +104,24 @@ def get_vrs_allele(chrom, pos, ref, alt, genome_build="GRCh38"):
 
 def annotate_variant(chrom, pos, ref, alt, genome_build="GRCh38"):
     """Return VEP and VRS results independently so partial failures remain visible."""
+    valid_ref = _is_sequence_allele(ref)
+    valid_alt = _is_sequence_allele(alt)
     variant = (
         f"{str(chrom).removeprefix('chr')} {int(pos)} . "
         f"{ref.upper()} {alt.upper()} . . ."
     )
     result = {"input": variant, "genome_build": genome_build}
 
-    try:
-        annotations = get_vep_annotations([variant], genome_build)
-        result["vep"] = annotations[0] if annotations else None
-    except (requests.RequestException, ValueError) as exc:
-        result["vep_error"] = str(exc)
+    if valid_ref and valid_alt:
+        try:
+            annotations = get_vep_annotations([variant], genome_build)
+            result["vep"] = annotations[0] if annotations else None
+        except (requests.RequestException, ValueError) as exc:
+            result["vep_error"] = str(exc)
+    else:
+        result["vep_error"] = (
+            f"VEP skipped: REF/ALT must contain DNA bases; received REF={ref!r}, ALT={alt!r}."
+        )
 
     try:
         result["vrs"] = get_vrs_allele(

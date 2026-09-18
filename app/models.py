@@ -101,6 +101,8 @@ class Variant(Base):
     quality: Mapped[str | None] = mapped_column(String(32), nullable=True)
     filter_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
     raw_info: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    vep_annotation: Mapped[str | None] = mapped_column(LONGTEXT(), nullable=True)
+    vep_annotation_updated_at: Mapped[str | None] = mapped_column(TIMESTAMP(), nullable=True)
     llm_score: Mapped[int | None] = mapped_column(nullable=True)
     llm_reason: Mapped[str | None] = mapped_column(Text(), nullable=True)
     created_at: Mapped[str] = mapped_column(TIMESTAMP(), nullable=False, server_default=func.current_timestamp())
