@@ -442,6 +442,48 @@ h1 {
     font-style: italic;
 }
 
+.ai-source-link {
+    display: inline-block;
+    margin: 3px 8px 0 0;
+    color: #1769aa;
+    font-size: 11px;
+    text-decoration: underline;
+}
+
+.ai-source-link:hover {
+    color: #0b3d68;
+}
+
+.curator-source-inline {
+    margin-bottom: 12px;
+    padding: 10px;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    background: #f8fafc;
+}
+.curator-source-inline h3 { margin: 0 0 8px; font-size: 13px; }
+.curator-source-links-inline-list {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 12px;
+}
+.curator-source-links-inline-list .ai-source-link { margin: 0; padding: 4px 0; }
+.curator-source-variant-context {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: 4px 10px;
+    margin: 0 0 10px;
+    padding: 8px;
+    border-bottom: 1px solid #dbe3ec;
+    background: #f8fafc;
+    font-size: 11px;
+}
+.curator-source-variant-context dt { color: #64748b; font-weight: 700; }
+.curator-source-variant-context dd { margin: 0; overflow-wrap: anywhere; color: #1e293b; }
+.ai-criterion-source-links { margin-top: 4px; }
+.ai-criterion-source-link { margin-right: 6px; }
+
 .ai-badge {
     color: #40916c;
     font-size: 14px;

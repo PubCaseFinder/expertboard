@@ -360,6 +360,13 @@
                                         data-past="{% for e in r_cross_assessments.get(v.id, []) %}{{ e.score.classification|lower|replace(' ','_') }}{% if not loop.last %}|{% endif %}{% endfor %}"
                                         data-assessed="{% for e in va_list %}{{ e.score.classification|lower|replace(' ','_') }}{% if not loop.last %}|{% endif %}{% endfor %}"
                                         data-vkey="{{ v.chrom }}:{{ v.pos }}:{{ v.ref }}:{{ v.alt }}"
+                                        data-chrom="{{ v.chrom }}"
+                                        data-pos="{{ v.pos }}"
+                                        data-ref="{{ v.ref }}"
+                                        data-alt="{{ v.alt }}"
+                                        data-variant-id="{{ v.variant_ext_id or '' }}"
+                                        data-hgvs-c="{{ v.hgvs_c or '' }}"
+                                        data-hgvs-p="{{ v.hgvs_p or '' }}"
                                         data-priority="{{ r_variant_priority.get(v.id, 99) }}"
                                         data-raw-info="{{ v.raw_info or '' }}"
                                         data-vid="{{ v.id }}"
@@ -872,6 +879,11 @@
                 <div class="acmg-modal-body">
                     <div class="acmg-modal-columns">
                     <div class="acmg-left-column">
+                        <section class="curator-source-inline" aria-labelledby="curator-source-links-title">
+                            <h3 id="curator-source-links-title">Curator source links</h3>
+                            <dl id="curator-source-variant-context" class="curator-source-variant-context"></dl>
+                            <div id="curator-source-links-inline-list" class="curator-source-links-inline-list"></div>
+                        </section>
                         <div class="ai-input-search">
                             <label for="ai-input-search-field">Search AI input</label>
                             <input id="ai-input-search-field" type="search" placeholder="Search clinical note, VCF, HPO, VEP..." autocomplete="off">
@@ -976,6 +988,7 @@
                                         {% endfor %}
                                     </select>
                                     <div class="ai-criterion-evidence" data-criterion="{{ code }}" hidden></div>
+                                    <div class="ai-criterion-source-links" data-criterion-source-links="{{ code }}"></div>
                                     <textarea class="acmg-criterion-comment" rows="2"
                                               aria-label="{{ code }} comment"
                                               placeholder="Comment for {{ code }}..." disabled></textarea>
@@ -998,6 +1011,7 @@
                                         {% endfor %}
                                     </select>
                                     <div class="ai-criterion-evidence" data-criterion="{{ code }}" hidden></div>
+                                    <div class="ai-criterion-source-links" data-criterion-source-links="{{ code }}"></div>
                                     <textarea class="acmg-criterion-comment" rows="2"
                                               aria-label="{{ code }} comment"
                                               placeholder="Comment for {{ code }}..." disabled></textarea>
@@ -1798,9 +1812,13 @@
                 var explanation = document.createElement('span');
                 explanation.textContent = item.explanation || '';
                 row.append(title, detail, explanation);
+                curatorSourceLinks((item.criterion || '').split('_')[0]).forEach(function(link) {
+                    row.appendChild(link);
+                });
                 evidenceList.appendChild(row);
             });
             evidencePanel.style.display = evidenceBasis.length ? 'block' : 'none';
+            renderCriterionSourceLinks(reasoning.suggested_acmg || []);
             document.querySelectorAll('.ai-criterion-evidence').forEach(function(element) {
                 var matches = evidenceBasis.filter(function(item) {
                     return (item.criterion || '').split('_')[0] === element.dataset.criterion;
@@ -1832,6 +1850,143 @@
             });
             missingPanel.style.display = missing.length ? 'block' : 'none';
             panel.style.display = 'block';
+        }
+
+        function variantSourceContext() {
+            var row = currentAssessmentRow || {};
+            var dataset = row.dataset || {};
+            return {
+                chrom: dataset.chrom || '',
+                pos: dataset.pos || '',
+                ref: dataset.ref || '',
+                alt: dataset.alt || '',
+                gene: dataset.gene || '',
+                variantId: dataset.variantId || ''
+                ,hgvsC: dataset.hgvsC || ''
+                ,hgvsP: dataset.hgvsP || ''
+            };
+        }
+
+        function sourceLink(label, url) {
+            var link = document.createElement('a');
+            link.className = 'ai-source-link';
+            link.href = url;
+            link.target = '_blank';
+            link.rel = 'noopener noreferrer';
+            link.textContent = label;
+            return link;
+        }
+
+        function curatorSourceLinks(criterion) {
+            var context = variantSourceContext();
+            var coordinate = [context.chrom, context.pos, context.ref, context.alt]
+                .map(encodeURIComponent).join('-');
+            var links = [];
+            if (criterion === 'PVS1') {
+                var autoPvs1Chrom = String(context.chrom || '').replace(/^chr/i, '');
+                var autoPvs1Variant = [autoPvs1Chrom, context.pos, context.ref, context.alt]
+                    .filter(Boolean).map(encodeURIComponent).join('-');
+                links.push(sourceLink(
+                    'AutoPVS1',
+                    'https://autopvs1.bgi.com/variant/hg38/' + autoPvs1Variant
+                ));
+            }
+            if (criterion === 'PS1') {
+                var clinvarTerm = encodeURIComponent(
+                    [context.gene, context.hgvsP, context.hgvsC, context.variantId].filter(Boolean).join(' ')
+                );
+                links.push(sourceLink(
+                    'ClinVar search',
+                    'https://www.ncbi.nlm.nih.gov/clinvar/?term=' + clinvarTerm
+                ));
+            }
+            if (criterion === 'PM1' || criterion === 'PM5') {
+                links.push(sourceLink(
+                    'NCBI Variation',
+                    'https://www.ncbi.nlm.nih.gov/variation/view/?chr=' + encodeURIComponent(context.chrom) +
+                    '&pos=' + encodeURIComponent(context.pos) +
+                    '&ref=' + encodeURIComponent(context.ref) +
+                    '&alt=' + encodeURIComponent(context.alt)
+                ));
+            }
+            if (['PM2', 'BA1', 'BS1', 'BS2'].includes(criterion)) {
+                links.push(sourceLink(
+                    'gnomAD variant',
+                    'https://gnomad.broadinstitute.org/variant/' + coordinate + '?dataset=gnomad_r4'
+                ));
+            }
+            if (criterion === 'PP2') {
+                links.push(sourceLink(
+                    'gnomAD gene',
+                    'https://gnomad.broadinstitute.org/gene/' + encodeURIComponent(context.gene.toUpperCase()) + '?dataset=gnomad_r4'
+                ));
+            }
+            if (criterion === 'PP3' || criterion === 'BP4') {
+                if (context.variantId) {
+                    var ensemblVariantId = String(context.variantId);
+                    if (/^\d+$/.test(ensemblVariantId)) {
+                        ensemblVariantId = 'rs' + ensemblVariantId;
+                    }
+                    links.push(sourceLink(
+                        'Ensembl Variation',
+                        'https://www.ensembl.org/Homo_sapiens/Variation/Explore?v=' + encodeURIComponent(ensemblVariantId)
+                    ));
+                }
+            }
+            return links;
+        }
+
+        function renderCuratorSourceLinks() {
+            var list = document.getElementById('curator-source-links-inline-list');
+            if (!list) return;
+            list.replaceChildren();
+            var criteria = ['PVS1', 'PS1', 'PM1', 'PM5', 'PM2', 'BA1', 'BS1', 'BS2', 'PP2', 'PP3', 'BP4'];
+            var seen = new Set();
+            criteria.forEach(function(criterion) {
+                var links = curatorSourceLinks(criterion);
+                links.forEach(function(link) {
+                    if (seen.has(link.href)) return;
+                    seen.add(link.href);
+                    list.appendChild(link);
+                });
+            });
+        }
+
+        function renderCriterionSourceLinks(suggestedCriteria) {
+            document.querySelectorAll('[data-criterion-source-links]').forEach(function(container) {
+                container.replaceChildren();
+                var criterion = container.dataset.criterionSourceLinks;
+                var suggested = suggestedCriteria.some(function(code) {
+                    return String(code).split('_')[0] === criterion;
+                });
+                if (!suggested) return;
+                curatorSourceLinks(criterion).forEach(function(link) {
+                    link.textContent = 'Check current status';
+                    link.classList.add('ai-criterion-source-link');
+                    container.appendChild(link);
+                });
+            });
+        }
+
+        function renderCuratorSourceContext() {
+            var context = variantSourceContext();
+            var contextList = document.getElementById('curator-source-variant-context');
+            if (!contextList) return;
+            contextList.replaceChildren();
+            [
+                ['Variant', [context.chrom, context.pos, context.ref, context.alt].filter(Boolean).join(':')],
+                ['Gene', context.gene || '—'],
+                ['HGVS c.', context.hgvsC || '—'],
+                ['HGVS p.', context.hgvsP || '—'],
+                ['rsID', context.variantId || '—']
+            ].forEach(function(item) {
+                var term = document.createElement('dt');
+                term.textContent = item[0];
+                var value = document.createElement('dd');
+                value.textContent = item[1];
+                contextList.append(term, value);
+            });
+            renderCuratorSourceLinks();
         }
 
         function refreshAiCriteria(button, includePubCaseFinder) {
@@ -2221,6 +2376,7 @@
             document.getElementById('ai-refresh-btn').disabled =
                 document.getElementById('ai-refresh-btn').dataset.llmConfigured !== '1';
             document.getElementById('ai-pubcasefinder-btn').disabled = true;
+            renderCriterionSourceLinks([]);
 
             var savedAnnotation = savedVepAnnotations[String(trEl.dataset.vid)];
             if (savedAnnotation) {
@@ -2247,6 +2403,7 @@
             }
 
             document.getElementById('acmg-modal').style.display = 'flex';
+            renderCuratorSourceContext();
             var canUsePubCaseFinder = confirmedPhenotypeContext().length > 0 &&
                 document.getElementById('ai-pubcasefinder-btn').dataset.llmConfigured === '1';
             document.getElementById('ai-pubcasefinder-btn').disabled = !canUsePubCaseFinder;
