@@ -43,7 +43,7 @@ a { color: inherit; }
 }
 
 .landing {
-    max-width: 1240px;
+    max-width: 1488px;
     margin: 0 auto;
     padding: 34px 24px 72px;
 }
@@ -401,6 +401,21 @@ h1 {
     line-height: 1.35;
 }
 
+.live-clinvar-cell {
+    min-width: 170px;
+    white-space: normal;
+}
+
+.live-clinvar-summary,
+.live-clinvar-review {
+    display: block;
+    font-size: 11px;
+    overflow-wrap: anywhere;
+}
+
+.live-clinvar-summary { font-weight: 700; color: #334155; }
+.live-clinvar-review { color: #64748b; }
+
 .annotation-refresh-dialog {
     position: fixed;
     inset: 0;
@@ -531,6 +546,27 @@ h1 {
 .va-data-btn:hover { background: #ccfbf1; }
 .va-data-btn:disabled { cursor: wait; opacity: .55; }
 .va-data-variant { color: #6b7280; font-family: monospace; font-size: 12px; }
+
+.btn-loading {
+    position: relative;
+    padding-right: 26px !important;
+}
+.btn-loading::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    right: 8px;
+    width: 11px;
+    height: 11px;
+    margin-top: -6px;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    border-radius: 50%;
+    animation: btn-spin 0.6s linear infinite;
+}
+@keyframes btn-spin {
+    to { transform: rotate(360deg); }
+}
 .va-review-panel {
     margin-bottom: 12px;
     padding: 10px 12px;
@@ -1788,7 +1824,7 @@ h1 {
 }
 
 .site-header-inner {
-    max-width: 1280px;
+    max-width: 1536px;
     margin: 0 auto;
     padding: 0 20px;
     display: flex;
@@ -2798,7 +2834,7 @@ h1 {
     background: #fff;
     border-radius: 10px;
     box-shadow: 0 8px 32px rgba(0,0,0,.25);
-    width: min(1290px, 96vw);
+    width: min(1548px, 96vw);
     height: min(88vh, 900px);
     max-height: 88vh;
     display: flex;

@@ -311,6 +311,30 @@ def save_clinvar_annotation(patient_id, variant_id, annotation):
     return variant
 
 
+def propagate_clinvar_annotation(chrom, pos, ref, alt, annotation):
+    """Copy a ClinVar lookup result to every variant row sharing this genomic
+    position, across all patients. ClinVar records describe the variant, not
+    the patient, so one fetch should cover every patient carrying it."""
+    session = Session()
+    matches = (
+        session.query(Variant)
+        .filter(
+            Variant.chrom == chrom,
+            Variant.pos == pos,
+            Variant.ref == ref,
+            Variant.alt == alt,
+        )
+        .all()
+    )
+    payload = json.dumps(annotation, ensure_ascii=False)
+    updated_at = datetime.utcnow()
+    for variant in matches:
+        variant.clinvar_annotation = payload
+        variant.clinvar_annotation_updated_at = updated_at
+    session.commit()
+    return matches, updated_at
+
+
 def save_llm_scores(patient_id, result):
     """Persist LLM analysis reasoning to variant rows.
 

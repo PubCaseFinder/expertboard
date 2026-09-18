@@ -6,6 +6,11 @@
         <span><strong>Classification:</strong> {{ record.summary.classification }}</span>
         <span><strong>Evidence:</strong> {{ record.summary.evidence|length }}</span>
         <span><strong>Assessment ID:</strong> {{ record.assessment.id }}</span>
+        <button type="button" class="clinvar-row-btn va-review-clinvar-button"
+                data-url="{{ url_for('expertboard.api_variant_clinvar', patient_id=record.patient.id, variant_id=record.variant.id) }}">
+            Fetch ClinVar
+        </button>
+        <span class="clinvar-row-status va-review-clinvar-status" role="status"></span>
     </div>
     <details>
         <summary>Show parsed relationships, VA-Spec JSON, and saved values</summary>

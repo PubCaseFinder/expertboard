@@ -703,6 +703,22 @@ def group_va_spec_records_by_gene_position(records):
     return grouped
 
 
+def group_va_spec_records_by_classification(records):
+    """Group saved review records by their calculated classification."""
+    order = {
+        "Pathogenic": 0,
+        "Likely pathogenic": 1,
+        "Uncertain significance": 2,
+        "Likely benign": 3,
+        "Benign": 4,
+    }
+    grouped = {}
+    for record in records:
+        classification = record["summary"].get("classification") or "Unclassified"
+        grouped.setdefault(classification, []).append(record)
+    return dict(sorted(grouped.items(), key=lambda item: (order.get(item[0], 99), item[0])))
+
+
 def list_cross_patient_for_variants(proband_variants, patient_id):
     """Find assessments of the same genomic variant recorded for other patients.
 

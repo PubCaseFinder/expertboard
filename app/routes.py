@@ -38,20 +38,52 @@ _vep_jobs = {}
 _vep_jobs_lock = threading.Lock()
 
 
+def _fetch_and_save_vep_annotation(patient_id, variant):
+    """Single source of truth for VEP/VRS refresh, used by both the per-variant
+    and bulk (Refresh VEP & ClinVar) endpoints so both pages stay in sync."""
+    annotation = vep_api.annotate_variant(
+        variant.chrom, variant.pos, variant.ref, variant.alt, genome_build="GRCh38"
+    )
+    if not annotation.get("vep") and not annotation.get("vrs"):
+        raise RuntimeError(annotation.get("vep_error") or annotation.get("vrs_error") or "Annotation failed.")
+    saved = patients.save_vep_annotation(patient_id, variant.id, annotation)
+    annotation["updated_at"] = (
+        saved.vep_annotation_updated_at.isoformat()
+        if saved and saved.vep_annotation_updated_at else None
+    )
+    annotation["francis_info"] = variant_priority.display_info_values(variant, annotation)
+    annotation["francis_priority"] = variant_priority.evaluation_priority(variant, annotation)
+    return annotation
+
+
+def _fetch_and_save_clinvar_annotation(patient_id, variant):
+    """Single source of truth for ClinVar refresh, used by both the per-variant
+    and bulk (Refresh VEP & ClinVar) endpoints so both pages stay in sync."""
+    result = clinvar_client.fetch_variant(variant)
+    # ClinVar describes the variant, not the patient: share the result with
+    # every patient's row for this exact chrom/pos/ref/alt.
+    _matches, updated_at = patients.propagate_clinvar_annotation(
+        variant.chrom, variant.pos, variant.ref, variant.alt, result
+    )
+    vep_annotation = None
+    if variant.vep_annotation:
+        try:
+            vep_annotation = json.loads(variant.vep_annotation)
+        except (TypeError, ValueError):
+            pass
+    result["updated_at"] = updated_at.isoformat()
+    result["francis_info"] = variant_priority.display_info_values(variant, vep_annotation, result)
+    result["francis_priority"] = variant_priority.evaluation_priority(variant, vep_annotation, result)
+    return result
+
+
 def _run_vep_refresh_job(job_id, patient_id, variant_ids):
     for variant_id in variant_ids:
         try:
             variant = Session().get(Variant, variant_id)
             if variant is None or variant.patient_id != patient_id:
                 raise RuntimeError("Variant no longer belongs to this patient.")
-            annotation = vep_api.annotate_variant(
-                variant.chrom, variant.pos, variant.ref, variant.alt, genome_build="GRCh38"
-            )
-            if not annotation.get("vep") and not annotation.get("vrs"):
-                raise RuntimeError(annotation.get("vep_error") or annotation.get("vrs_error") or "Annotation failed.")
-            patients.save_vep_annotation(patient_id, variant_id, annotation)
-            annotation["francis_info"] = variant_priority.display_info_values(variant, annotation)
-            annotation["francis_priority"] = variant_priority.evaluation_priority(variant, annotation)
+            annotation = _fetch_and_save_vep_annotation(patient_id, variant)
             with _vep_jobs_lock:
                 _vep_jobs[job_id]["results"][str(variant_id)] = annotation
                 _vep_jobs[job_id]["completed"] += 1
@@ -120,6 +152,7 @@ def variant_assessment_review():
         "variant_assessment_review.html",
         r_records=records,
         r_by_gene=assessments_module.group_va_spec_records_by_gene_position(records),
+        r_by_classification=assessments_module.group_va_spec_records_by_classification(records),
         r_by_patient=list(by_patient.values()),
         r_target_variant=(request.args.get("variant") or "").strip(),
     )
@@ -172,21 +205,27 @@ def patient_detail(patient_id):
 
     # Proband variants
     proband_variants = patients.get_patient_variants(patient_id)
+    r_clinvar_annotations = {}
+    for variant in proband_variants:
+        if not variant.clinvar_annotation:
+            continue
+        try:
+            annotation = json.loads(variant.clinvar_annotation)
+        except (TypeError, ValueError):
+            continue
+        if isinstance(annotation, dict):
+            r_clinvar_annotations[variant.id] = annotation
     r_variant_info = {
-        variant.id: variant_priority.display_info_values(variant)
+        variant.id: variant_priority.display_info_values(
+            variant,
+            None,
+            r_clinvar_annotations.get(variant.id),
+        )
         for variant in proband_variants
     }
     r_variant_annotations = {}
-    r_clinvar_annotations = {}
     r_variant_annotation_summaries = {}
     for variant in proband_variants:
-        if variant.clinvar_annotation:
-            try:
-                clinvar_annotation = json.loads(variant.clinvar_annotation)
-            except (TypeError, ValueError):
-                clinvar_annotation = None
-            if isinstance(clinvar_annotation, dict):
-                r_clinvar_annotations[variant.id] = clinvar_annotation
         if not variant.vep_annotation:
             continue
         try:
@@ -217,11 +256,13 @@ def patient_detail(patient_id):
         if transcript.get("hgvsp"):
             r_variant_info[variant.id]["VEP_HGVSP"] = transcript["hgvsp"]
     r_variant_priority = variant_priority.evaluation_priorities(
-        proband_variants, r_variant_annotations
+        proband_variants, r_variant_annotations, r_clinvar_annotations
     )
     r_variant_rule_scores = {
         variant.id: variant_priority.display_rule_scores(
-            variant, r_variant_annotations.get(variant.id)
+            variant,
+            r_variant_annotations.get(variant.id),
+            r_clinvar_annotations.get(variant.id),
         )
         for variant in proband_variants
     }
@@ -346,20 +387,12 @@ def api_variant_annotation(patient_id, variant_id):
     variant = Session().get(Variant, variant_id)
     if variant is None or variant.patient_id != patient_id:
         abort(404)
-    result = vep_api.annotate_variant(
-        variant.chrom,
-        variant.pos,
-        variant.ref,
-        variant.alt,
-        genome_build="GRCh38",
-    )
-    status = 200 if result.get("vep") or result.get("vrs") else 502
-    if status == 200:
-        patients.save_vep_annotation(patient_id, variant_id, result)
-        result["persisted"] = True
-        result["francis_info"] = variant_priority.display_info_values(variant, result)
-        result["francis_priority"] = variant_priority.evaluation_priority(variant, result)
-    return jsonify(result), status
+    try:
+        result = _fetch_and_save_vep_annotation(patient_id, variant)
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 502
+    result["persisted"] = True
+    return jsonify(result), 200
 
 
 @bp.route("/api/patients/<int:patient_id>/clinvar-refresh", methods=["POST"])
@@ -371,9 +404,7 @@ def api_patient_clinvar_refresh(patient_id):
     failures = {}
     for variant in variant_list:
         try:
-            result = clinvar_client.fetch_variant(variant)
-            patients.save_clinvar_annotation(patient_id, variant.id, result)
-            results[str(variant.id)] = result
+            results[str(variant.id)] = _fetch_and_save_clinvar_annotation(patient_id, variant)
         except requests.RequestException as exc:
             failures[str(variant.id)] = str(exc)
     return jsonify({"results": results, "failures": failures})
@@ -385,14 +416,14 @@ def api_variant_clinvar(patient_id, variant_id):
     if variant is None or variant.patient_id != patient_id:
         abort(404)
     try:
-        result = clinvar_client.fetch_variant(variant)
-        saved = patients.save_clinvar_annotation(patient_id, variant_id, result)
+        result = _fetch_and_save_clinvar_annotation(patient_id, variant)
     except requests.RequestException as exc:
         return jsonify({"error": str(exc)}), 502
     return jsonify({
         "result": result,
-        "updated_at": saved.clinvar_annotation_updated_at.isoformat()
-        if saved and saved.clinvar_annotation_updated_at else None,
+        "updated_at": result.get("updated_at"),
+        "francis_info": result.get("francis_info"),
+        "francis_priority": result.get("francis_priority"),
     })
 
 

@@ -23,6 +23,8 @@ VEP_OPTIONS = {
     "AlphaMissense": 1,
     "SpliceAI": 2,
     "dbNSFP": "REVEL_score",
+    # Needed for score_gnomad() in filter_variants.py: adds colocated_variants[].frequencies.
+    "af_gnomad": 1,
 }
 
 

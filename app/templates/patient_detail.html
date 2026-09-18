@@ -260,7 +260,19 @@
                                     onclick="refreshAllAnnotations(this)">
                                 Refresh all VEP / VRS
                             </button>
-                            <span class="annotation-last-updated" id="annotation-last-updated">Last updated: Not yet</span>
+                            <button class="inline-button" id="refresh-vep-clinvar-btn" type="button"
+                                    data-start-url="{{ url_for('expertboard.api_start_vep_refresh', patient_id=r_patient.id) }}"
+                                    data-status-url-template="{{ url_for('expertboard.api_vep_refresh_status', patient_id=r_patient.id, job_id='JOB_ID') }}"
+                                    data-clinvar-url="{{ url_for('expertboard.api_patient_clinvar_refresh', patient_id=r_patient.id) }}"
+                                    onclick="refreshVepAndClinvar(this)">
+                                Refresh VEP &amp; ClinVar
+                            </button>
+                            <button class="inline-button" id="refresh-clinvar-only-btn" type="button"
+                                    data-clinvar-url="{{ url_for('expertboard.api_patient_clinvar_refresh', patient_id=r_patient.id) }}"
+                                    onclick="refreshClinvarOnly(this)">
+                                Refresh ClinVar only
+                            </button>
+                            <span class="annotation-last-updated" id="annotation-last-updated">Last updated:<br>Not yet</span>
                             <span class="ai-status" id="annotation-refresh-status" role="status"></span>
                             <span class="status-hint annotation-refresh-hint">
                                 Annotating many variants can take time.<br>
@@ -298,6 +310,7 @@
                                         <input class="th-filter" id="vf-type" type="search" placeholder="filter…">
                                     </th>
                                     <th>Live VEP</th>
+                                    <th>Live ClinVar</th>
                                     <th>
                                         <abbr title="Same variant assessed in other patients registered in this system">Other pt. reviews</abbr>
                                         <select class="th-filter" id="vf-past">
@@ -334,9 +347,19 @@
                                             <option value="benign">Benign</option>
                                         </select>
                                     </th>
+                                    <th>
+                                        VEP Impact
+                                        <select class="th-filter" id="vf-impact">
+                                            <option value="">All</option>
+                                            <option value="high">HIGH</option>
+                                            <option value="moderate">MODERATE</option>
+                                            <option value="low">LOW</option>
+                                            <option value="modifier">MODIFIER</option>
+                                        </select>
+                                    </th>
                                     <th>GT</th>
                                     <th>DP</th>
-                                    <th>Francis inputs</th>
+                                    <th>Priority Basis</th>
                                     <th>VCF raw INFO</th>
                                     <th>Note
                                         <input class="th-filter" id="vf-note" type="search" placeholder="filter…">
@@ -350,12 +373,21 @@
                                     {% set shares = r_variant_shares.get(v.id, []) %}
                                     {% set va_list = r_assessments.get(v.id, []) %}
                                     {% set live_vep = r_variant_annotation_summaries.get(v.id, {}) %}
+                                    {% set live_clinvar = r_clinvar_annotations.get(v.id, {}) %}
+                                    {% set clinvar_summary = live_clinvar.get('summary', {}) %}
+                                    {# Current NCBI esummary (v2.0) nests classification under germline_classification; older responses used clinical_significance. #}
+                                    {% set clinvar_classification = clinvar_summary.get('germline_classification') or clinvar_summary.get('clinical_significance', {}) %}
+                                    {% set clinvar_significance = clinvar_classification if clinvar_classification is mapping else clinvar_classification %}
+                                    {% set clinvar_review_status = (clinvar_classification.get('review_status') if clinvar_classification is mapping else None) or clinvar_summary.get('review_status') %}
+                                    {% set clinvar_significance_text = (clinvar_significance.get('description') or clinvar_significance.get('value')) if clinvar_significance is mapping else clinvar_significance %}
+                                    {% set effective_clnsig = clinvar_significance_text or v.clin_sig or '' %}
                                     <tr
                                         class="{{ 'shared-row' if shares else '' }}"
                                         data-gene="{{ (v.gene or '')|lower }}"
                                         data-hgvs="{{ ((v.hgvs_c or '') ~ ' ' ~ (v.hgvs_p or ''))|lower }}"
                                         data-type="{{ (v.variant_type or '')|lower }}"
-                                        data-clnsig="{{ (v.clin_sig or '')|lower|replace(' ','_') }}"
+                                        data-clnsig="{{ effective_clnsig|lower|replace(' ','_') }}"
+                                        data-vep-impact="{{ (live_vep.impact or '')|lower }}"
                                         data-note="{{ (v.note or '')|lower }}"
                                         data-past="{% for e in r_cross_assessments.get(v.id, []) %}{{ e.score.classification|lower|replace(' ','_') }}{% if not loop.last %}|{% endif %}{% endfor %}"
                                         data-assessed="{% for e in va_list %}{{ e.score.classification|lower|replace(' ','_') }}{% if not loop.last %}|{% endif %}{% endfor %}"
@@ -371,6 +403,7 @@
                                         data-raw-info="{{ v.raw_info or '' }}"
                                         data-vid="{{ v.id }}"
                                         data-vep-updated-at="{{ v.vep_annotation_updated_at or '' }}"
+                                        data-clinvar-updated-at="{{ v.clinvar_annotation_updated_at or '' }}"
                                         data-ai-score="{{ v.llm_score if v.llm_score is not none else '' }}"
                                         data-ai-reason="{{ v.llm_reason or '' }}"
                                         data-annotation-url="{{ url_for('expertboard.api_variant_annotation', patient_id=r_patient.id, variant_id=v.id) }}"
@@ -395,6 +428,34 @@
                                         <td class="live-vep-cell">
                                             <span class="live-vep-summary">{{ live_vep.impact or "Not refreshed" }}{% if live_vep.hgvsc %} · {{ live_vep.hgvsc }}{% endif %}</span>
                                             <span class="annotation-last-updated">Last updated: {{ v.vep_annotation_updated_at or "Not yet" }}</span>
+                                            {% set live_vep_full = r_variant_annotations.get(v.id) %}
+                                            {% if live_vep_full %}
+                                                <details class="raw-info-details">
+                                                    <summary>View VEP JSON</summary>
+                                                    <pre class="live-vep-json">{{ live_vep_full|tojson(indent=2) }}</pre>
+                                                </details>
+                                            {% else %}
+                                                <pre class="live-vep-json" hidden></pre>
+                                            {% endif %}
+                                        </td>
+                                        <td class="live-clinvar-cell">
+                                            <span class="live-clinvar-summary">
+                                                {% if clinvar_summary %}
+                                                    {% if clinvar_significance is mapping %}{{ clinvar_significance.get('description') or clinvar_significance.get('value') or "ClinVar record" }}{% else %}{{ clinvar_significance or "ClinVar record" }}{% endif %}
+                                                {% elif live_clinvar.submissions %}SCV evidence{% else %}Not fetched{% endif %}
+                                            </span>
+                                            <span class="live-clinvar-review">
+                                                {% if clinvar_review_status %}{{ clinvar_review_status }}{% endif %}
+                                            </span>
+                                            <span class="annotation-last-updated">Last updated:<br>{{ v.clinvar_annotation_updated_at or "Not yet" }}</span>
+                                            {% if live_clinvar %}
+                                                <details class="raw-info-details">
+                                                    <summary>View ClinVar JSON</summary>
+                                                    <pre class="live-clinvar-json">{{ live_clinvar|tojson(indent=2) }}</pre>
+                                                </details>
+                                            {% else %}
+                                                <pre class="live-clinvar-json" hidden></pre>
+                                            {% endif %}
                                         </td>
                                         {# ── Same-variant assessments from other patients ── #}
                                         <td class="assessment-cell">
@@ -490,6 +551,7 @@
                                 var hgvs     = document.getElementById('vf-hgvs').value.trim().toLowerCase();
                                 var type     = document.getElementById('vf-type').value.trim().toLowerCase();
                                 var clnsig   = document.getElementById('vf-clnsig').value.toLowerCase();
+                                var impact   = document.getElementById('vf-impact').value.toLowerCase();
                                 var note     = document.getElementById('vf-note').value.trim().toLowerCase();
                                 var past     = document.getElementById('vf-past').value;
                                 var assessed = document.getElementById('vf-assessed').value;
@@ -499,13 +561,14 @@
                                         (!hgvs     || (row.dataset.hgvs || '').includes(hgvs)) &&
                                         (!type     || row.dataset.type.includes(type)) &&
                                         (!clnsig   || row.dataset.clnsig === clnsig) &&
+                                        (!impact   || (row.dataset.vepImpact || '') === impact) &&
                                         (!note     || (row.dataset.note || '').includes(note)) &&
                                         (!past     || ('|' + (row.dataset.past || '') + '|').includes('|' + past + '|')) &&
                                         (!assessed || ('|' + (row.dataset.assessed || '') + '|').includes('|' + assessed + '|'));
                                     row.style.display = match ? '' : 'none';
                                 });
                             }
-                            ['vf-gene', 'vf-hgvs', 'vf-type', 'vf-clnsig', 'vf-note', 'vf-past', 'vf-assessed'].forEach(function (id) {
+                            ['vf-gene', 'vf-hgvs', 'vf-type', 'vf-clnsig', 'vf-impact', 'vf-note', 'vf-past', 'vf-assessed'].forEach(function (id) {
                                 var el = document.getElementById(id);
                                 if (el) {
                                     el.addEventListener('input', applyFilters);
@@ -1682,8 +1745,92 @@
                 }
             }
             var updated = row.querySelector('.live-vep-cell .annotation-last-updated');
+            var pageUpdated = document.getElementById('annotation-last-updated');
+            var updatedAt = annotation.updated_at || formatAnnotationTimestamp(new Date());
             if (updated) {
-                updated.textContent = 'Last updated:\n' + formatAnnotationTimestamp(new Date());
+                updated.textContent = 'Last updated:\n' + updatedAt;
+            }
+            if (pageUpdated) {
+                pageUpdated.innerHTML = 'Last updated:<br>' + updatedAt;
+            }
+            var vepCell = row.querySelector('.live-vep-cell');
+            if (vepCell) {
+                var vepJsonBlock = vepCell.querySelector('.live-vep-json');
+                var vepJsonText = JSON.stringify(annotation, null, 2);
+                if (vepJsonBlock && vepJsonBlock.closest('details')) {
+                    vepJsonBlock.textContent = vepJsonText;
+                } else {
+                    if (vepJsonBlock) vepJsonBlock.remove();
+                    var vepDetails = document.createElement('details');
+                    vepDetails.className = 'raw-info-details';
+                    var vepSummaryEl = document.createElement('summary');
+                    vepSummaryEl.textContent = 'View VEP JSON';
+                    var vepPre = document.createElement('pre');
+                    vepPre.className = 'live-vep-json';
+                    vepPre.textContent = vepJsonText;
+                    vepDetails.append(vepSummaryEl, vepPre);
+                    vepCell.appendChild(vepDetails);
+                }
+            }
+        }
+
+        function applyClinvarToRow(row, annotation) {
+            var francisInfo = annotation.francis_info || {};
+            Object.keys(francisInfo).forEach(function(name) {
+                var target = row.querySelector('[data-francis-field="' + name + '"]');
+                if (target) target.textContent = francisInfo[name];
+            });
+            if (annotation.francis_priority !== undefined) {
+                row.dataset.priority = String(annotation.francis_priority);
+                row.querySelector('.priority-rank-value').textContent = annotation.francis_priority;
+            }
+            var summary = annotation.summary || {};
+            // Current NCBI esummary (v2.0) nests classification under germline_classification;
+            // older responses used clinical_significance.
+            var classification = summary.germline_classification || summary.clinical_significance || {};
+            var significance = classification;
+            var reviewStatus = summary.review_status;
+            if (significance && typeof significance === 'object') {
+                reviewStatus = reviewStatus || significance.review_status;
+                significance = significance.description || significance.value || '';
+            }
+            if (significance) {
+                row.dataset.clnsig = String(significance).toLowerCase().replace(/ /g, '_');
+            }
+            var clinvarSummary = row.querySelector('.live-clinvar-summary');
+            var clinvarReview = row.querySelector('.live-clinvar-review');
+            var clinvarUpdated = row.querySelector('.live-clinvar-cell .annotation-last-updated');
+            if (clinvarSummary) {
+                clinvarSummary.textContent = significance ||
+                    ((annotation.submissions || []).length ? 'SCV evidence' : 'No record');
+            }
+            if (clinvarReview) {
+                clinvarReview.textContent = reviewStatus ||
+                    ((annotation.submissions || []).map(function(item) {
+                        return item.review_status || '';
+                    }).filter(Boolean).join('; '));
+            }
+            if (clinvarUpdated) {
+                clinvarUpdated.innerHTML = 'Last updated:<br>' + (annotation.updated_at || 'now');
+            }
+            var clinvarCell = row.querySelector('.live-clinvar-cell');
+            if (clinvarCell) {
+                var jsonBlock = clinvarCell.querySelector('.live-clinvar-json');
+                var jsonText = JSON.stringify(annotation, null, 2);
+                if (jsonBlock && jsonBlock.closest('details')) {
+                    jsonBlock.textContent = jsonText;
+                } else {
+                    if (jsonBlock) jsonBlock.remove();
+                    var details = document.createElement('details');
+                    details.className = 'raw-info-details';
+                    var summaryEl = document.createElement('summary');
+                    summaryEl.textContent = 'View ClinVar JSON';
+                    var pre = document.createElement('pre');
+                    pre.className = 'live-clinvar-json';
+                    pre.textContent = jsonText;
+                    details.append(summaryEl, pre);
+                    clinvarCell.appendChild(details);
+                }
             }
         }
 
@@ -1712,7 +1859,26 @@
             }
         }
 
-        async function pollVepRefresh(button, jobId, rows, status) {
+        async function refreshVepAndClinvar(button) {
+            var confirmed = await confirmAnnotationRefresh();
+            if (!confirmed) return;
+            var status = document.getElementById('annotation-refresh-status');
+            setButtonLoading(button, 'Refreshing VEP & ClinVar…');
+            status.textContent = 'Starting background VEP refresh...';
+            try {
+                var response = await fetch(button.dataset.startUrl, {
+                    method: 'POST', headers: {'Accept': 'application/json'}
+                });
+                var job = await response.json();
+                if (!response.ok) throw new Error(job.error || 'Could not start VEP refresh.');
+                pollVepRefresh(button, job.job_id, [], status, true);
+            } catch (error) {
+                status.textContent = 'VEP refresh failed to start: ' + error.message;
+                clearButtonLoading(button);
+            }
+        }
+
+        async function pollVepRefresh(button, jobId, rows, status, fetchClinvarAfter) {
             try {
                 var url = button.dataset.statusUrlTemplate.replace('JOB_ID', jobId);
                 var response = await fetch(url, {headers: {'Accept': 'application/json'}});
@@ -1728,13 +1894,79 @@
                     return;
                 }
                 var failures = Object.keys(job.failures || {});
+                if (!fetchClinvarAfter && Object.keys(job.results || {}).length) {
+                    applyFrancisFilter();
+                }
                 status.textContent = failures.length
                     ? 'Completed with errors for variant(s): ' + failures.join(', ')
-                    : 'All VEP / VRS annotations refreshed and saved.';
-                button.disabled = false;
+                    : 'All VEP / VRS annotations refreshed, saved, and Francis filter applied.';
+                if (fetchClinvarAfter) {
+                    status.textContent = 'VEP complete. Fetching ClinVar for all variants...';
+                    var clinvarResponse = await fetch(button.dataset.clinvarUrl, {
+                        method: 'POST', headers: {'Accept': 'application/json'}
+                    });
+                    var clinvarData = await clinvarResponse.json();
+                    if (!clinvarResponse.ok) throw new Error(clinvarData.error || 'ClinVar lookup failed.');
+                    var clinvarFailures = Object.keys(clinvarData.failures || {});
+                    Object.keys(clinvarData.results || {}).forEach(function(variantId) {
+                        var row = document.querySelector('#variant-tbody tr[data-vid="' + variantId + '"]');
+                        if (row) applyClinvarToRow(row, clinvarData.results[variantId]);
+                    });
+                    applyFrancisFilter();
+                    status.textContent = clinvarFailures.length
+                        ? 'VEP complete. ClinVar saved with ' + clinvarFailures.length + ' failure(s). Reload to apply ClinVar values.'
+                        : 'VEP & ClinVar complete. Reload to apply ClinVar values to Francis filter.';
+                }
+                clearButtonLoading(button);
             } catch (error) {
                 status.textContent = 'VEP refresh status failed: ' + error.message;
-                button.disabled = false;
+                clearButtonLoading(button);
+            }
+        }
+
+        function applyFrancisFilter() {
+            var button = document.getElementById('priority-sort-btn');
+            if (!button) return;
+            var tbody = document.getElementById('variant-tbody');
+            var rows = Array.from(tbody.querySelectorAll('tr:not(.assessment-form-row)'));
+            rows.sort(function(a, b) {
+                return Number(a.dataset.priority || 99) - Number(b.dataset.priority || 99);
+            });
+            rows.forEach(function(row) {
+                tbody.appendChild(row);
+                var formRow = document.getElementById('af-' + row.dataset.vid);
+                if (formRow) tbody.appendChild(formRow);
+            });
+            document.getElementById('variant-table').classList.add('priority-ranked');
+            button.textContent = 'Sorted by evaluation priority';
+            button.disabled = true;
+        }
+
+        async function refreshClinvarOnly(button) {
+            var confirmed = await confirmAnnotationRefresh();
+            if (!confirmed) return;
+            var status = document.getElementById('annotation-refresh-status');
+            setButtonLoading(button, 'Refreshing ClinVar…');
+            status.textContent = 'Fetching ClinVar for all variants...';
+            try {
+                var response = await fetch(button.dataset.clinvarUrl, {
+                    method: 'POST', headers: {'Accept': 'application/json'}
+                });
+                var data = await response.json();
+                if (!response.ok) throw new Error(data.error || 'ClinVar lookup failed.');
+                var failures = Object.keys(data.failures || {});
+                Object.keys(data.results || {}).forEach(function(variantId) {
+                    var row = document.querySelector('#variant-tbody tr[data-vid="' + variantId + '"]');
+                    if (row) applyClinvarToRow(row, data.results[variantId]);
+                });
+                applyFrancisFilter();
+                status.textContent = failures.length
+                    ? 'ClinVar refreshed with ' + failures.length + ' failure(s) for variant(s): ' + failures.join(', ')
+                    : 'All ClinVar annotations refreshed and Francis filter applied.';
+            } catch (error) {
+                status.textContent = 'ClinVar refresh failed: ' + error.message;
+            } finally {
+                clearButtonLoading(button);
             }
         }
 
@@ -1743,7 +1975,7 @@
             if (!requestRow) return;
             var status = document.getElementById('clinvar-status');
             var url = requestRow.dataset.clinvarUrl;
-            button.disabled = true;
+            setButtonLoading(button, 'Fetching ClinVar…');
             status.textContent = 'Fetching ClinVar...';
             try {
                 var response = await fetch(url, {
@@ -1756,6 +1988,16 @@
                 document.getElementById('ai-input-clinvar').textContent =
                     JSON.stringify(data.result || {}, null, 2);
                 var clinvarResult = data.result || {};
+                var tableRow = document.querySelector(
+                    '#variant-tbody tr[data-vid="' + requestRow.dataset.vid + '"]'
+                );
+                if (tableRow) {
+                    applyClinvarToRow(tableRow, Object.assign({}, clinvarResult, {
+                        updated_at: data.updated_at,
+                        francis_info: data.francis_info,
+                        francis_priority: data.francis_priority
+                    }));
+                }
                 var clinvarQuery = clinvarResult.query || '';
                 var clinvarMessage = clinvarResult.summary ||
                     (clinvarResult.submissions || []).length
@@ -1763,9 +2005,10 @@
                     : 'No ClinVar summary or SCV evidence found for this query.';
                 status.replaceChildren();
                 status.appendChild(document.createTextNode(clinvarMessage));
-                if (clinvarQuery) {
+                if (clinvarQuery || clinvarResult.clinvar_url) {
                     var clinvarLink = document.createElement('a');
-                    clinvarLink.href = 'https://www.ncbi.nlm.nih.gov/clinvar/?term=' + encodeURIComponent(clinvarQuery);
+                    clinvarLink.href = clinvarResult.clinvar_url ||
+                        'https://www.ncbi.nlm.nih.gov/clinvar/?term=' + encodeURIComponent(clinvarQuery);
                     clinvarLink.target = '_blank';
                     clinvarLink.rel = 'noopener noreferrer';
                     clinvarLink.className = 'ai-source-link';
@@ -1776,7 +2019,7 @@
             } catch (error) {
                 status.textContent = 'Error: ' + error.message;
             } finally {
-                button.disabled = false;
+                clearButtonLoading(button);
             }
         }
 
@@ -1789,6 +2032,26 @@
                 minute: '2-digit',
                 second: '2-digit'
             });
+        }
+
+        function setButtonLoading(button, loadingText) {
+            if (!button) return;
+            if (button.dataset.originalText === undefined) {
+                button.dataset.originalText = button.textContent;
+            }
+            button.textContent = loadingText || 'Loading…';
+            button.classList.add('btn-loading');
+            button.disabled = true;
+        }
+
+        function clearButtonLoading(button) {
+            if (!button) return;
+            if (button.dataset.originalText !== undefined) {
+                button.textContent = button.dataset.originalText;
+                delete button.dataset.originalText;
+            }
+            button.classList.remove('btn-loading');
+            button.disabled = false;
         }
 
         function confirmAnnotationRefresh() {
