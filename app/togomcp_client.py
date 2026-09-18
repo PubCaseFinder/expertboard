@@ -8,6 +8,7 @@ import requests
 
 
 DEFAULT_BASE_URL = "https://togomcp.rdfportal.org/mcp"
+DEFAULT_OLS4MCP_BASE_URL = "https://www.ebi.ac.uk/ols4/api/mcp"
 ALLOWED_TOOLS = {
     "pubcasefinder_rank_by_phenotypes",
     "pubcasefinder_get_case_reports",
@@ -16,6 +17,10 @@ ALLOWED_TOOLS = {
 
 def get_base_url():
     return (os.environ.get("TOGOMCP_BASE_URL") or DEFAULT_BASE_URL).strip()
+
+
+def get_ols4_base_url():
+    return (os.environ.get("OLS4MCP_BASE_URL") or DEFAULT_OLS4MCP_BASE_URL).strip()
 
 
 def extract_hpo_ids(values):
@@ -36,8 +41,9 @@ def _response_payload(response):
 
 
 class _McpSession:
-    def __init__(self):
+    def __init__(self, base_url=None):
         self.http = requests.Session()
+        self.base_url = base_url or get_base_url()
         self.headers = {
             "Accept": "application/json, text/event-stream",
             "Content-Type": "application/json",
@@ -48,7 +54,7 @@ class _McpSession:
         payload = self._request(
             "initialize",
             {
-                "protocolVersion": "2025-06-18",
+                "protocolVersion": "2025-03-26",
                 "capabilities": {},
                 "clientInfo": {"name": "ExpertBoard", "version": "0.1"},
             },
@@ -59,7 +65,7 @@ class _McpSession:
         if session_id:
             self.headers["Mcp-Session-Id"] = session_id
         self.last_response = self.http.post(
-            get_base_url(),
+            self.base_url,
             headers=self.headers,
             json={"jsonrpc": "2.0", "method": "notifications/initialized"},
             timeout=30,
@@ -70,7 +76,7 @@ class _McpSession:
     def __exit__(self, _exc_type, _exc, _traceback):
         if "Mcp-Session-Id" in self.headers:
             try:
-                self.http.delete(get_base_url(), headers=self.headers, timeout=10)
+                self.http.delete(self.base_url, headers=self.headers, timeout=10)
             except requests.RequestException:
                 pass
         self.http.close()
@@ -78,7 +84,7 @@ class _McpSession:
     def _request(self, method, params):
         self.request_id += 1
         self.last_response = self.http.post(
-            get_base_url(),
+            self.base_url,
             headers=self.headers,
             json={
                 "jsonrpc": "2.0",
@@ -91,7 +97,7 @@ class _McpSession:
         return _response_payload(self.last_response)
 
     def call_tool(self, tool_name, arguments):
-        if tool_name not in ALLOWED_TOOLS:
+        if tool_name not in ALLOWED_TOOLS and tool_name != "searchClasses":
             raise ValueError(f"TogoMCP tool is not allowed: {tool_name}")
         payload = self._request(
             "tools/call", {"name": tool_name, "arguments": arguments}
@@ -107,6 +113,39 @@ class _McpSession:
         if result.get("isError"):
             raise RuntimeError(text or f"{tool_name} failed")
         return json.loads(text)
+
+
+def search_ols4_classes(query):
+    """Call OLS4MCP searchClasses for one user-approved phenotype label."""
+    base_url = get_ols4_base_url()
+    if not base_url:
+        raise RuntimeError("OLS4MCP is not configured. Set OLS4MCP_BASE_URL.")
+    with _McpSession(base_url) as client:
+        return client.call_tool("searchClasses", {
+            "query": str(query or "").strip(),
+            "ontologyId": "hp",
+            "pageNum": 0,
+            "pageSize": 20,
+            "includeObsoleteEntities": False,
+        })
+
+
+def search_ols4_classes_many(queries):
+    """Search multiple approved labels through one OLS4MCP session."""
+    base_url = get_ols4_base_url()
+    if not base_url:
+        raise RuntimeError("OLS4MCP is not configured. Set OLS4MCP_BASE_URL.")
+    with _McpSession(base_url) as client:
+        return [
+            client.call_tool("searchClasses", {
+                "query": str(query or "").strip(),
+                "ontologyId": "hp",
+                "pageNum": 0,
+                "pageSize": 20,
+                "includeObsoleteEntities": False,
+            })
+            for query in queries
+        ]
 
 
 def collect_pubcasefinder_evidence(phenotypes, rank_limit=10, report_limit=10):

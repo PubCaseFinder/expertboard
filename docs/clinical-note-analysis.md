@@ -7,10 +7,11 @@ phenotype and clinical-context candidates. The system does not send the full
 clinical note to TogoMCP. Instead, it sends only confirmed HPO identifiers to
 the PubCaseFinder tools.
 
-The workflow is human-governed:
+The workflow is human-governed. External phenotype searches are blocked until
+the reviewer explicitly selects the extracted symptoms:
 
 ```text
-ClinicalNote -> candidate extraction -> reviewer confirmation -> external lookup
+ClinicalNote -> label extraction -> reviewer selection -> OLS4MCP -> HPO confirmation -> PubCaseFinder
 ```
 
 ## End-to-end flow
@@ -21,11 +22,13 @@ flowchart TD
 
     B -->|HPO extraction| C["POST /api/patients/{id}/phenotypes/extract"]
     C --> D["LLM extraction<br/>extract_hpo_phenotypes"]
-    D --> E["Phenotype labels + source phrases"]
-    E --> F["HPO terminology lookup<br/>hpo_client.resolve_candidates"]
-    F --> G["HPO candidates returned to UI"]
-    G --> H["Reviewer selects and confirms candidates"]
-    H --> I["PatientPhenotype records<br/>confirmed HPO IDs + provenance"]
+    D --> P["Phenotype labels + source phrases<br/>No HPO lookup yet"]
+    P --> Q["Reviewer selects symptom candidates"]
+    Q --> R["POST /phenotypes/resolve-candidates"]
+    R --> S["OLS4MCP searchClasses<br/>selected labels only"]
+    S --> T["HPO candidates returned to UI"]
+    T --> U["Each resolved candidate shows a Confirm button"]
+    U --> V["PatientPhenotype records<br/>confirmed HPO IDs + provenance"]
 
     B -->|Clinical context extraction| J["POST /api/patients/{id}/clinical-context/extract"]
     J --> K["LLM extraction<br/>extract_clinical_context"]
@@ -33,18 +36,18 @@ flowchart TD
     L --> M["Reviewer confirms candidates"]
     M --> N["Patient clinical_context"]
 
-    I --> O["PubCaseFinder request"]
-    O --> P["TogoMCP client extracts HP:\\d{7}"]
-    P --> Q["JSON-RPC tools/call<br/>hpo_ids only"]
-    Q --> R["TogoMCP / PubCaseFinder<br/>rankings and case reports"]
+    V --> W["Explicit PubCaseFinder action"]
+    W --> X["TogoMCP client extracts HP:\\d{7}"]
+    X --> Y["JSON-RPC tools/call<br/>hpo_ids only"]
+    Y --> Z["TogoMCP / PubCaseFinder<br/>rankings and case reports"]
 
-    A -->|Variant analysis| S["analyze_variants"]
-    N --> S
-    R --> S
-    S --> T["LLM variant analysis<br/>clinical note + variants + evidence"]
-    T --> U["Variant prioritization and ACMG-style suggestions"]
+    A -->|Variant analysis| AA["analyze_variants"]
+    N --> AA
+    Z --> AA
+    AA --> AB["LLM variant analysis<br/>clinical note + variants + evidence"]
+    AB --> AC["Variant prioritization and ACMG-style suggestions"]
 
-    X["Important boundary:<br/>ClinicalNote is not sent to TogoMCP"] -.-> Q
+    AD["Security boundary:<br/>No OLS4MCP or TogoMCP request before reviewer selection"] -.-> S
 ```
 
 ## Processing stages
@@ -60,13 +63,48 @@ note does not call TogoMCP.
 the configured LLM. The LLM returns phenotype labels and short source phrases.
 It is instructed to exclude negated, hypothetical, and family-member findings.
 
-The extracted labels are then resolved through the HPO terminology client.
-This step is not a TogoMCP call.
+The extracted labels are returned to the UI without HPO lookup. No OLS4MCP or
+other terminology-service request is made at this stage.
 
-### 3. A reviewer confirms HPO terms
+### 3. A reviewer selects symptoms for HPO lookup
 
-The UI presents the candidates for review. On confirmation, the application
-saves `PatientPhenotype` records containing:
+The reviewer selects which extracted labels are actual patient symptoms and
+clicks `Confirm symptoms and search HPO`. Only those selected labels are sent
+to OLS4MCP. Unselected labels and the full ClinicalNote are not sent to the
+terminology search.
+
+The default public OLS4MCP endpoint is:
+
+```text
+https://www.ebi.ac.uk/ols4/api/mcp
+```
+
+The application calls the `searchClasses` tool with the following shape:
+
+```json
+{
+  "name": "searchClasses",
+  "arguments": {
+    "query": "proximal muscle weakness",
+    "ontologyId": "hp",
+    "pageNum": 0,
+    "pageSize": 20,
+    "includeObsoleteEntities": false
+  }
+}
+```
+
+The endpoint can be overridden with `OLS4MCP_BASE_URL`.
+
+### 4. A reviewer confirms HPO terms individually
+
+The UI keeps all extracted symptom candidates visible. Each candidate that has
+an HPO match gets its own `Confirm` button on the right side of the row. The
+reviewer can confirm terms one at a time; confirming one candidate does not
+remove the other unresolved candidates from the screen.
+
+The individual confirmation is local-only. It does not call OLS4MCP again.
+The application saves a `PatientPhenotype` record containing:
 
 | Field | Meaning |
 |---|---|
@@ -76,10 +114,10 @@ saves `PatientPhenotype` records containing:
 | `source_quote` | Optional phrase from the clinical note |
 | `confirmed_by` | Reviewer who confirmed the term |
 
-The note itself is not copied into the TogoMCP request. `source_quote` remains
+The note itself is not copied into the OLS4MCP request. `source_quote` remains
 local provenance data.
 
-### 4. TogoMCP receives HPO IDs
+### 5. PubCaseFinder receives HPO IDs after explicit action
 
 The PubCaseFinder routes use either:
 
@@ -99,8 +137,10 @@ The TogoMCP client applies a regular expression and keeps only values matching
 
 The available tools are PubCaseFinder phenotype ranking and case-report
 retrieval. ClinicalNote text is not included in these JSON-RPC arguments.
+HPO confirmation does not automatically start a PubCaseFinder request; the
+reviewer must explicitly request gene, disease, or case-report search.
 
-### 5. Variant analysis uses a separate LLM request
+### 6. Variant analysis uses a separate LLM request
 
 When variant analysis is requested, `analyze_variants` sends the ClinicalNote
 to the configured LLM together with variant annotations. When available, it
@@ -118,18 +158,21 @@ forwarded from there to TogoMCP by the application.
 | Destination | Data sent | Purpose |
 |---|---|---|
 | Configured LLM | ClinicalNote, extraction prompt, or variant-analysis context | Extract candidates and analyze variants |
-| HPO terminology service | Extracted phenotype labels or an HPO ID | Resolve phenotype terms |
+| OLS4MCP | Reviewer-selected phenotype labels only | Resolve labels to HPO terms |
 | TogoMCP / PubCaseFinder | Confirmed or supplied HPO IDs, target, and limits | Rank diseases/genes and retrieve case reports |
 
 ## Review and safety properties
 
 - LLM output is treated as a candidate, not as a confirmed phenotype.
+- A reviewer must select symptom candidates before any OLS4MCP search.
 - A reviewer must confirm HPO candidates before they become the patient's
   confirmed phenotype set.
 - Source phrases are checked against the saved note before being stored as
   provenance.
+- OLS4MCP receives selected labels, not the original free-text note.
 - TogoMCP uses HPO identifiers for phenotype-based search and does not receive
   the original free-text note.
+- PubCaseFinder is never launched automatically after HPO confirmation.
 - PubCaseFinder results are evidence for review; they do not by themselves
   establish causality or an ACMG criterion.
 
@@ -140,7 +183,8 @@ forwarded from there to TogoMCP by the application.
 - ClinicalNote context extraction: `app/routes.py`,
   `/api/patients/{patient_id}/clinical-context/extract`
 - LLM extraction and variant analysis: `app/llm.py`
-- HPO normalization before external lookup: `app/togomcp_client.py`,
-  `extract_hpo_ids`
+- OLS4MCP label resolution: `app/hpo_client.py`,
+  `resolve_candidates_via_ols4mcp`
+- OLS4MCP transport: `app/togomcp_client.py`, `search_ols4_classes`
 - PubCaseFinder/TogoMCP calls: `app/togomcp_client.py`,
   `collect_pubcasefinder_*`

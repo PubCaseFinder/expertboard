@@ -172,10 +172,7 @@ def extract_hpo_phenotypes(clinical_text):
             continue
         seen_labels.add(normalized)
         unique_candidates.append(candidate)
-    try:
-        return hpo_client.resolve_candidates(unique_candidates)
-    except requests.RequestException as exc:
-        raise RuntimeError(f"HPO terminology lookup failed: {exc}") from exc
+    return unique_candidates
 
 
 def extract_clinical_context(clinical_text):

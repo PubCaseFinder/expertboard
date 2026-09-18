@@ -3,6 +3,7 @@
 import re
 
 import requests
+from app import togomcp_client
 
 
 OLS_SEARCH_URL = "https://www.ebi.ac.uk/ols4/api/search"
@@ -73,4 +74,61 @@ def resolve_candidates(candidates):
                 "source_text": str(candidate.get("source_text") or ""),
             }
         )
+    return resolved
+
+
+def resolve_candidates_via_ols4mcp(candidates):
+    """Resolve only user-approved phenotype labels through OLS4MCP."""
+    def documents_from_payload(payload):
+        if isinstance(payload, list):
+            return payload
+        if not isinstance(payload, dict):
+            return []
+        response = payload.get("response")
+        if isinstance(response, dict) and isinstance(response.get("docs"), list):
+            return response["docs"]
+        for key in ("docs", "results", "items", "classes"):
+            value = payload.get(key)
+            if isinstance(value, list):
+                return value
+        result = payload.get("result")
+        if isinstance(result, dict):
+            return documents_from_payload(result)
+        return []
+
+    resolved = []
+    seen = set()
+    approved = [
+        candidate for candidate in candidates
+        if str(candidate.get("label") or "").strip()
+    ]
+    payloads = togomcp_client.search_ols4_classes_many(
+        [candidate["label"] for candidate in approved]
+    )
+    for candidate, payload in zip(approved, payloads):
+        query = str(candidate.get("label") or "").strip()
+        documents = documents_from_payload(payload)
+        for document in documents or []:
+            if not isinstance(document, dict):
+                continue
+            raw_id = str(
+                document.get("obo_id") or document.get("oboId") or
+                document.get("short_form") or document.get("id") or
+                document.get("iri") or ""
+            )
+            hpo_match = re.search(r"HP[_:]\d{7}", raw_id, re.IGNORECASE)
+            hpo_id = hpo_match.group(0).replace("_", ":").upper() if hpo_match else ""
+            if not re.fullmatch(r"HP:\d{7}", hpo_id) or hpo_id in seen:
+                continue
+            if document.get("is_obsolete") or document.get("isObsolete"):
+                continue
+            seen.add(hpo_id)
+            resolved.append({
+                "hpo_id": hpo_id,
+                "label": str(document.get("label") or document.get("prefLabel") or query),
+                "match_type": "suggested",
+                "extracted_label": query,
+                "source_text": str(candidate.get("source_text") or ""),
+            })
+            break
     return resolved

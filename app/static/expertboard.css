@@ -2154,7 +2154,7 @@ h1 {
 }
 .hpo-candidate-item {
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-columns: auto minmax(0, 1fr) auto;
     gap: 8px;
     align-items: start;
 }
@@ -2164,6 +2164,7 @@ h1 {
 .hpo-confirmed-item strong { font-size: 12px; color: #111827; }
 .hpo-candidate-copy span,
 .hpo-confirmed-item span { font-size: 11px; color: #64748b; }
+.hpo-candidate-confirm { align-self: center; white-space: nowrap; }
 .hpo-match-suggested { color: #9a3412 !important; }
 .hpo-review-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
 .hpo-confirmed-block { margin-top: 14px; padding-top: 12px; border-top: 1px solid #dbe3ec; }

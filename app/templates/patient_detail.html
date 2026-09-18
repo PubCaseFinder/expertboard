@@ -113,8 +113,8 @@
                            </div>
                         <div id="hpo-candidate-list" class="hpo-candidate-list"></div>
                         <div class="hpo-review-actions">
-                            <button class="inline-button" id="hpo-confirm-btn" type="button"
-                                    onclick="confirmPatientHpo(this)" disabled>Confirm selected HPO</button>
+                            <button class="inline-button" id="hpo-resolve-btn" type="button"
+                                onclick="resolveApprovedHpoCandidates(this)" disabled>Confirm symptoms and search HPO</button>
                         </div>
                         <div id="hpo-disease-results" class="hpo-disease-results" hidden></div>
                         <div class="hpo-confirmed-block">
@@ -1118,7 +1118,9 @@
                 var copy = document.createElement('span');
                 copy.className = 'hpo-candidate-copy';
                 var heading = document.createElement('strong');
-                heading.textContent = candidate.hpo_id + ' · ' + candidate.label;
+                heading.textContent = candidate.hpo_id
+                    ? candidate.hpo_id + ' · ' + candidate.label
+                    : candidate.label;
                 var source = document.createElement('span');
                 source.textContent = candidate.source_text
                     ? 'Clinical text: “' + candidate.source_text + '”'
@@ -1130,9 +1132,20 @@
                 if (candidate.match_type !== 'exact') match.className = 'hpo-match-suggested';
                 copy.append(heading, source, match);
                 row.append(checkbox, copy);
+                if (candidate.hpo_id) {
+                    var confirm = document.createElement('button');
+                    confirm.type = 'button';
+                    confirm.className = 'link-button hpo-candidate-confirm';
+                    confirm.textContent = 'Confirm';
+                    confirm.addEventListener('click', function(event) {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        confirmSingleHpo(confirm, index);
+                    });
+                    row.appendChild(confirm);
+                }
                 list.appendChild(row);
             });
-            document.getElementById('hpo-confirm-btn').disabled = !hpoCandidates.length;
         }
 
         function renderConfirmedPhenotypes(confirmed) {
@@ -1175,9 +1188,6 @@
             document.getElementById('hpo-disease-results').replaceChildren();
             document.getElementById('hpo-disease-results').hidden = true;
             updateVaSpecPreview();
-            if (confirmed.length) {
-                markPhenotypeRelatedGenes();
-            }
         }
 
         function extractHpoCandidates(button) {
@@ -1188,7 +1198,7 @@
                 return;
             }
             button.disabled = true;
-            status.textContent = 'Extracting phenotype candidates and resolving HPO terms...';
+            status.textContent = 'Extracting phenotype candidates locally for review...';
             status.classList.remove('is-error');
             fetch("{{ url_for('expertboard.api_patient_phenotypes_extract', patient_id=r_patient.id) }}", {
                 method: 'POST', headers: {'Accept': 'application/json'}
@@ -1201,9 +1211,57 @@
                 })
                 .then(function(data) {
                     renderHpoCandidates(data.candidates || []);
+                    document.getElementById('hpo-resolve-btn').disabled = !(data.candidates || []).length;
                     status.textContent = data.candidates.length
                         ? 'Review each candidate, then confirm the selected HPO terms.'
                         : 'No phenotype candidates were found.';
+                })
+                .catch(function(error) {
+                    status.textContent = error.message;
+                    status.classList.add('is-error');
+                })
+                .finally(function() { button.disabled = false; });
+        }
+
+        function resolveApprovedHpoCandidates(button) {
+            var selected = Array.from(document.querySelectorAll('#hpo-candidate-list input:checked'))
+                .map(function(checkbox) { return hpoCandidates[Number(checkbox.dataset.index)]; })
+                .filter(function(candidate) { return candidate && !candidate.hpo_id; });
+            var status = document.getElementById('hpo-review-status');
+            if (!selected.length) {
+                status.textContent = 'Select at least one symptom before searching HPO.';
+                status.classList.add('is-error');
+                return;
+            }
+            button.disabled = true;
+            status.textContent = 'Searching OLS4MCP for the selected symptoms...';
+            status.classList.remove('is-error');
+            fetch("{{ url_for('expertboard.api_patient_phenotypes_resolve_candidates', patient_id=r_patient.id) }}", {
+                method: 'POST',
+                headers: {'Accept': 'application/json', 'Content-Type': 'application/json'},
+                body: JSON.stringify({candidates: selected})
+            })
+                .then(function(response) {
+                    return response.json().then(function(data) {
+                        if (!response.ok) throw new Error(data.error || 'OLS4MCP search failed.');
+                        return data;
+                    });
+                })
+                .then(function(data) {
+                    var resolved = data.candidates || [];
+                    var resolvedByLabel = {};
+                    resolved.forEach(function(candidate) {
+                        var key = String(candidate.extracted_label || candidate.label || '').trim().toLowerCase();
+                        if (key) resolvedByLabel[key] = candidate;
+                    });
+                    hpoCandidates = hpoCandidates.map(function(candidate) {
+                        var key = String(candidate.label || '').trim().toLowerCase();
+                        return resolvedByLabel[key] || candidate;
+                    });
+                    renderHpoCandidates(hpoCandidates);
+                    status.textContent = resolved.length
+                        ? resolved.length + ' HPO match(es) found. Review all candidates, then confirm selected HPO.'
+                        : 'No HPO matches were found. Original symptom candidates were kept for review.';
                 })
                 .catch(function(error) {
                     status.textContent = error.message;
@@ -1266,6 +1324,42 @@
                     status.classList.add('is-error');
                 })
                 .finally(function() { button.disabled = false; });
+        }
+
+        function confirmSingleHpo(button, index) {
+            var candidate = hpoCandidates[index];
+            if (!candidate || !candidate.hpo_id) return;
+            var status = document.getElementById('hpo-review-status');
+            var selected = confirmedPhenotypeContext().concat([candidate]);
+            selected = selected.filter(function(item, itemIndex, items) {
+                return items.findIndex(function(other) { return other.hpo_id === item.hpo_id; }) === itemIndex;
+            });
+            button.disabled = true;
+            status.textContent = 'Saving ' + candidate.hpo_id + '...';
+            fetch("{{ url_for('expertboard.api_patient_phenotypes_confirm', patient_id=r_patient.id) }}", {
+                method: 'POST',
+                headers: {'Accept': 'application/json', 'Content-Type': 'application/json'},
+                body: JSON.stringify({phenotypes: selected})
+            })
+                .then(function(response) {
+                    return response.json().then(function(data) {
+                        if (!response.ok) throw new Error(data.error || 'HPO confirmation failed.');
+                        return data;
+                    });
+                })
+                .then(function(data) {
+                    renderConfirmedPhenotypes(data.confirmed || []);
+                    hpoCandidates = hpoCandidates.filter(function(item, itemIndex) {
+                        return itemIndex !== index;
+                    });
+                    renderHpoCandidates(hpoCandidates);
+                    status.textContent = candidate.hpo_id + ' confirmed and saved.';
+                })
+                .catch(function(error) {
+                    status.textContent = error.message;
+                    status.classList.add('is-error');
+                    button.disabled = false;
+                });
         }
 
         function confirmPatientHpo(button) {
@@ -2243,9 +2337,7 @@
 
         // Auto-trigger gene marking on page load if confirmed phenotypes exist
         document.addEventListener('DOMContentLoaded', function() {
-            if (confirmedPhenotypeContext().length) {
-                markPhenotypeRelatedGenes();
-            }
+            // PubCaseFinder searches require an explicit user action.
         });
     </script>
     <script src="{{ url_for('static', filename='driver.js.iife.js', v='1.3.1') }}"></script>
@@ -2344,16 +2436,16 @@
                             element: '#hpo-extract-btn',
                             popover: {
                                 title: 'Extract candidates',
-                                description: 'Extract symptoms from the clinical note and resolve their HPO terms through TogoMCP and PubCaseFinder.',
+                                description: 'Extract symptoms from the clinical note, review them, then search HPO only for selected symptoms.',
                                 side: 'bottom',
                                 align: 'end'
                             }
                         },
                         {
-                            element: '#hpo-confirm-btn',
+                            element: '#hpo-candidate-list',
                             popover: {
-                                title: 'Confirm selected HPO',
-                                description: 'Select the correct HPO candidates, then confirm them to save the patient phenotype set.',
+                                title: 'Confirm HPO candidates',
+                                description: 'Use Confirm beside each resolved HPO candidate to save it to the patient phenotype set.',
                                 side: 'bottom',
                                 align: 'end'
                             }

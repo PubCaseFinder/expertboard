@@ -1010,6 +1010,23 @@ def api_patient_phenotypes_resolve(patient_id):
     )
 
 
+@bp.route("/api/patients/<int:patient_id>/phenotypes/resolve-candidates", methods=["POST"])
+def api_patient_phenotypes_resolve_candidates(patient_id):
+    if patients.get_patient(patient_id) is None:
+        abort(404)
+    payload = request.get_json(silent=True) or {}
+    candidates = payload.get("candidates")
+    if not isinstance(candidates, list):
+        return jsonify({"error": "candidates must be a JSON array."}), 400
+    try:
+        resolved = hpo_client.resolve_candidates_via_ols4mcp(
+            [item for item in candidates if isinstance(item, dict)]
+        )
+    except (requests.RequestException, RuntimeError, ValueError) as exc:
+        return jsonify({"error": str(exc)}), 502
+    return jsonify({"candidates": resolved})
+
+
 @bp.route("/api/patients/<int:patient_id>/phenotypes/confirm", methods=["POST"])
 def api_patient_phenotypes_confirm(patient_id):
     patient = patients.get_patient(patient_id)
@@ -1029,12 +1046,6 @@ def api_patient_phenotypes_confirm(patient_id):
         hpo_id = str(raw_item.get("hpo_id") or "").strip().upper()
         if not re.fullmatch(r"HP:\d{7}", hpo_id) or hpo_id in seen:
             continue
-        try:
-            resolved = hpo_client.resolve_id(hpo_id)
-        except requests.RequestException as exc:
-            return jsonify({"error": f"HPO terminology lookup failed: {exc}"}), 502
-        if resolved is None:
-            return jsonify({"error": f"Unknown or obsolete HPO ID: {hpo_id}"}), 400
         seen.add(hpo_id)
         source_text = str(raw_item.get("source_text") or "").strip()[:1000]
         if source_text and source_text.casefold() not in clinical_text.casefold():
@@ -1045,7 +1056,7 @@ def api_patient_phenotypes_confirm(patient_id):
         confirmed.append(
             {
                 "hpo_id": hpo_id,
-                "label": resolved["label"][:255],
+                "label": str(raw_item.get("label") or "Unlabelled phenotype")[:255],
                 "source": source,
                 "source_text": source_text,
             }
