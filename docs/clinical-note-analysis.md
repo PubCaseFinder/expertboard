@@ -23,23 +23,23 @@ flowchart TD
     B -->|HPO extraction| C["POST /api/patients/{id}/phenotypes/extract"]
     C --> D["LLM extraction<br/>extract_hpo_phenotypes"]
     D --> P["Phenotype labels + source phrases<br/>No HPO lookup yet"]
-    P --> Q["Reviewer selects symptom candidates"]
+    P --> Q["🧑 Reviewer selects symptom candidates"]
     Q --> R["POST /phenotypes/resolve-candidates"]
-    R --> S["OLS4MCP searchClasses<br/>selected labels only"]
+    R --> S["🌐 OLS4MCP searchClasses<br/>selected labels only"]
     S --> T["HPO candidates returned to UI"]
-    T --> U["Each resolved candidate shows a Confirm button"]
+    T --> U["🧑 Reviewer confirms each HPO candidate"]
     U --> V["PatientPhenotype records<br/>confirmed HPO IDs + provenance"]
 
     B -->|Clinical context extraction| J["POST /api/patients/{id}/clinical-context/extract"]
     J --> K["LLM extraction<br/>extract_clinical_context"]
     K --> L["Ancestry and disease candidates"]
-    L --> M["Reviewer confirms candidates"]
+    L --> M["🧑 Reviewer confirms candidates"]
     M --> N["Patient clinical_context"]
 
-    V --> W["Explicit PubCaseFinder action"]
+    V --> W["🧑 Explicit PubCaseFinder action"]
     W --> X["TogoMCP client extracts HP:\\d{7}"]
-    X --> Y["JSON-RPC tools/call<br/>hpo_ids only"]
-    Y --> Z["TogoMCP / PubCaseFinder<br/>rankings and case reports"]
+    X --> Y["🌐 JSON-RPC tools/call<br/>hpo_ids only"]
+    Y --> Z["🌐 TogoMCP / PubCaseFinder<br/>rankings and case reports"]
 
     A -->|Variant analysis| AA["analyze_variants"]
     N --> AA
@@ -48,6 +48,11 @@ flowchart TD
     AB --> AC["Variant prioritization and ACMG-style suggestions"]
 
     AD["Security boundary:<br/>No OLS4MCP or TogoMCP request before reviewer selection"] -.-> S
+
+    classDef human fill:#fff1a8,stroke:#b7791f,stroke-width:3px,color:#4a2c00;
+    classDef external fill:#cfe8ff,stroke:#1769aa,stroke-width:3px,color:#073763;
+    class Q,U,M,W human;
+    class S,Y,Z external;
 ```
 
 ## Processing stages
