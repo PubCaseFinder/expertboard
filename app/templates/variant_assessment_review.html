@@ -108,6 +108,17 @@
         </div>
     </div>
     <script>
+        // Resolve relative fetch() URLs against location.origin (never has credentials)
+        // so a page URL with embedded Basic Auth doesn't make fetch() throw.
+        (function (nativeFetch) {
+            window.fetch = function (input, init) {
+                if (typeof input === 'string' && !/^[a-z][a-z0-9+.-]*:/i.test(input)) {
+                    input = new URL(input, window.location.origin).toString();
+                }
+                return nativeFetch(input, init);
+            };
+        })(window.fetch);
+
         document.querySelectorAll('.va-spec-review-tab').forEach(function(tab) {
             tab.addEventListener('click', function() {
                 var view = tab.dataset.view;

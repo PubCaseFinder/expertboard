@@ -122,6 +122,63 @@ Use empty arrays when the note does not explicitly state a value.
 """
 
 
+_HPO_EXTRACTION_MIN_CHUNK_SIZE = 200
+
+
+def _is_context_overflow_error(message):
+    lowered = (message or "").lower()
+    return (
+        "context length" in lowered
+        or "context window" in lowered
+        or "prompt is too long" in lowered
+        or "exceeds the available context" in lowered
+    )
+
+
+def _extract_hpo_chunk(chunk, base_url, model, api_key):
+    """Extract candidates from one chunk, halving it further on context overflow."""
+    try:
+        raw = _chat(
+            [
+                {"role": "system", "content": _HPO_EXTRACTION_SYSTEM},
+                {"role": "user", "content": chunk},
+            ],
+            base_url,
+            model,
+            api_key,
+        ).strip()
+    except RuntimeError as exc:
+        if len(chunk) <= _HPO_EXTRACTION_MIN_CHUNK_SIZE or not _is_context_overflow_error(str(exc)):
+            raise
+        midpoint = len(chunk) // 2
+        return _extract_hpo_chunk(chunk[:midpoint], base_url, model, api_key) + _extract_hpo_chunk(
+            chunk[midpoint:], base_url, model, api_key
+        )
+
+    if raw.startswith("```"):
+        raw = raw.split("```", 2)[1]
+        if raw.startswith("json"):
+            raw = raw[4:]
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("Ollama returned invalid JSON for HPO extraction.") from exc
+    chunk_candidates = []
+    for item in payload.get("phenotypes", []):
+        if not isinstance(item, dict):
+            continue
+        label = str(item.get("label") or "").strip()
+        if not label:
+            continue
+        chunk_candidates.append(
+            {
+                "label": label,
+                "source_text": str(item.get("source_text") or ""),
+            }
+        )
+    return chunk_candidates
+
+
 def extract_hpo_phenotypes(clinical_text):
     """Use the configured LLM to extract HPO candidates from clinical text."""
     if not (clinical_text or "").strip():
@@ -134,35 +191,7 @@ def extract_hpo_phenotypes(clinical_text):
     text = clinical_text.strip()
     for start in range(0, len(text), _HPO_EXTRACTION_CHUNK_SIZE):
         chunk = text[start:start + _HPO_EXTRACTION_CHUNK_SIZE]
-        raw = _chat(
-            [
-                {"role": "system", "content": _HPO_EXTRACTION_SYSTEM},
-                {"role": "user", "content": chunk},
-            ],
-            base_url,
-            model,
-            api_key,
-        ).strip()
-        if raw.startswith("```"):
-            raw = raw.split("```", 2)[1]
-            if raw.startswith("json"):
-                raw = raw[4:]
-        try:
-            payload = json.loads(raw)
-        except json.JSONDecodeError as exc:
-            raise RuntimeError("Ollama returned invalid JSON for HPO extraction.") from exc
-        for item in payload.get("phenotypes", []):
-            if not isinstance(item, dict):
-                continue
-            label = str(item.get("label") or "").strip()
-            if not label:
-                continue
-            candidates.append(
-                {
-                    "label": label,
-                    "source_text": str(item.get("source_text") or ""),
-                }
-            )
+        candidates.extend(_extract_hpo_chunk(chunk, base_url, model, api_key))
 
     unique_candidates = []
     seen_labels = set()

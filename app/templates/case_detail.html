@@ -505,6 +505,17 @@
     </div>
 
     <script>
+        // Resolve relative fetch() URLs against location.origin (never has credentials)
+        // so a page URL with embedded Basic Auth doesn't make fetch() throw.
+        (function (nativeFetch) {
+            window.fetch = function (input, init) {
+                if (typeof input === 'string' && !/^[a-z][a-z0-9+.-]*:/i.test(input)) {
+                    input = new URL(input, window.location.origin).toString();
+                }
+                return nativeFetch(input, init);
+            };
+        })(window.fetch);
+
         const navItems = document.querySelectorAll("[data-view]");
         const panels = document.querySelectorAll("[data-panel]");
 
