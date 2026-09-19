@@ -4,7 +4,9 @@ Each patient row links to its uploaded VCF file by path. Variants are parsed out
 of the VCF and stored in the ``variants`` table so they can be listed per patient.
 """
 
+import json
 import os
+from datetime import datetime
 
 from werkzeug.utils import secure_filename
 from sqlalchemy import text
@@ -12,6 +14,7 @@ from sqlalchemy.exc import OperationalError
 
 from app.db import Session
 from app.models import Patient
+from app.models import PatientPhenotype
 from app.models import Variant
 from app.vcf_import import import_variants_for_patient
 from app.vcf_import import parse_vcf_records
@@ -55,18 +58,27 @@ def review_status_label(status):
 def ensure_schema():
     """Add columns introduced after the patients table was first created."""
     _add_column_if_missing("clinical_text TEXT NULL")
+    _add_column_if_missing("clinical_context LONGTEXT NULL")
     _add_column_if_missing(
         "review_status VARCHAR(32) NOT NULL DEFAULT 'pending_review'"
     )
     _add_column_if_missing("requested_expert_board_id INT NULL")
     _add_column_if_missing("family_id VARCHAR(64) NULL")
     _add_column_if_missing("family_history TEXT NULL")
+    _add_column_if_missing("vep_annotation LONGTEXT NULL", table_name="variants")
+    _add_column_if_missing(
+        "vep_annotation_updated_at TIMESTAMP NULL", table_name="variants"
+    )
+    _add_column_if_missing("clinvar_annotation LONGTEXT NULL", table_name="variants")
+    _add_column_if_missing(
+        "clinvar_annotation_updated_at TIMESTAMP NULL", table_name="variants"
+    )
 
 
-def _add_column_if_missing(column_definition):
+def _add_column_if_missing(column_definition, table_name="patients"):
     session = Session()
     try:
-        session.execute(text(f"ALTER TABLE patients ADD COLUMN {column_definition}"))
+        session.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column_definition}"))
         session.commit()
     except OperationalError:
         session.rollback()
@@ -162,6 +174,85 @@ def save_clinical_text(patient_id, clinical_text):
     return patient
 
 
+def save_clinical_context(patient_id, context):
+    """Store reviewer-confirmed clinical context with its note provenance."""
+    import json
+
+    session = Session()
+    patient = session.get(Patient, patient_id)
+    if patient is None:
+        return None
+    patient.clinical_context = json.dumps(context, ensure_ascii=False)
+    session.commit()
+    return patient
+
+
+def get_clinical_context(patient):
+    import json
+
+    try:
+        context = json.loads(patient.clinical_context or "{}")
+    except (TypeError, ValueError):
+        context = {}
+    return context if isinstance(context, dict) else {}
+
+
+def list_confirmed_phenotypes(patient_id):
+    session = Session()
+    return (
+        session.query(PatientPhenotype)
+        .filter(PatientPhenotype.patient_id == patient_id)
+        .order_by(PatientPhenotype.hpo_id)
+        .all()
+    )
+
+
+def replace_confirmed_phenotypes(patient_id, phenotype_items, confirmed_by):
+    """Synchronize confirmed HPO while preserving existing provenance."""
+    session = Session()
+    patient = session.get(Patient, patient_id)
+    if patient is None:
+        return None
+
+    existing = {
+        item.hpo_id: item
+        for item in session.query(PatientPhenotype)
+        .filter(PatientPhenotype.patient_id == patient_id)
+        .all()
+    }
+    requested_ids = {item["hpo_id"] for item in phenotype_items}
+    for hpo_id, record in existing.items():
+        if hpo_id not in requested_ids:
+            session.delete(record)
+    for item in phenotype_items:
+        if item["hpo_id"] in existing:
+            continue
+        session.add(
+            PatientPhenotype(
+                patient_id=patient_id,
+                hpo_id=item["hpo_id"],
+                hpo_label=item.get("label") or None,
+                source=item.get("source") or "clinical_text_review",
+                source_quote=item.get("source_text") or None,
+                confirmed_by=confirmed_by,
+            )
+        )
+    session.commit()
+    return list_confirmed_phenotypes(patient_id)
+
+
+def remove_confirmed_phenotype(patient_id, hpo_id):
+    session = Session()
+    deleted = (
+        session.query(PatientPhenotype)
+        .filter(PatientPhenotype.patient_id == patient_id)
+        .filter(PatientPhenotype.hpo_id == hpo_id)
+        .delete()
+    )
+    session.commit()
+    return bool(deleted)
+
+
 def set_review_status(patient_id, status):
     """Update the patient's review lifecycle status. Returns the patient."""
     if status not in REVIEW_STATUSES:
@@ -196,6 +287,54 @@ def get_patient_variants(patient_id):
     )
 
 
+def save_vep_annotation(patient_id, variant_id, annotation):
+    """Persist the latest successful VEP/VRS annotation for a patient variant."""
+    session = Session()
+    variant = session.get(Variant, variant_id)
+    if variant is None or variant.patient_id != patient_id:
+        return None
+    variant.vep_annotation = json.dumps(annotation, ensure_ascii=False)
+    variant.vep_annotation_updated_at = datetime.utcnow()
+    session.commit()
+    return variant
+
+
+def save_clinvar_annotation(patient_id, variant_id, annotation):
+    """Persist the latest ClinVar query result for a patient variant."""
+    session = Session()
+    variant = session.get(Variant, variant_id)
+    if variant is None or variant.patient_id != patient_id:
+        return None
+    variant.clinvar_annotation = json.dumps(annotation, ensure_ascii=False)
+    variant.clinvar_annotation_updated_at = datetime.utcnow()
+    session.commit()
+    return variant
+
+
+def propagate_clinvar_annotation(chrom, pos, ref, alt, annotation):
+    """Copy a ClinVar lookup result to every variant row sharing this genomic
+    position, across all patients. ClinVar records describe the variant, not
+    the patient, so one fetch should cover every patient carrying it."""
+    session = Session()
+    matches = (
+        session.query(Variant)
+        .filter(
+            Variant.chrom == chrom,
+            Variant.pos == pos,
+            Variant.ref == ref,
+            Variant.alt == alt,
+        )
+        .all()
+    )
+    payload = json.dumps(annotation, ensure_ascii=False)
+    updated_at = datetime.utcnow()
+    for variant in matches:
+        variant.clinvar_annotation = payload
+        variant.clinvar_annotation_updated_at = updated_at
+    session.commit()
+    return matches, updated_at
+
+
 def save_llm_scores(patient_id, result):
     """Persist LLM analysis reasoning to variant rows.
 
@@ -214,9 +353,12 @@ def save_llm_scores(patient_id, result):
             "patient_symptoms": info.get("patient_symptoms", ""),
             "gene_diseases": info.get("gene_diseases", ""),
             "relevance": info.get("relevance", ""),
+            "population_frequency": info.get("population_frequency", ""),
+            "in_silico_predictions": info.get("in_silico_predictions", ""),
             "family_history": info.get("family_history", ""),
             "score_rationale": info.get("score_rationale", ""),
             "suggested_acmg": info.get("suggested_acmg", []),
+            "evidence_basis": info.get("evidence_basis", []),
             "missing_data": info.get("missing_data", []),
         }, ensure_ascii=False)
     session.commit()

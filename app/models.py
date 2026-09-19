@@ -1,8 +1,12 @@
 from sqlalchemy import ForeignKey
+from sqlalchemy import Boolean
+from sqlalchemy import Float
 from sqlalchemy import Text
+from sqlalchemy import UniqueConstraint
 from sqlalchemy import func
 from sqlalchemy.orm import Mapped
 from sqlalchemy.orm import mapped_column
+from sqlalchemy.dialects.mysql import LONGTEXT
 from sqlalchemy.types import String
 from sqlalchemy.types import TIMESTAMP
 
@@ -33,12 +37,40 @@ class Patient(Base):
     vcf_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
     clinical_text_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
     clinical_text: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    clinical_context: Mapped[str | None] = mapped_column(LONGTEXT(), nullable=True)
     summary: Mapped[str | None] = mapped_column(Text(), nullable=True)
     review_status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending_review")
     requested_expert_board_id: Mapped[int | None] = mapped_column(
         ForeignKey("expert_boards.id"), nullable=True
     )
     created_at: Mapped[str] = mapped_column(TIMESTAMP(), nullable=False, server_default=func.current_timestamp())
+    updated_at: Mapped[str] = mapped_column(
+        TIMESTAMP(),
+        nullable=False,
+        server_default=func.current_timestamp(),
+        onupdate=func.current_timestamp(),
+    )
+
+
+class PatientPhenotype(Base):
+    """A reviewer-confirmed HPO phenotype associated with a patient."""
+
+    __tablename__ = "patient_phenotypes"
+    __table_args__ = (UniqueConstraint("patient_id", "hpo_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    patient_id: Mapped[int] = mapped_column(ForeignKey("patients.id"), nullable=False)
+    hpo_id: Mapped[str] = mapped_column(String(16), nullable=False)
+    hpo_label: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    source: Mapped[str] = mapped_column(String(32), nullable=False)
+    source_quote: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    confirmed_by: Mapped[str] = mapped_column(String(120), nullable=False)
+    confirmed_at: Mapped[str] = mapped_column(
+        TIMESTAMP(), nullable=False, server_default=func.current_timestamp()
+    )
+    created_at: Mapped[str] = mapped_column(
+        TIMESTAMP(), nullable=False, server_default=func.current_timestamp()
+    )
     updated_at: Mapped[str] = mapped_column(
         TIMESTAMP(),
         nullable=False,
@@ -55,8 +87,8 @@ class Variant(Base):
     chrom: Mapped[str] = mapped_column(String(16), nullable=False)
     pos: Mapped[int] = mapped_column(nullable=False)
     variant_ext_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    ref: Mapped[str] = mapped_column(String(255), nullable=False)
-    alt: Mapped[str] = mapped_column(String(255), nullable=False)
+    ref: Mapped[str] = mapped_column(LONGTEXT(), nullable=False)
+    alt: Mapped[str] = mapped_column(LONGTEXT(), nullable=False)
     gene: Mapped[str | None] = mapped_column(String(64), nullable=True)
     hgvs_c: Mapped[str | None] = mapped_column(String(128), nullable=True)
     hgvs_p: Mapped[str | None] = mapped_column(String(128), nullable=True)
@@ -69,6 +101,10 @@ class Variant(Base):
     quality: Mapped[str | None] = mapped_column(String(32), nullable=True)
     filter_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
     raw_info: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    vep_annotation: Mapped[str | None] = mapped_column(LONGTEXT(), nullable=True)
+    vep_annotation_updated_at: Mapped[str | None] = mapped_column(TIMESTAMP(), nullable=True)
+    clinvar_annotation: Mapped[str | None] = mapped_column(LONGTEXT(), nullable=True)
+    clinvar_annotation_updated_at: Mapped[str | None] = mapped_column(TIMESTAMP(), nullable=True)
     llm_score: Mapped[int | None] = mapped_column(nullable=True)
     llm_reason: Mapped[str | None] = mapped_column(Text(), nullable=True)
     created_at: Mapped[str] = mapped_column(TIMESTAMP(), nullable=False, server_default=func.current_timestamp())
@@ -259,6 +295,14 @@ class VariantAssessment(Base):
     classification: Mapped[str] = mapped_column(String(64), nullable=False)
     evidence_level: Mapped[str | None] = mapped_column(String(32), nullable=True)
     acmg_codes: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    evidence_points: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    criterion_comments: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    annotation_snapshot: Mapped[str | None] = mapped_column(LONGTEXT(), nullable=True)
+    total_score: Mapped[float | None] = mapped_column(Float(), nullable=True)
+    posterior_probability: Mapped[float | None] = mapped_column(Float(), nullable=True)
+    reviewer_override_lb_threshold: Mapped[bool] = mapped_column(
+        Boolean(), nullable=False, default=False
+    )
     notes: Mapped[str | None] = mapped_column(Text(), nullable=True)
     assessed_by: Mapped[str | None] = mapped_column(String(120), nullable=True)
     created_at: Mapped[str] = mapped_column(

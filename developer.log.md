@@ -57,13 +57,15 @@ Return ONLY a valid JSON array — no markdown, no text outside the array.
 == Analysis tasks ==
 1. Reason through five clinical points (see fields below).
 2. Recommend ACMG/AMP 2015 criteria that are SUPPORTED by available data.
-   Pathogenic evidence: PVS1, PS1, PS2, PS3, PS4, PM1, PM2, PM3, PM4, PM5, PM6, PP1, PP2, PP3, PP4, PP5
-   Benign evidence: BA1, BS1, BS2, BS3, BS4, BP1, BP2, BP3, BP4, BP5, BP6, BP7
+   Pathogenic evidence: PVS1, PS1, PS2, PS3, PS4, PM1, PM2, PM3, PM4, PM5, PM6, PP1, PP2, PP3, PP4, ~~PP5~~
+   Benign evidence: BA1, BS1, BS2, BS3, BS4, BP1, BP2, BP3, BP4, BP5, ~~BP6~~, BP7
 3. Identify criteria that CANNOT be evaluated due to missing annotation data,
    and state exactly what data is needed.
    Common missing items: population allele frequency (PM2/BA1/BS1), in-silico scores
    like CADD/SIFT/PolyPhen (PP3/BP4), de novo status (PS2/PM6), segregation data (PP1/BS4),
-   functional studies (PS3/BS3), phasing information (PM3/BP2), ClinVar evidence (PS1/PP5/BP6).
+   functional studies (PS3/BS3), phasing information (PM3/BP2), ClinVar evidence (PS1/~~PP5~~/~~BP6~~).
+
+> **Update:** ~~PP5~~ and ~~BP6~~ have since been deprecated per ACMG/ClinGen SVI guidance and are no longer selectable in the assessment UI.
 
 == Output format ==
 [

@@ -135,9 +135,15 @@ def _status_label(status):
     return STATUS_LABELS.get(status, str(status).replace("_", " ").title())
 
 
-def _ensure_case_board_id_column(session):
+def _ensure_case_schema(session):
+    """Backfill columns added after the original ``cases`` table was created."""
+    _add_case_column_if_missing(session, "board_id INT NULL")
+    _add_case_column_if_missing(session, "patient_id INT NULL")
+
+
+def _add_case_column_if_missing(session, column_definition):
     try:
-        session.execute(text("ALTER TABLE cases ADD COLUMN board_id INT NULL"))
+        session.execute(text(f"ALTER TABLE cases ADD COLUMN {column_definition}"))
         session.commit()
     except OperationalError:
         session.rollback()
@@ -287,7 +293,7 @@ def _ensure_demo_room(session, room_data, board):
 
 def ensure_demo_workspace():
     with Session() as session:
-        _ensure_case_board_id_column(session)
+        _ensure_case_schema(session)
         boards_by_name = _ensure_demo_boards(session)
         rooms = [
             _ensure_demo_room(session, room_data, boards_by_name[room_data["board_name"]])
@@ -300,7 +306,7 @@ def ensure_demo_workspace():
 
 def list_boards():
     with Session() as session:
-        _ensure_case_board_id_column(session)
+        _ensure_case_schema(session)
         boards_by_name = _ensure_demo_boards(session)
         for room_data in DEMO_ROOMS:
             _ensure_demo_room(session, room_data, boards_by_name[room_data["board_name"]])
@@ -339,7 +345,7 @@ def list_waiting_patients(board_id):
 
 def get_board(board_id):
     with Session() as session:
-        _ensure_case_board_id_column(session)
+        _ensure_case_schema(session)
         boards_by_name = _ensure_demo_boards(session)
         for room_data in DEMO_ROOMS:
             _ensure_demo_room(session, room_data, boards_by_name[room_data["board_name"]])
@@ -390,7 +396,7 @@ def list_cases():
 def get_case_detail(case_id):
     client = PubCaseFinderClient()
     with Session() as session:
-        _ensure_case_board_id_column(session)
+        _ensure_case_schema(session)
         boards_by_name = _ensure_demo_boards(session)
         for room_data in DEMO_ROOMS:
             _ensure_demo_room(session, room_data, boards_by_name[room_data["board_name"]])

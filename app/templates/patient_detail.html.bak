@@ -1,0 +1,1053 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ r_patient.display_name or r_patient.patient_code }} | ExpertBoard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='expertboard.css', v='20260729v') }}">
+</head>
+<body>
+    {% include "_role_bar.html" %}
+    <main class="landing">
+        <a class="page-back-link" href="{{ url_for('expertboard.patient_list') }}">Back to Patients</a>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="flash-stack">
+                    {% for category, message in messages %}
+                        <div class="flash {{ category }}">{{ message }}</div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+
+        <section class="hero patient-hero">
+            <div class="patient-hero-main">
+                <div class="eyebrow">{{ r_patient.patient_code }}</div>
+                <h1 class="landing-title">{{ r_patient.display_name or r_patient.patient_code }}</h1>
+                {% if r_patient.diagnosis_name %}<p class="lede">{{ r_patient.diagnosis_name }}</p>{% endif %}
+                {% if r_patient.family_id %}<p class="lede">Family: {{ r_patient.family_id }}</p>{% endif %}
+            </div>
+            <div class="patient-hero-controls">
+                <div class="patient-hero-stat-row">
+                    <div class="stat-card"><span>Variants</span><strong>{{ r_variants|length }}</strong></div>
+                </div>
+                <form class="inline-form" method="POST"
+                      action="{{ url_for('expertboard.patient_status', patient_id=r_patient.id) }}">
+                    <span class="inline-label">Status</span>
+                    <select class="inline-select" name="review_status">
+                        {% for status in r_review_statuses %}
+                            <option value="{{ status }}"
+                                    {% if status == r_patient.review_status %}selected{% endif %}>
+                                {{ r_review_status_labels.get(status, status) }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                    <button class="inline-button" type="submit">Update</button>
+                </form>
+                <form class="inline-form" method="POST"
+                      action="{{ url_for('expertboard.patient_expert_group', patient_id=r_patient.id) }}">
+                    <span class="inline-label">Expert board</span>
+                    <select class="inline-select" name="expert_board_id">
+                        <option value="">— Not assigned —</option>
+                        {% for group in r_expert_groups %}
+                            <option value="{{ group.id }}"
+                                    {% if group.id == r_patient.requested_expert_board_id %}selected{% endif %}>
+                                {{ group.name }}{% if group.specialty %} · {{ group.specialty }}{% endif %}
+                            </option>
+                        {% endfor %}
+                    </select>
+                    <button class="inline-button" type="submit">Save</button>
+                    {% if r_patient.requested_expert_board_id %}
+                        <a class="inline-link" href="{{ url_for('expertboard.board_detail', board_id=r_patient.requested_expert_board_id) }}">Board →</a>
+                    {% endif %}
+                </form>
+                <p class="status-hint">{{ r_review_status_hints.get(r_patient.review_status, "") }}</p>
+            </div>
+        </section>
+
+        <section class="workspace">
+            <article class="section section-wide">
+                <h2 class="section-title">Clinical free text</h2>
+                <form class="clinical-form" method="POST"
+                      action="{{ url_for('expertboard.patient_clinical_text', patient_id=r_patient.id) }}">
+                    <textarea name="clinical_text" rows="5"
+                              placeholder="e.g. 12-year-old with progressive muscle weakness, ptosis, and exercise intolerance...">{{ r_patient.clinical_text or "" }}</textarea>
+                    <button class="inline-button" type="submit">Save</button>
+                </form>
+            </article>
+
+            <article class="section section-wide">
+                <h2 class="section-title">Family</h2>
+                <form class="inline-form" method="POST"
+                      action="{{ url_for('expertboard.patient_family', patient_id=r_patient.id) }}">
+                    <input class="inline-select" type="text" name="family_id"
+                           value="{{ r_patient.family_id or '' }}" placeholder="Family (kindred) ID  e.g. FAM-00042">
+                    <button class="inline-button" type="submit">Save</button>
+                </form>
+
+                {# Structured family members #}
+                <form class="family-add-form" method="POST"
+                      action="{{ url_for('expertboard.patient_family_member_add', patient_id=r_patient.id) }}">
+                    <select class="vf-input" name="relationship" required>
+                        <option value="" disabled selected>Relationship</option>
+                        {% for key, label in r_relationships %}
+                            <option value="{{ key }}">{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                    <input class="vf-input" type="text" name="display_name" placeholder="Name (optional)">
+                    <select class="vf-input" name="affected">
+                        {% for key, label in r_affected_options %}
+                            <option value="{{ key }}">{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                    <input class="vf-input" type="text" name="medical_history" placeholder="Medical history / notes">
+                    <select class="vf-input" name="linked_patient_id">
+                        <option value="">Link to patient (optional)</option>
+                        {% for p in r_linkable_patients %}
+                            {% if p.id != r_patient.id %}
+                                <option value="{{ p.id }}">{{ p.label }}</option>
+                            {% endif %}
+                        {% endfor %}
+                    </select>
+                    <button class="inline-button" type="submit">Add member</button>
+                </form>
+
+                {% if r_structured_family %}
+                    <div class="table-wrap" style="margin-top:10px;">
+                        <table class="variant-table">
+                            <thead>
+                                <tr>
+                                    <th>Relationship</th>
+                                    <th>Name</th>
+                                    <th>Affected</th>
+                                    <th>Medical history</th>
+                                    <th>Linked patient</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for row in r_structured_family %}
+                                    <tr>
+                                        <td><strong>{{ row.relationship_label }}</strong></td>
+                                        <td>{{ row.member.display_name or "—" }}</td>
+                                        <td>{{ row.member.affected or "—" }}</td>
+                                        <td class="note-cell">{{ row.member.medical_history or "—" }}</td>
+                                        <td>
+                                            {% if row.linked_patient %}
+                                                <a class="inline-link"
+                                                   href="{{ url_for('expertboard.patient_detail', patient_id=row.linked_patient.id) }}">
+                                                    {{ row.linked_patient.patient_code }}
+                                                </a>
+                                            {% else %}—{% endif %}
+                                        </td>
+                                        <td>
+                                            <form method="POST"
+                                                  action="{{ url_for('expertboard.patient_family_member_remove', patient_id=r_patient.id, member_id=row.member.id) }}">
+                                                <button class="link-button danger" type="submit">Remove</button>
+                                            </form>
+                                        </td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <p class="status-hint" style="margin-top:8px;">No family members registered yet.</p>
+                {% endif %}
+            </article>
+
+            <article class="section section-wide">
+                <h2 class="section-title">VCF variants</h2>
+                <div class="vcf-toolbar">
+                    <form method="POST"
+                          action="{{ url_for('expertboard.patient_import_vcf', patient_id=r_patient.id) }}"
+                          enctype="multipart/form-data"
+                          class="vcf-upload-form">
+                        <input type="file" name="vcf_file" accept=".vcf" required class="vcf-file-input">
+                        <button type="submit" class="inline-button">{% if r_variants %}Re-import VCF{% else %}Import VCF{% endif %}</button>
+                    </form>
+                    {% if not r_llm_configured %}
+                        <span class="status-hint">Configure LLM Base URL and model in Admin to enable Analyze with AI.</span>
+                    {% elif r_variants and r_patient.clinical_text %}
+                        <button class="inline-button ai-analyze-btn" type="button"
+                                data-url="{{ url_for('expertboard.api_patient_llm_analyze', patient_id=r_patient.id) }}"
+                                onclick="runLlmAnalysis(this)">
+                            ✦ Analyze with AI
+                        </button>
+                        <span class="ai-status" id="ai-status" style="display:none"></span>
+                    {% elif r_variants and not r_patient.clinical_text %}
+                        <span class="status-hint">Add and save Clinical summary above to enable Analyze with AI.</span>
+                    {% else %}
+                        <span class="status-hint">Import a VCF file to enable Analyze with AI.</span>
+                    {% endif %}
+                </div>
+                {% if r_variants %}
+                    <p class="section-copy">{{ r_variants|length }} variants parsed from the uploaded VCF.</p>
+                    <div class="table-wrap">
+                        <table class="variant-table" id="variant-table">
+                            <thead>
+                                <tr>
+                                    <th>
+                                        Gene
+                                        <button class="th-clear-btn" type="button"
+                                                onclick="clearVfFilters()" title="Clear all filters">✕</button>
+                                        <input class="th-filter" id="vf-gene" type="search" placeholder="filter…">
+                                    </th>
+                                    <th>HGVS c.</th>
+                                    <th>HGVS p.</th>
+                                    <th>
+                                        Type
+                                        <input class="th-filter" id="vf-type" type="search" placeholder="filter…">
+                                    </th>
+                                    <th>Locus</th>
+                                    <th>REF/ALT</th>
+                                    <th>
+                                        <abbr title="Same variant assessed in other patients registered in this system">Other pt. reviews</abbr>
+                                        <select class="th-filter" id="vf-past">
+                                            <option value="">All</option>
+                                            <option value="pathogenic">Pathogenic</option>
+                                            <option value="likely_pathogenic">Likely pathogenic</option>
+                                            <option value="uncertain_significance">VUS</option>
+                                            <option value="likely_benign">Likely benign</option>
+                                            <option value="benign">Benign</option>
+                                            <option value="other">Other</option>
+                                        </select>
+                                    </th>
+                                    <th>
+                                        Assessed
+                                        <select class="th-filter" id="vf-assessed">
+                                            <option value="">All</option>
+                                            <option value="pathogenic">Pathogenic</option>
+                                            <option value="likely_pathogenic">Likely pathogenic</option>
+                                            <option value="uncertain_significance">VUS</option>
+                                            <option value="likely_benign">Likely benign</option>
+                                            <option value="benign">Benign</option>
+                                            <option value="other">Other</option>
+                                        </select>
+                                    </th>
+                                    <th>
+                                        Clin. sig.
+                                        <select class="th-filter" id="vf-clnsig">
+                                            <option value="">All</option>
+                                            <option value="pathogenic">Pathogenic</option>
+                                            <option value="likely_pathogenic">Likely pathogenic</option>
+                                            <option value="uncertain_significance">VUS</option>
+                                            <option value="likely_benign">Likely benign</option>
+                                            <option value="benign">Benign</option>
+                                        </select>
+                                    </th>
+                                    <th>GT</th>
+                                    <th>DP</th>
+                                    <th>Note
+                                        <input class="th-filter" id="vf-note" type="search" placeholder="filter…">
+                                    </th>
+                                    {% if r_linked_variants %}<th>Shared</th>{% endif %}
+                                    <th>JP DB</th>
+                                    <th class="ai-col-header" id="ai-col-header" {% if not r_variants|selectattr('llm_score')|list %}style="display:none"{% endif %}>AI</th>
+                                </tr>
+                            </thead>
+                            <tbody id="variant-tbody">
+                                {% for v in r_variants %}
+                                    {% set shares = r_variant_shares.get(v.id, []) %}
+                                    {% set va_list = r_assessments.get(v.id, []) %}
+                                    <tr
+                                        class="{{ 'shared-row' if shares else '' }}"
+                                        data-gene="{{ (v.gene or '')|lower }}"
+                                        data-type="{{ (v.variant_type or '')|lower }}"
+                                        data-clnsig="{{ (v.clin_sig or '')|lower|replace(' ','_') }}"
+                                        data-note="{{ (v.note or '')|lower }}"
+                                        data-past="{% for e in r_cross_assessments.get(v.id, []) %}{{ e.assessment.classification|lower|replace(' ','_') }}{% if not loop.last %}|{% endif %}{% endfor %}"
+                                        data-assessed="{% for e in va_list %}{{ e.assessment.classification|lower|replace(' ','_') }}{% if not loop.last %}|{% endif %}{% endfor %}"
+                                        data-vkey="{{ v.chrom }}:{{ v.pos }}:{{ v.ref }}:{{ v.alt }}"
+                                        data-vid="{{ v.id }}"
+                                        data-ai-score="{{ v.llm_score if v.llm_score is not none else '' }}"
+                                        data-ai-reason="{{ v.llm_reason or '' }}"
+                                    >
+                                        <td><strong>{{ v.gene or "—" }}</strong></td>
+                                        <td>{{ v.hgvs_c or "—" }}</td>
+                                        <td>{{ v.hgvs_p or "—" }}</td>
+                                        <td>{{ v.variant_type or "—" }}</td>
+                                        <td>{{ v.chrom }}:{{ v.pos }}</td>
+                                        <td>{{ v.ref }}/{{ v.alt }}</td>
+                                        {# ── Same-variant assessments from other patients ── #}
+                                        <td class="assessment-cell">
+                                            {% for entry in r_cross_assessments.get(v.id, []) %}
+                                                {% set ts = entry.assessment.created_at|string %}
+                                                <span class="assess-badge assess-{{ entry.css }} assess-past"
+                                                      title="Other patient: {{ entry.patient.patient_code if entry.patient else '?' }} · {{ entry.assessment.assessed_by or '—' }} · {{ ts[:16] }} (read-only)">
+                                                    <span class="assess-lock" aria-hidden="true">🔒</span>
+                                                    {%- if entry.group and entry.group.country -%}
+                                                        <span class="assess-country">{{ entry.group.country }}</span>
+                                                    {%- elif entry.group -%}
+                                                        <span class="assess-country">{{ entry.group.name }}</span>
+                                                    {%- endif -%}
+                                                    {{ entry.assessment.classification }}
+                                                    {%- if entry.assessment.acmg_codes -%}
+                                                        <span class="acmg-code-badge">{{ entry.assessment.acmg_codes }}</span>
+                                                    {%- endif -%}
+                                                </span>
+                                            {% endfor %}
+                                        </td>
+                                        {# ── This patient's assessments ── #}
+                                        <td class="assessment-cell">
+                                            {% for entry in va_list %}
+                                                {% set ts = entry.assessment.created_at|string %}
+                                                {% set by = entry.assessment.assessed_by or "—" %}
+                                                <span class="assess-badge assess-{{ entry.css }}"
+                                                      title="{{ by }} · {{ ts[:16] }}{% if entry.assessment.notes %} · {{ entry.assessment.notes }}{% endif %}{% if entry.assessment.acmg_codes %} [{{ entry.assessment.acmg_codes }}]{% endif %}">
+                                                    {%- if entry.group and entry.group.country -%}
+                                                        <span class="assess-country">{{ entry.group.country }}</span>
+                                                    {%- elif entry.group -%}
+                                                        <span class="assess-country">{{ entry.group.name }}</span>
+                                                    {%- endif -%}
+                                                    {{ entry.assessment.classification }}
+                                                    {%- if entry.assessment.acmg_codes -%}
+                                                        <span class="acmg-code-badge">{{ entry.assessment.acmg_codes }}</span>
+                                                    {%- endif -%}
+                                                    <form method="POST" style="display:inline"
+                                                          action="{{ url_for('expertboard.patient_variant_assessment_remove', patient_id=r_patient.id, variant_id=v.id, assessment_id=entry.assessment.id) }}">
+                                                        <button class="badge-remove" type="submit" title="Remove">×</button>
+                                                    </form>
+                                                </span>
+                                            {% endfor %}
+                                            <button class="assess-add-btn" type="button"
+                                                    data-action="{{ url_for('expertboard.patient_variant_assessment_add', patient_id=r_patient.id, variant_id=v.id) }}"
+                                                    onclick="openAssessModal(this.dataset.action, this.closest('tr'))">+</button>
+                                        </td>
+                                        <td><span class="clnsig clnsig-{{ (v.clin_sig or 'unknown')|lower|replace('_','-') }}">{{ v.clin_sig or "—" }}</span></td>
+                                        <td>{{ v.genotype or "—" }}</td>
+                                        <td>{{ v.depth if v.depth is not none else "—" }}</td>
+                                        <td class="note-cell">{{ (v.note or "")|replace('_', ' ') }}</td>
+                                        {% if r_linked_variants %}
+                                            <td>{% for label in shares %}<span class="shared-badge">{{ label }}</span>{% endfor %}</td>
+                                        {% endif %}
+                                        <td class="togovar-cell" id="tv-{{ v.id }}">
+                                            <button class="tv-btn"
+                                                    data-chrom="{{ v.chrom }}"
+                                                    data-pos="{{ v.pos }}"
+                                                    data-ref="{{ v.ref }}"
+                                                    data-alt="{{ v.alt }}"
+                                                    data-cell="tv-{{ v.id }}"
+                                                    type="button"
+                                                    onclick="fetchTogoVar(this)">JP DB</button>
+                                        </td>
+                                        <td class="ai-cell" id="ai-{{ v.id }}"
+                                            {% if not v.llm_score and v.llm_score != 0 %}style="display:none"{% endif %}>
+                                            {% if v.llm_score is not none %}
+                                                <span class="ai-badge" title="AI analysis available">✦</span>
+                                            {% endif %}
+                                        </td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    <script>
+                        (function () {
+                            function applyFilters() {
+                                var gene     = document.getElementById('vf-gene').value.trim().toLowerCase();
+                                var type     = document.getElementById('vf-type').value.trim().toLowerCase();
+                                var clnsig   = document.getElementById('vf-clnsig').value.toLowerCase();
+                                var note     = document.getElementById('vf-note').value.trim().toLowerCase();
+                                var past     = document.getElementById('vf-past').value;
+                                var assessed = document.getElementById('vf-assessed').value;
+                                document.querySelectorAll('#variant-tbody tr:not(.assessment-form-row)').forEach(function (row) {
+                                    var match =
+                                        (!gene     || row.dataset.gene.includes(gene)) &&
+                                        (!type     || row.dataset.type.includes(type)) &&
+                                        (!clnsig   || row.dataset.clnsig === clnsig) &&
+                                        (!note     || (row.dataset.note || '').includes(note)) &&
+                                        (!past     || ('|' + (row.dataset.past || '') + '|').includes('|' + past + '|')) &&
+                                        (!assessed || ('|' + (row.dataset.assessed || '') + '|').includes('|' + assessed + '|'));
+                                    row.style.display = match ? '' : 'none';
+                                });
+                            }
+                            ['vf-gene', 'vf-type', 'vf-clnsig', 'vf-note', 'vf-past', 'vf-assessed'].forEach(function (id) {
+                                var el = document.getElementById(id);
+                                if (el) {
+                                    el.addEventListener('input', applyFilters);
+                                    el.addEventListener('change', applyFilters);
+                                }
+                            });
+
+                            // ── TogoVar auto-fetch for top 20 by pathogenicity ──
+                            var CLNSIG_RANK = {
+                                'pathogenic': 9,
+                                'pathogenic/likely_pathogenic': 8,
+                                'likely_pathogenic': 7,
+                                'association': 6,
+                                'uncertain_significance': 5,
+                                'vus': 5,
+                                'likely_benign': 4,
+                                'benign/likely_benign': 3,
+                                'benign': 3,
+                                'not_provided': 0,
+                                'other': 0,
+                            };
+                            function clnsigRank(val) {
+                                var v = (val || '').toLowerCase().replace(/ /g, '_');
+                                if (CLNSIG_RANK[v] !== undefined) return CLNSIG_RANK[v];
+                                // partial match
+                                if (v.includes('pathogenic')) return v.includes('likely') ? 7 : 9;
+                                if (v.includes('benign'))     return v.includes('likely') ? 2 : 1;
+                                if (v.includes('uncertain') || v.includes('vus')) return 3;
+                                return 0;
+                            }
+                            // Return the highest pathogenicity rank among pipe-separated values
+                            function maxRankFromPipe(val) {
+                                if (!val) return -1;
+                                var parts = val.split('|').filter(Boolean);
+                                if (!parts.length) return -1;
+                                return Math.max.apply(null, parts.map(clnsigRank));
+                            }
+
+                            document.addEventListener('DOMContentLoaded', function () {
+                                var tbody = document.getElementById('variant-tbody');
+                                // Only data rows (not form rows)
+                                var dataRows = Array.from(
+                                    document.querySelectorAll('#variant-tbody tr:not(.assessment-form-row)')
+                                );
+
+                                // Sort: 1) Clin. sig.  2) Other pt. reviews  3) Assessed
+                                dataRows.sort(function(a, b) {
+                                    var diff = clnsigRank(b.dataset.clnsig) - clnsigRank(a.dataset.clnsig);
+                                    if (diff !== 0) return diff;
+                                    diff = maxRankFromPipe(b.dataset.past) - maxRankFromPipe(a.dataset.past);
+                                    if (diff !== 0) return diff;
+                                    return maxRankFromPipe(b.dataset.assessed) - maxRankFromPipe(a.dataset.assessed);
+                                });
+
+                                // Re-append each data row immediately followed by its inline form row
+                                dataRows.forEach(function(row) {
+                                    tbody.appendChild(row);
+                                    var vid = row.dataset.vid;
+                                    if (vid) {
+                                        var formRow = document.getElementById('af-' + vid);
+                                        if (formRow) tbody.appendChild(formRow);
+                                    }
+                                });
+
+                                // auto-fetch top 20 that have a JP DB button
+                                dataRows.slice(0, 20).forEach(function(row) {
+                                    var btn = row.querySelector('.tv-btn');
+                                    if (btn) fetchTogoVar(btn);
+                                });
+                            });
+                        })();
+
+                        function clearVfFilters() {
+                            ['vf-gene', 'vf-type', 'vf-note'].forEach(function (id) {
+                                var el = document.getElementById(id);
+                                if (el) el.value = '';
+                            });
+                            ['vf-clnsig', 'vf-past', 'vf-assessed'].forEach(function (id) {
+                                var el = document.getElementById(id);
+                                if (el) el.value = '';
+                            });
+                            document.querySelectorAll('#variant-tbody tr:not(.assessment-form-row)').forEach(function (row) {
+                                row.style.display = '';
+                            });
+                        }
+
+                        function toggleAssessForm(id) {
+                            var row = document.getElementById(id);
+                            if (row) row.style.display = (row.style.display === 'none' ? '' : 'none');
+                        }
+
+                        function fetchTogoVar(btn) {
+                            var cell = document.getElementById(btn.dataset.cell);
+                            cell.innerHTML = '<span class="tv-loading">…</span>';
+                            var params = new URLSearchParams({
+                                chrom: btn.dataset.chrom,
+                                pos:   btn.dataset.pos,
+                                ref:   btn.dataset.ref,
+                                alt:   btn.dataset.alt,
+                            });
+                            fetch('/api/togovar?' + params)
+                                .then(function(r) { return r.json(); })
+                                .then(function(d) {
+                                    if (!d.found) { cell.innerHTML = '<span class="tv-notfound">—</span>'; return; }
+                                    var html = '';
+                                    if (d.top_interp) {
+                                        html += '<span class="tv-sig ' + d.top_interp_css + '">' + d.top_interp + '</span>';
+                                    }
+                                    if (d.gem_j_af !== null && d.gem_j_af !== undefined) {
+                                        html += '<span class="tv-af" title="GEM-J WGA AF">GEM-J ' + d.gem_j_af.toExponential(2) + '</span>';
+                                    }
+                                    if (d.tommo_af !== null && d.tommo_af !== undefined) {
+                                        html += '<span class="tv-af" title="ToMMo AF">ToMMo ' + d.tommo_af.toExponential(2) + '</span>';
+                                    }
+                                    if (d.alphamissense !== null && d.alphamissense !== undefined) {
+                                        html += '<span class="tv-am" title="AlphaMissense">AM ' + d.alphamissense.toFixed(3) + '</span>';
+                                    }
+                                    if (d.togovar_url) {
+                                        html += '<a class="tv-link" href="' + d.togovar_url + '" target="_blank" rel="noopener">↗</a>';
+                                    }
+                                    cell.innerHTML = html || '<span class="tv-notfound">no data</span>';
+                                })
+                                .catch(function() { cell.innerHTML = '<span class="tv-notfound">error</span>'; });
+                        }
+
+                        // ── Scroll position preservation across form submissions ──
+                        (function () {
+                            var SK = 'expertboard_scrollY';
+                            var saved = sessionStorage.getItem(SK);
+                            if (saved) {
+                                window.scrollTo(0, parseInt(saved, 10));
+                                sessionStorage.removeItem(SK);
+                            }
+                            document.addEventListener('submit', function () {
+                                sessionStorage.setItem(SK, window.scrollY);
+                            }, true);
+                        })();
+
+                        // ── LLM variant analysis ──────────────────────────────
+                        function runLlmAnalysis(btn) {
+                            var url = btn.dataset.url;
+                            var statusEl = document.getElementById('ai-status');
+                            btn.disabled = true;
+                            btn.textContent = '✦ Analyzing…';
+                            statusEl.style.display = 'inline';
+                            statusEl.textContent = 'Sending to Ollama…';
+
+                            fetch(url, {method: 'POST', headers: {'X-Requested-With': 'XMLHttpRequest'}})
+                                .then(function(r) { return r.json(); })
+                                .then(function(data) {
+                                    if (data.error) {
+                                        statusEl.textContent = '✖ ' + data.error;
+                                        btn.disabled = false;
+                                        btn.textContent = '✦ Analyze with AI';
+                                        return;
+                                    }
+                                    // Show AI column header
+                                    document.getElementById('ai-col-header').style.display = '';
+                                    // Fill each row's AI cell
+                                    Object.entries(data).forEach(function(kv) {
+                                        var vid = kv[0], info = kv[1];
+                                        var cell = document.getElementById('ai-' + vid);
+                                        if (!cell) return;
+                                        cell.style.display = '';
+                                        cell.innerHTML = '<span class="ai-badge" title="AI analysis available">\u2726</span>';
+                                        // Store reasoning on the row for the modal
+                                        var tr = cell.closest('tr');
+                                        if (tr) {
+                                            tr.dataset.aiScore = info.score != null ? info.score : '';
+                                            var reasoning = JSON.stringify({
+                                                patient_symptoms: info.patient_symptoms || '',
+                                                gene_diseases: info.gene_diseases || '',
+                                                relevance: info.relevance || '',
+                                                population_frequency: info.population_frequency || '',
+                                                in_silico_predictions: info.in_silico_predictions || '',
+                                                family_history: info.family_history || '',
+                                                score_rationale: info.score_rationale || '',
+                                                suggested_acmg: info.suggested_acmg || [],
+                                                missing_data: info.missing_data || [],
+                                            });
+                                            tr.dataset.aiReason = reasoning;
+                                        }
+                                    });
+                                    statusEl.textContent = '✔ Analysis complete';
+                                    btn.textContent = '✦ Re-analyze';
+                                    btn.disabled = false;
+                                })
+                                .catch(function(err) {
+                                    statusEl.textContent = '✖ ' + err;
+                                    btn.disabled = false;
+                                    btn.textContent = '✦ Analyze with AI';
+                                });
+                        }
+                    </script>
+                {% else %}
+                    <div class="empty">No variants imported for this patient.</div>
+                {% endif %}
+            </article>
+
+            {# ── Family variant comparison (shown when ≥1 linked patient has variants) ── #}
+            {% set compare_pairs = r_linked_variants.values() | list %}
+            {% if compare_pairs %}
+                <article class="section section-wide">
+                    <h2 class="section-title">Family variant comparison</h2>
+                    <p class="section-copy">Side-by-side view of proband and linked family members' variants.</p>
+
+                    <div class="compare-filter-bar">
+                        <input class="vf-input" id="cmp-gene" type="text" placeholder="Filter by gene…">
+                        <button class="vf-clear" type="button"
+                                onclick="document.getElementById('cmp-gene').value='';applyCompareFilter()">Clear</button>
+                    </div>
+
+                    <div class="family-compare" id="family-compare">
+                        {# Proband column #}
+                        <div class="family-compare-col">
+                            <div class="family-compare-header">
+                                <span class="compare-role-badge proband">Proband</span>
+                                <span class="compare-code">{{ r_patient.patient_code }}</span>
+                                <span class="compare-name">{{ r_patient.display_name or "" }}</span>
+                                <span class="compare-count">{{ r_variants|length }} variants</span>
+                            </div>
+                            <div class="compare-table-wrap">
+                                <table class="variant-table compare-table" data-col="proband">
+                                    <thead>
+                                        <tr><th>Gene</th><th>HGVS c.</th><th>p.</th><th>Type</th><th>Clin.sig.</th><th>GT</th></tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for v in r_variants %}
+                                            <tr data-gene="{{ (v.gene or '')|lower }}"
+                                                data-vkey="{{ v.chrom }}:{{ v.pos }}:{{ v.ref }}:{{ v.alt }}">
+                                                <td><strong>{{ v.gene or "—" }}</strong></td>
+                                                <td>{{ v.hgvs_c or "—" }}</td>
+                                                <td>{{ v.hgvs_p or "—" }}</td>
+                                                <td>{{ v.variant_type or "—" }}</td>
+                                                <td><span class="clnsig clnsig-{{ (v.clin_sig or 'unknown')|lower|replace('_','-') }}">{{ v.clin_sig or "—" }}</span></td>
+                                                <td>{{ v.genotype or "—" }}</td>
+                                            </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        {# Linked family member columns #}
+                        {% for pid, info in r_linked_variants.items() %}
+                            <div class="family-compare-col">
+                                <div class="family-compare-header">
+                                    <span class="compare-role-badge family">{{ info.relationship_label }}</span>
+                                    <span class="compare-code">{{ info.patient.patient_code }}</span>
+                                    <a class="compare-name inline-link"
+                                       href="{{ url_for('expertboard.patient_detail', patient_id=info.patient.id) }}">
+                                        {{ info.patient.display_name or info.patient.patient_code }}
+                                    </a>
+                                    <span class="compare-count">{{ info.variants|length }} variants</span>
+                                </div>
+                                <div class="compare-table-wrap">
+                                    {% if info.variants %}
+                                        <table class="variant-table compare-table" data-col="{{ pid }}">
+                                            <thead>
+                                                <tr><th>Gene</th><th>HGVS c.</th><th>p.</th><th>Type</th><th>Clin.sig.</th><th>GT</th></tr>
+                                            </thead>
+                                            <tbody>
+                                                {% for v in info.variants %}
+                                                    <tr data-gene="{{ (v.gene or '')|lower }}"
+                                                        data-vkey="{{ v.chrom }}:{{ v.pos }}:{{ v.ref }}:{{ v.alt }}">
+                                                        <td><strong>{{ v.gene or "—" }}</strong></td>
+                                                        <td>{{ v.hgvs_c or "—" }}</td>
+                                                        <td>{{ v.hgvs_p or "—" }}</td>
+                                                        <td>{{ v.variant_type or "—" }}</td>
+                                                        <td><span class="clnsig clnsig-{{ (v.clin_sig or 'unknown')|lower|replace('_','-') }}">{{ v.clin_sig or "—" }}</span></td>
+                                                        <td>{{ v.genotype or "—" }}</td>
+                                                    </tr>
+                                                {% endfor %}
+                                            </tbody>
+                                        </table>
+                                    {% else %}
+                                        <p class="status-hint" style="padding:12px 8px;">No variants imported.</p>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        {% endfor %}
+                    </div>
+
+                    <script>
+                        (function () {
+                            // Keys shared between proband and ≥1 linked patient
+                            var sharedKeys  = new Set({{ r_shared_vkeys  | tojson }});
+                            // All proband keys (for highlighting matching rows in linked columns)
+                            var probandKeys = new Set({{ r_proband_vkeys | tojson }});
+
+                            // Proband column: highlight rows that appear in a linked patient
+                            document.querySelectorAll('.compare-table[data-col="proband"] tbody tr').forEach(function (row) {
+                                if (sharedKeys.has(row.dataset.vkey)) row.classList.add('shared-row');
+                            });
+                            // Linked columns: highlight rows that appear in the proband
+                            document.querySelectorAll('.compare-table:not([data-col="proband"]) tbody tr').forEach(function (row) {
+                                if (probandKeys.has(row.dataset.vkey)) row.classList.add('shared-row');
+                            });
+
+                            function applyCompareFilter() {
+                                var gene = document.getElementById('cmp-gene').value.trim().toLowerCase();
+                                document.querySelectorAll('#family-compare .compare-table tbody tr').forEach(function (row) {
+                                    row.style.display = (!gene || row.dataset.gene.includes(gene)) ? '' : 'none';
+                                });
+                            }
+                            document.getElementById('cmp-gene').addEventListener('input', applyCompareFilter);
+                        })();
+                    </script>
+                </article>
+            {% endif %}
+        </section>
+    </main>
+
+    {# ── Assessment + ACMG popup modal (shared, one per page) ── #}
+    <div id="acmg-modal" class="acmg-modal-overlay" style="display:none" onclick="if(event.target===this)closeAssessModal()">
+        <div class="acmg-modal-box">
+            <form id="assess-form" method="POST" action="">
+                <div class="acmg-modal-header">
+                    <h3>Add Assessment</h3>
+                    <button type="button" class="acmg-modal-close" onclick="closeAssessModal()">&#x2715;</button>
+                </div>
+                <div class="acmg-modal-body">
+                    <div id="ai-suggestion-panel" class="ai-suggestion-panel" style="display:none">
+                        <div class="ai-suggestion-label">✦ AI Reasoning</div>
+                        <dl class="ai-reasoning-list">
+                            <dt>Patient symptoms</dt><dd id="ai-r-symptoms"></dd>
+                            <dt>Gene-associated diseases</dt><dd id="ai-r-gene"></dd>
+                            <dt>Relevance to patient</dt><dd id="ai-r-relevance"></dd>
+                            <dt>Population frequency</dt><dd id="ai-r-popfreq"></dd>
+                            <dt>In silico predictions</dt><dd id="ai-r-insilico"></dd>
+                            <dt>Family history</dt><dd id="ai-r-family"></dd>
+                            <dt>Assessment rationale</dt><dd id="ai-r-rationale"></dd>
+                        </dl>
+                        <div class="ai-acmg-suggest" id="ai-acmg-suggest" style="display:none">
+                            <span class="ai-acmg-suggest-label">Suggested criteria:</span>
+                            <span id="ai-acmg-badges"></span>
+                            <button type="button" class="ai-apply-btn" id="ai-apply-btn" onclick="applyAiAcmg()">Apply suggestions</button>
+                        </div>
+                        <div class="ai-missing-data" id="ai-missing-data" style="display:none">
+                            <span class="ai-missing-label">⚠ Missing annotation data:</span>
+                            <ul id="ai-missing-list" class="ai-missing-list"></ul>
+                        </div>
+                    </div>
+                    <div class="acmg-meta-row">
+                        <label class="acmg-meta-field">
+                            <span>Classification *</span>
+                            <select name="classification" required>
+                                <option value="" disabled selected>Select…</option>
+                                {% for key, label in r_classifications %}
+                                    <option value="{{ key }}">{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                        </label>
+                        <label class="acmg-meta-field">
+                            <span>Evidence level</span>
+                            <select name="evidence_level">
+                                {% for key, label in r_evidence_levels %}
+                                    <option value="{{ key }}">{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                        </label>
+                    </div>
+                    <div class="acmg-group">
+                        <h4 class="acmg-group-title acmg-path">Pathogenic criteria</h4>
+                        <div class="acmg-criteria-grid">
+                            {% for code, label in r_acmg_codes if code[0] not in ('B',) %}
+                                <label class="acmg-cb" data-code="{{ code }}">
+                                    <span class="acmg-cb-main">
+                                        <input type="checkbox" value="{{ code }}">
+                                        <span>{{ label }}</span>
+                                    </span>
+                                    <select class="acmg-weight-select" aria-label="{{ code }} weight" disabled>
+                                        {% for weight_key, weight_label in r_acmg_weight_options[code] %}
+                                            <option value="{{ weight_key }}">{{ weight_label }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </label>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    <div class="acmg-group">
+                        <h4 class="acmg-group-title acmg-benign">Benign criteria</h4>
+                        <div class="acmg-criteria-grid">
+                            {% for code, label in r_acmg_codes if code[0] == 'B' %}
+                                <label class="acmg-cb" data-code="{{ code }}">
+                                    <span class="acmg-cb-main">
+                                        <input type="checkbox" value="{{ code }}">
+                                        <span>{{ label }}</span>
+                                    </span>
+                                    <select class="acmg-weight-select" aria-label="{{ code }} weight" disabled>
+                                        {% for weight_key, weight_label in r_acmg_weight_options[code] %}
+                                            <option value="{{ weight_key }}">{{ weight_label }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </label>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    <div class="acmg-notes-row">
+                        <label>
+                            <span>Notes</span>
+                            <textarea name="notes" rows="2" placeholder="Free-text evidence notes…"></textarea>
+                        </label>
+                    </div>
+                </div>
+                <input type="hidden" name="acmg_codes" id="acmg-hidden-modal">
+                <div class="acmg-modal-footer">
+                    <span class="acmg-selected-preview" id="acmg-preview">— no ACMG criteria selected —</span>
+                    <button type="submit" class="inline-button">Save</button>
+                    <button type="button" class="vf-clear" onclick="closeAssessModal()">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    <script>
+        var acmgDefaultWeights = {{ r_acmg_default_weights|tojson }};
+
+        function normalizeAcmgWeight(weight) {
+            var raw = (weight || '').toString().replace(/\s+/g, '').toLowerCase();
+            if (raw === 'verystrong') return 'VeryStrong';
+            if (raw === 'strong') return 'Strong';
+            if (raw === 'moderate') return 'Moderate';
+            if (raw === 'supporting') return 'Supporting';
+            if (raw === 'standalone') return 'StandAlone';
+            return weight || '';
+        }
+
+        function syncAcmgRowState(row) {
+            var cb = row.querySelector('input[type=checkbox]');
+            var sel = row.querySelector('select');
+            if (!cb || !sel) {
+                return;
+            }
+            sel.disabled = !cb.checked;
+            row.classList.toggle('is-selected', cb.checked);
+        }
+
+        function acmgTokenFromRow(row) {
+            var cb = row.querySelector('input[type=checkbox]');
+            if (!cb || !cb.checked) {
+                return null;
+            }
+            var sel = row.querySelector('select');
+            var weight = sel ? (sel.value || '') : '';
+            return weight ? (cb.value + '_' + weight) : cb.value;
+        }
+
+        function tokenStrength(token) {
+            var parts = token.split('_');
+            var code = parts[0];
+            var explicit = parts.length > 1 ? parts.slice(1).join('_') : '';
+            return normalizeAcmgWeight(explicit || acmgDefaultWeights[code] || 'Supporting');
+        }
+
+        function tokenSide(token) {
+            return token && token.charAt(0) === 'B' ? 'benign' : 'pathogenic';
+        }
+
+        function autoClassify(checked) {
+            if (!checked || checked.length === 0) return;
+
+            var counts = {
+                pathogenic: {
+                    VeryStrong: 0,
+                    Strong: 0,
+                    Moderate: 0,
+                    Supporting: 0,
+                },
+                benign: {
+                    StandAlone: 0,
+                    Strong: 0,
+                    Moderate: 0,
+                    Supporting: 0,
+                },
+            };
+
+            checked.forEach(function(token) {
+                var strength = tokenStrength(token);
+                var side = tokenSide(token);
+                var bucket = counts[side];
+                if (!bucket) {
+                    return;
+                }
+                if (side === 'benign' && strength === 'StandAlone') bucket.StandAlone += 1;
+                else if (strength === 'VeryStrong') bucket.VeryStrong += 1;
+                else if (strength === 'Strong') bucket.Strong += 1;
+                else if (strength === 'Moderate') bucket.Moderate += 1;
+                else bucket.Supporting += 1;
+            });
+
+            var path = counts.pathogenic;
+            var benign = counts.benign;
+            var hasPathogenicEvidence = path.VeryStrong + path.Strong + path.Moderate + path.Supporting > 0;
+            var hasBenignEvidence = benign.StandAlone + benign.Strong + benign.Moderate + benign.Supporting > 0;
+
+            function classifyPathogenic() {
+                if (
+                    (path.VeryStrong >= 1 && path.Strong >= 1) ||
+                    (path.VeryStrong >= 1 && path.Moderate >= 2) ||
+                    (path.VeryStrong >= 1 && path.Moderate >= 1 && path.Supporting >= 1) ||
+                    (path.VeryStrong >= 1 && path.Supporting >= 2) ||
+                    path.Strong >= 2 ||
+                    (path.Strong >= 1 && path.Moderate >= 3) ||
+                    (path.Strong >= 1 && path.Moderate >= 2 && path.Supporting >= 2) ||
+                    (path.Strong >= 1 && path.Moderate >= 1 && path.Supporting >= 4)
+                ) {
+                    return 'Pathogenic';
+                }
+                if (
+                    (path.VeryStrong >= 1 && path.Moderate >= 1) ||
+                    (path.Strong >= 1 && path.Moderate >= 1) ||
+                    (path.Strong >= 1 && path.Supporting >= 2) ||
+                    path.Moderate >= 3 ||
+                    (path.Moderate >= 2 && path.Supporting >= 2) ||
+                    (path.Moderate >= 1 && path.Supporting >= 4)
+                ) {
+                    return 'Likely pathogenic';
+                }
+                return 'Uncertain significance';
+            }
+
+            function classifyBenign() {
+                if (benign.StandAlone >= 1 || benign.Strong >= 2) {
+                    return 'Benign';
+                }
+                if ((benign.Strong >= 1 && benign.Supporting >= 1) || benign.Supporting >= 2) {
+                    return 'Likely benign';
+                }
+                return 'Uncertain significance';
+            }
+
+            var cls = '';
+
+            if (hasPathogenicEvidence && hasBenignEvidence) {
+                cls = 'Uncertain significance';
+            }
+            else if (hasPathogenicEvidence) {
+                cls = classifyPathogenic();
+            }
+            else if (hasBenignEvidence) {
+                cls = classifyBenign();
+            }
+            else {
+                cls = 'Uncertain significance';
+            }
+
+            var sel = document.querySelector('#assess-form [name=classification]');
+            if (sel && cls) {
+                sel.value = cls;
+                sel.style.outline = '2px solid #6366f1';
+                setTimeout(function(){ sel.style.outline = ''; }, 1200);
+            }
+
+            var evMap = {
+                'Pathogenic':             'Strong',
+                'Likely pathogenic':      'Moderate',
+                'Benign':                 'Strong',
+                'Likely benign':          'Moderate',
+                'Uncertain significance': 'Supporting',
+            };
+            var evSel = document.querySelector('#assess-form [name=evidence_level]');
+            if (evSel && evMap[cls]) {
+                evSel.value = evMap[cls];
+            }
+        }
+
+        function updateAcmgPreview() {
+            var checked = Array.from(document.querySelectorAll('#acmg-modal .acmg-cb'))
+                .map(acmgTokenFromRow)
+                .filter(Boolean);
+            document.getElementById('acmg-hidden-modal').value = checked.join(', ');
+            document.getElementById('acmg-preview').textContent =
+                checked.length ? checked.join(', ') : '\u2014 no ACMG criteria selected \u2014';
+            autoClassify(checked);
+        }
+
+        function openAssessModal(actionUrl, trEl) {
+            document.getElementById('assess-form').action = actionUrl;
+            document.getElementById('assess-form').reset();
+            document.querySelectorAll('#acmg-modal .acmg-cb').forEach(function(row){
+                var cb = row.querySelector('input[type=checkbox]');
+                var sel = row.querySelector('select');
+                if (cb) cb.checked = false;
+                if (sel) sel.disabled = true;
+                row.classList.remove('is-selected');
+            });
+            document.getElementById('acmg-hidden-modal').value = '';
+            document.getElementById('acmg-preview').textContent = '\u2014 no ACMG criteria selected \u2014';
+
+            var panel = document.getElementById('ai-suggestion-panel');
+            var aiScore = trEl ? trEl.dataset.aiScore : '';
+            var aiReason = trEl ? trEl.dataset.aiReason : '';
+            if (aiScore !== '' && aiReason) {
+                try {
+                    var r = JSON.parse(aiReason);
+                    document.getElementById('ai-r-symptoms').textContent  = r.patient_symptoms  || '—';
+                    document.getElementById('ai-r-gene').textContent      = r.gene_diseases      || '—';
+                    document.getElementById('ai-r-relevance').textContent = r.relevance          || '—';
+                    document.getElementById('ai-r-popfreq').textContent   = r.population_frequency || '—';
+                    document.getElementById('ai-r-insilico').textContent = r.in_silico_predictions || '—';
+                    document.getElementById('ai-r-family').textContent    = r.family_history     || '—';
+                    document.getElementById('ai-r-rationale').textContent = r.score_rationale    || '—';
+
+                    var suggestPanel = document.getElementById('ai-acmg-suggest');
+                    var badges = document.getElementById('ai-acmg-badges');
+                    var suggested = r.suggested_acmg || [];
+                    if (suggested.length > 0) {
+                        badges.innerHTML = suggested.map(function(c) {
+                            return '<span class="acmg-suggest-chip">' + c + '</span>';
+                        }).join('');
+                        document.getElementById('ai-apply-btn').style.display = '';
+                        suggestPanel.dataset.codes = JSON.stringify(suggested);
+                    } else {
+                        badges.innerHTML = '<span class="ai-no-criteria">No applicable criteria found — manual selection required.</span>';
+                        document.getElementById('ai-apply-btn').style.display = 'none';
+                        suggestPanel.dataset.codes = '[]';
+                    }
+                    suggestPanel.style.display = 'flex';
+
+                    var missingPanel = document.getElementById('ai-missing-data');
+                    var missingList = document.getElementById('ai-missing-list');
+                    var missing = r.missing_data || [];
+                    if (missing.length > 0) {
+                        missingList.innerHTML = missing.map(function(m) {
+                            return '<li>' + m.replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</li>';
+                        }).join('');
+                        missingPanel.style.display = 'block';
+                    } else {
+                        missingPanel.style.display = 'none';
+                    }
+                    panel.style.display = 'block';
+                } catch(e) {
+                    panel.style.display = 'none';
+                }
+            } else {
+                panel.style.display = 'none';
+            }
+
+            document.getElementById('acmg-modal').style.display = 'flex';
+        }
+
+        function closeAssessModal() {
+            document.getElementById('acmg-modal').style.display = 'none';
+        }
+
+        function applyAiAcmg() {
+            var suggestPanel = document.getElementById('ai-acmg-suggest');
+            var codes = JSON.parse(suggestPanel.dataset.codes || '[]');
+            document.querySelectorAll('#acmg-modal .acmg-cb').forEach(function(row){
+                var cb = row.querySelector('input[type=checkbox]');
+                var sel = row.querySelector('select');
+                if (!cb || !sel) {
+                    return;
+                }
+                var match = codes.find(function(code) {
+                    return code === cb.value || code.indexOf(cb.value + '_') === 0;
+                });
+                if (match) {
+                    cb.checked = true;
+                    var suffix = match.indexOf('_') !== -1 ? match.split('_').slice(1).join('_') : '';
+                    if (suffix) {
+                        sel.value = suffix;
+                    }
+                    sel.disabled = false;
+                    row.classList.add('is-selected');
+                }
+            });
+            updateAcmgPreview();
+        }
+
+        document.querySelectorAll('#acmg-modal .acmg-cb').forEach(function(row){
+            var cb = row.querySelector('input[type=checkbox]');
+            var sel = row.querySelector('select');
+            if (cb) {
+                cb.addEventListener('change', function(){
+                    syncAcmgRowState(row);
+                    updateAcmgPreview();
+                });
+            }
+            if (sel) {
+                sel.addEventListener('change', updateAcmgPreview);
+            }
+            syncAcmgRowState(row);
+        });
+    </script>
+</body>
+</html>

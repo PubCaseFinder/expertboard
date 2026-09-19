@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Variant reviews | ExpertBoard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='expertboard.css', v='20260917b') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='driver.css', v='1.3.1') }}">
+</head>
+<body>
+    {% include "_role_bar.html" %}
+    <main class="landing">
+        <nav class="page-nav">
+            <a href="{{ url_for('expertboard.board_list') }}">Expert boards</a>
+            <a href="{{ url_for('expertboard.patient_list') }}">Patients</a>
+            <a href="{{ url_for('expertboard.patient_queue') }}">Review queue</a>
+            <a class="active" href="{{ url_for('expertboard.variant_assessment_review') }}">Variant reviews</a>
+            <a href="{{ url_for('expertboard.admin_panel') }}">Admin</a>
+        </nav>
+        <div class="patient-guide-launch">
+            <button class="inline-button patient-guide-button" id="variant-review-guide-start" type="button" aria-label="Start guide">Start guide</button>
+        </div>
+
+        <section class="section section-wide">
+            <h1>VA-Spec assessment review</h1>
+            <p class="section-copy">Patient case, VCF variant, evidence, and curator assessment relationships, with the VA-Spec JSON retained for data-format verification.</p>
+
+            {% if r_records %}
+                <div class="va-spec-review-tabs" role="tablist" aria-label="Assessment aggregation">
+                    <button class="va-spec-review-tab is-active" type="button" role="tab" aria-selected="true" data-view="gene">By gene</button>
+                    <button class="va-spec-review-tab" type="button" role="tab" aria-selected="false" data-view="classification">By classification</button>
+                    <button class="va-spec-review-tab" type="button" role="tab" aria-selected="false" data-view="patient">By patient</button>
+                </div>
+
+                <div class="va-spec-review-view" id="gene-view">
+                    <label class="va-spec-gene-search" for="va-spec-gene-query">
+                        <span>Search gene</span>
+                        <input id="va-spec-gene-query" type="search" placeholder="e.g. MYH7" autocomplete="off">
+                    </label>
+                    {% for gene, groups in r_by_gene.items() %}
+                        <section class="va-spec-review-group" data-gene="{{ gene|lower }}">
+                            <h2 class="va-spec-review-group-title">{{ gene }} <span class="count-badge">{{ groups|length }} variants</span></h2>
+                            {% for group in groups %}
+                                {% include "_va_spec_gene_position.html" %}
+                            {% endfor %}
+                        </section>
+                    {% endfor %}
+                </div>
+
+                <div class="va-spec-review-view" id="classification-view" hidden>
+                    {% for classification, classification_records in r_by_classification.items() %}
+                        <section class="va-spec-review-group">
+                            <h2 class="va-spec-review-group-title">{{ classification }} <span class="count-badge">{{ classification_records|length }} assessments</span></h2>
+                            <div class="table-wrap">
+                                <table class="variant-table va-spec-classification-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Gene</th>
+                                            <th>Variant</th>
+                                            <th>Patient</th>
+                                            <th>ACMG evidence</th>
+                                            <th>Score</th>
+                                            <th>Curator</th>
+                                            <th>Created</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for record in classification_records %}
+                                            <tr>
+                                                <td><strong>{{ record.variant.gene or "—" }}</strong></td>
+                                                <td><code>{{ record.variant.chrom }}:{{ record.variant.pos }} {{ record.variant.ref }}&gt;{{ record.variant.alt }}</code></td>
+                                                <td><a class="inline-link" href="{{ url_for('expertboard.patient_detail', patient_id=record.patient.id) }}">{{ record.patient.patient_code }}</a></td>
+                                                <td>{{ record.assessment.acmg_codes or "—" }}</td>
+                                                <td>{{ record.summary.total_score }}</td>
+                                                <td>{{ record.assessment.assessed_by or "Unknown reviewer" }}</td>
+                                                <td>{{ record.assessment.created_at }}</td>
+                                            </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </section>
+                    {% endfor %}
+                </div>
+
+                <div class="va-spec-review-view" id="patient-view" hidden>
+                    {% for group in r_by_patient %}
+                        <section class="va-spec-review-group">
+                            <h2 class="va-spec-review-group-title">{{ group.patient.patient_code }}{% if group.patient.display_name %} / {{ group.patient.display_name }}{% endif %} <span class="count-badge">{{ group.records|length }}</span></h2>
+                            {% for record in group.records %}
+                                {% include "_va_spec_review_record.html" %}
+                            {% endfor %}
+                        </section>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <div class="empty">No saved variant assessments yet.</div>
+            {% endif %}
+        </section>
+    </main>
+    <div class="va-spec-annotation-modal" id="va-spec-annotation-modal" hidden>
+        <div class="va-spec-annotation-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="va-spec-annotation-modal-title">
+            <div class="va-spec-annotation-modal-header">
+                <h2 id="va-spec-annotation-modal-title">Saved VEP / VCF annotation</h2>
+                <button type="button" class="va-spec-annotation-close" aria-label="Close">Close</button>
+            </div>
+            <dl class="va-spec-annotation-list" id="va-spec-annotation-list"></dl>
+        </div>
+    </div>
+    <script>
+        // Resolve relative fetch() URLs against location.origin (never has credentials)
+        // so a page URL with embedded Basic Auth doesn't make fetch() throw.
+        (function (nativeFetch) {
+            window.fetch = function (input, init) {
+                if (typeof input === 'string' && !/^[a-z][a-z0-9+.-]*:/i.test(input)) {
+                    input = new URL(input, window.location.origin).toString();
+                }
+                return nativeFetch(input, init);
+            };
+        })(window.fetch);
+
+        document.querySelectorAll('.va-spec-review-tab').forEach(function(tab) {
+            tab.addEventListener('click', function() {
+                var view = tab.dataset.view;
+                document.querySelectorAll('.va-spec-review-tab').forEach(function(item) {
+                    var active = item === tab;
+                    item.classList.toggle('is-active', active);
+                    item.setAttribute('aria-selected', active ? 'true' : 'false');
+                });
+                document.getElementById('gene-view').hidden = view !== 'gene';
+                document.getElementById('classification-view').hidden = view !== 'classification';
+                document.getElementById('patient-view').hidden = view !== 'patient';
+            });
+        });
+        document.getElementById('va-spec-gene-query').addEventListener('input', function(event) {
+            var query = event.target.value.trim().toLowerCase();
+            document.querySelectorAll('#gene-view .va-spec-review-group').forEach(function(group) {
+                group.hidden = query && !group.dataset.gene.includes(query);
+            });
+        });
+        var targetVariant = {{ r_target_variant|tojson }};
+        if (targetVariant) {
+            document.querySelectorAll('#gene-view .va-spec-position-card').forEach(function(card) {
+                var match = card.dataset.variantKey === targetVariant;
+                if (match) {
+                    card.querySelector('details').open = true;
+                    card.scrollIntoView({block: 'start'});
+                }
+            });
+        }
+        document.querySelectorAll('.va-spec-sort-button').forEach(function(button) {
+            button.addEventListener('click', function() {
+                var table = button.closest('table');
+                var column = Number(button.dataset.column);
+                var numeric = button.dataset.sort === 'number';
+                var direction = button.dataset.direction === 'asc' ? 'desc' : 'asc';
+                var rows = Array.from(table.tBodies[0].rows);
+                rows.sort(function(left, right) {
+                    var leftCell = left.cells[column];
+                    var rightCell = right.cells[column];
+                    var leftValue = leftCell ? leftCell.textContent.trim() : '';
+                    var rightValue = rightCell ? rightCell.textContent.trim() : '';
+                    if (numeric) {
+                        leftValue = Number(leftValue) || 0;
+                        rightValue = Number(rightValue) || 0;
+                    }
+                    var result = numeric
+                        ? leftValue - rightValue
+                        : leftValue.localeCompare(rightValue, undefined, {numeric: true});
+                    return direction === 'asc' ? result : -result;
+                });
+                rows.forEach(function(row) { table.tBodies[0].appendChild(row); });
+                table.querySelectorAll('.va-spec-sort-button').forEach(function(item) {
+                    item.dataset.direction = '';
+                    item.querySelector('span').textContent = '';
+                });
+                button.dataset.direction = direction;
+                button.querySelector('span').textContent = '';
+            });
+        });
+        var annotationModal = document.getElementById('va-spec-annotation-modal');
+        var annotationList = document.getElementById('va-spec-annotation-list');
+        document.addEventListener('click', function(event) {
+            var button = event.target.closest('.va-spec-annotation-button');
+            if (!button) return;
+            var annotations = JSON.parse(button.dataset.annotations || '[]');
+            annotationList.replaceChildren();
+            annotations.forEach(function(annotation) {
+                var name = document.createElement('dt');
+                var value = document.createElement('dd');
+                name.textContent = annotation.name;
+                value.textContent = annotation.value;
+                annotationList.append(name, value);
+            });
+            annotationModal.hidden = false;
+        });
+        document.querySelector('.va-spec-annotation-close').addEventListener('click', function() {
+            annotationModal.hidden = true;
+        });
+        annotationModal.addEventListener('click', function(event) {
+            if (event.target === annotationModal) annotationModal.hidden = true;
+        });
+        document.querySelectorAll('.va-review-clinvar-button').forEach(function(button) {
+            button.addEventListener('click', async function() {
+                var status = button.nextElementSibling;
+                button.disabled = true;
+                status.textContent = 'Fetching...';
+                try {
+                    var response = await fetch(button.dataset.url, {
+                        method: 'POST', headers: {'Accept': 'application/json'}
+                    });
+                    var data = await response.json();
+                    if (!response.ok) throw new Error(data.error || 'ClinVar lookup failed.');
+                    status.textContent = data.result && (data.result.summary ||
+                        (data.result.submissions || []).length)
+                        ? 'ClinVar evidence saved.'
+                        : 'No ClinVar summary or SCV evidence found.';
+                    if (data.updated_at) status.textContent += ' ' + data.updated_at;
+                } catch (error) {
+                    status.textContent = 'Error: ' + error.message;
+                } finally {
+                    button.disabled = false;
+                }
+            });
+        });
+    </script>
+    <script src="{{ url_for('static', filename='driver.js.iife.js', v='1.3.1') }}" defer></script>
+    <script>
+        (function () {
+            function startVariantReviewGuide() {
+                if (!window.driver || !window.driver.js ||
+                    typeof window.driver.js.driver !== 'function') {
+                    alert('Driver.js failed to load.');
+                    return;
+                }
+                var guide = window.driver.js.driver({
+                    showProgress: true,
+                    steps: [
+                        {
+                            element: '.page-nav .active',
+                            popover: {
+                                title: 'Variant reviews',
+                                description: 'This page presents saved VA-Spec assessment results grouped by gene and patient.',
+                                side: 'bottom',
+                                align: 'center'
+                            }
+                        },
+                        {
+                            element: '#gene-view',
+                            popover: {
+                                title: 'Gene view',
+                                description: 'Use the Gene view to inspect variants shared across patients and their cohort statistics.',
+                                side: 'top',
+                                align: 'center'
+                            }
+                        },
+                        {
+                            element: '#va-spec-gene-query',
+                            popover: {
+                                title: 'Search gene',
+                                description: 'Enter a gene symbol to filter the Gene view.',
+                                side: 'bottom',
+                                align: 'start'
+                            }
+                        },
+                        {
+                            element: '.va-spec-position-card > details > summary',
+                            popover: {
+                                title: 'Show patients, cohort ratios, and assessments',
+                                description: 'Open this section to view the patients, cohort ratios, evidence, and curator assessments for the variant.',
+                                side: 'bottom',
+                                align: 'start'
+                            }
+                        },                        {
+                            element: '.va-spec-position-card',
+                            popover: {
+                                title: 'Variant statistics',
+                                description: 'Each card represents one GRCh38 variant and shows patient, classification, diagnosis, and HPO statistics.',
+                                side: 'top',
+                                align: 'start'
+                            }
+                        },
+                        {
+                            element: '.va-spec-position-card .va-spec-evidence-node',
+                            popover: {
+                                title: 'Evidence across assessments',
+                                description: 'Review the combined evidence from all curator assessments.',
+                                side: 'top',
+                                align: 'center'
+                            }
+                        },
+                        {
+                            element: '.va-spec-annotation-button',
+                            popover: {
+                                title: 'VEP / VCF annotation',
+                                description: 'Select this button to open the saved annotation details in a small window.',
+                                side: 'bottom',
+                                align: 'center'
+                            }
+                        },
+                        {
+                            element: '.va-spec-position-card .va-spec-evidence-node a.inline-link',
+                            popover: {
+                                title: 'Patient details',
+                                description: 'Select a Patient ID to open that patient\'s detail page.',
+                                side: 'left',
+                                align: 'center'
+                            }
+                        }
+                    ]
+                });
+                guide.drive();
+            }
+
+            function initVariantReviewGuide() {
+                var button = document.getElementById('variant-review-guide-start');
+                if (button) button.addEventListener('click', startVariantReviewGuide);
+            }
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', initVariantReviewGuide, {once: true});
+            } else {
+                initVariantReviewGuide();
+            }
+        }());
+    </script>
+</body>
+</html>

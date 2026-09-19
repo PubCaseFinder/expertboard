@@ -1,0 +1,111 @@
+<article class="va-spec-review-card">
+    <div class="va-spec-review-meta">
+        <span><strong>Patient:</strong> {{ record.patient.patient_code }}</span>
+        <span><strong>Variant:</strong> {{ record.variant.chrom }}:{{ record.variant.pos }} {{ record.variant.ref }}&gt;{{ record.variant.alt }}</span>
+        <span><strong>HGVS:</strong> {{ record.variant.hgvs_c or "-" }}</span>
+        <span><strong>Classification:</strong> {{ record.summary.classification }}</span>
+        <span><strong>Evidence:</strong> {{ record.summary.evidence|length }}</span>
+        <span><strong>Assessment ID:</strong> {{ record.assessment.id }}</span>
+        <button type="button" class="clinvar-row-btn va-review-clinvar-button"
+                data-url="{{ url_for('expertboard.api_variant_clinvar', patient_id=record.patient.id, variant_id=record.variant.id) }}">
+            Fetch ClinVar
+        </button>
+        <span class="clinvar-row-status va-review-clinvar-status" role="status"></span>
+    </div>
+    <details>
+        <summary>Show parsed relationships, VA-Spec JSON, and saved values</summary>
+        <div class="va-spec-relationship">
+            <section class="va-spec-relationship-node va-spec-evidence-node">
+                <h3>3. Evidence for assessment #{{ record.assessment.id }}</h3>
+                <p class="va-spec-data-note">Curator: <strong>{{ record.assessment.assessed_by or "Unknown reviewer" }}</strong>{% if record.assessment.notes %} | Overall comment: {{ record.assessment.notes }}{% endif %}</p>
+                {% if record.summary.evidence %}
+                    <table class="va-spec-evidence-table">
+                        <thead><tr><th>Code</th><th>Strength</th><th>Curator</th><th>Classification</th><th>Created</th><th>Direction</th><th>Points</th><th>Curator comment</th><th>Saved VEP<br>/ VCF annotation</th></tr></thead>
+                        <tbody>
+                            {% for evidence in record.summary.evidence %}
+                                <tr>
+                                    <td><code>{{ evidence.code }}</code></td>
+                                    <td>{{ evidence.strength }}</td>
+                                    <td>{{ record.assessment.assessed_by or "Unknown reviewer" }}</td>
+                                    <td>{{ record.summary.classification }}</td>
+                                    <td>{{ record.assessment.created_at }}</td>
+                                    <td>{{ "supports" if evidence.points > 0 else "disputes" if evidence.points < 0 else "neutral" }}</td>
+                                    <td>{{ evidence.points }}</td>
+                                    <td>{{ evidence.comment or "-" }}</td>
+                                    <td>
+                                        {% if record.variant_annotations %}
+                                            <button type="button" class="va-spec-annotation-button" data-annotations='{{ record.variant_annotations|tojson }}'>{{ "Updated VEP" if record.annotation_source.startswith("Refreshed VEP") else "VCF INFO" }}</button>
+                                        {% else %}
+                                            -
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                {% else %}
+                    <p class="va-spec-data-note">No ACMG evidence is saved for this assessment.</p>
+                {% endif %}
+            </section>
+
+            <section class="va-spec-relationship-node va-spec-patient-node">
+                <h3>1. Patient case</h3>
+                <dl class="va-spec-data-list">
+                    <dt>Patient ID</dt><dd>{{ record.patient.patient_code }}</dd>
+                    <dt>Name</dt><dd>{{ record.patient.display_name or "-" }}</dd>
+                    <dt>Diagnosis</dt><dd>{{ record.patient.diagnosis_name or "Unspecified condition" }}</dd>
+                    <dt>Case summary</dt><dd>{{ record.patient.summary or "-" }}</dd>
+                </dl>
+                {% if record.patient_phenotypes %}
+                    <p class="va-spec-relationship-label">Confirmed phenotypes</p>
+                    <ul class="va-spec-compact-list">
+                        {% for phenotype in record.patient_phenotypes %}
+                            <li><code>{{ phenotype.hpo_id }}</code> {{ phenotype.hpo_label or "-" }}</li>
+                        {% endfor %}
+                    </ul>
+                {% endif %}
+            </section>
+
+            <section class="va-spec-relationship-node va-spec-variant-node">
+                <h3>2. VCF variant</h3>
+                <dl class="va-spec-data-list">
+                    <dt>Variant ID</dt><dd>{{ record.variant.id }}</dd>
+                    <dt>Source VCF</dt><dd>{{ record.patient.vcf_path or "-" }}</dd>
+                    <dt>Coordinate</dt><dd><code>{{ record.variant.chrom }}:{{ record.variant.pos }} {{ record.variant.ref }}&gt;{{ record.variant.alt }}</code></dd>
+                    <dt>Gene</dt><dd>{{ record.variant.gene or "-" }}</dd>
+                    <dt>HGVS</dt><dd>{{ record.variant.hgvs_c or "-" }}{% if record.variant.hgvs_p %} / {{ record.variant.hgvs_p }}{% endif %}</dd>
+                    <dt>Genotype</dt><dd>{{ record.variant.genotype or "-" }}</dd>
+                </dl>
+                <p class="va-spec-data-note">This version stores one VCF path on the patient. Separate VCF-source records per variant are not yet modeled.</p>
+            </section>
+
+            <section class="va-spec-relationship-node va-spec-curator-node">
+                <h3>4. Curator assessments for this variant</h3>
+                <table class="va-spec-evidence-table">
+                    <thead><tr><th>Assessment</th><th>Patient</th><th>Curator</th><th>Classification</th><th>Evidence</th><th>Created</th><th>Curator comment</th></tr></thead>
+                    <tbody>
+                        {% for related in record.related_assessments %}
+                            <tr class="{{ 'va-spec-current-assessment' if related.assessment.id == record.assessment.id else '' }}">
+                                <td>#{{ related.assessment.id }}{% if related.assessment.id == record.assessment.id %} (current){% endif %}</td>
+                                <td><a class="inline-link" href="{{ url_for('expertboard.patient_detail', patient_id=related.patient.id) }}">{{ related.patient.patient_code }}</a></td>
+                                <td>{{ related.assessment.assessed_by or "Unknown reviewer" }}</td>
+                                <td>{{ related.summary.classification }}</td>
+                                <td>{{ related.summary.evidence|length }}</td>
+                                <td>{{ related.assessment.created_at }}</td>
+                                <td>{{ related.assessment.notes or "-" }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                <p class="va-spec-data-note">Each row is an independent curator assessment. Its evidence list and comments are shown in section 3 for the current assessment.</p>
+            </section>
+        </div>
+        <pre class="va-json">{{ record.document_json }}</pre>
+        <div class="va-spec-review-meta">
+            <span><strong>ACMG codes:</strong> {{ record.assessment.acmg_codes or "-" }}</span>
+            <span><strong>Score:</strong> {{ record.summary.total_score }}</span>
+            <span><strong>Posterior probability:</strong> {{ "%.6f"|format(record.summary.posterior_probability) }}</span>
+            <span><strong>Reviewer:</strong> {{ record.assessment.assessed_by or "-" }}</span>
+        </div>
+    </details>
+</article>

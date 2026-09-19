@@ -1,8 +1,44 @@
 # ExpertBoard
 
+**This build is a branch of the [llm-integration](https://github.com/PubCaseFinder/expertboard/tree/feature/llm-integration) feature from ExpertBoard.**
+
 A web application for expert panel review of undiagnosed disease cases, built during the **MedHack 2026-07-29** hackathon.
 
 ExpertBoard is an experimental, standalone prototype for AI-assisted complex case review. It explores reusable expert boards organized by gene, disease, or clinical domain, with ACMG-based variant assessment and Ollama LLM integration.
+
+## BH26.9 Hackathon Results
+
+The BH26.9 work expanded ExpertBoard with VEP/VRS refresh and persistence,
+ClinVar SCV evidence for PM3/PP1 review, reviewer-mediated HPO resolution via
+OLS4MCP, explicit PubCaseFinder/TogoMCP actions, per-variant AI analysis,
+curator source links, and improved assessment workflows.
+
+Full details are documented in [BH26.9 Hackathon Results](docs/bh26.9-hackathon-results.md),
+including the commit range, data-flow policy, validation notes, and tool versions.
+
+---
+
+## Change Log
+
+### 09/08/2026
+
+Changes were made to criteria assignment so that it is more aligned to current ACMG/AMP recommendations (latest update: July 2025), [see here](https://www.clinicalgenome.org/tools/clingen-variant-classification-guidance/).
+
+- Added modifiable ACMG scores as dropdown options - this is based on ClinGen's [*Guidance on how to rename criteria codes when strength of evidence is modified*](https://www.clinicalgenome.org/docs/clingen-sequence-variant-interpretation-working-group-recommendations-for-acmg-amp-guideline-criteria-code-modifications/).
+
+  - By default, PM2 is now set at a supporting level of evidence as its weight was downgraded - see [*ClinGen PM2 Recommendation for Absence Rarity*](https://www.clinicalgenome.org/docs/pm2-recommendation-for-absence-rarity/).
+
+![image](expertboard_acmg_score_weights.png)
+
+- Removed `drug response` and `risk factors` labels from classification groups to keep the scope aligned with ACMG nomenclature.
+
+- Added additional evidence (e.g., population frequency and in silico predictions) to the LLM review panel in `patients.py`. This is an illustrative example to allow the user to review the AI's decision-making for automatable ACMG criteria.
+
+- Added a second dummy VCF with additional simulated annotation metadata which includes *in silico* prediction scores and population frequencies. This VCF can be found in `/sample-data`.
+
+- Adjusted the LLM prompt in `llm.py` to *try* and categorize each ACMG criteria for better context and understanding (performance will still limited by the model of choice). This is somewhat achievable for PP3 and PM2 using llama 3.2 @ 32k context size.
+
+![image](ai_reasoning_updated.png)
 
 ---
 
@@ -24,8 +60,18 @@ ExpertBoard is an experimental, standalone prototype for AI-assisted complex cas
 - Cross-patient review tracking ("Other pt. reviews" column, read-only)
 - Composite sort: Clin. sig. > Other pt. reviews > Assessed
 
-### AI-Assisted Analysis (Ollama)
-- Configure Ollama endpoint (URL, model, API key) via **Admin → Ollama settings**
+### AI-Assisted Analysis (Ollama / cloud-compatible)
+- Configure the endpoint (URL, model, API key) via **Admin → LLM settings**
+- Base URL should be a host/base path, not a full chat endpoint:
+  - Local Ollama: `http://localhost:11434`
+  - Ollama Cloud: `https://ollama.com/api`
+  - OpenAI-compatible gateway: `https://your-host/v1`
+  - If `/api/chat`, `/api`, or `/chat/completions` is pasted by mistake, ExpertBoard normalizes it automatically.
+- Model should match the provider's published model name (example: `llama3.2`)
+- The **"✦ Analyze with AI"** button appears only when:
+  - LLM settings are saved in Admin
+  - The patient has at least one imported variant
+  - Clinical text is entered and saved for that patient
 - **"✦ Analyze with AI"** — sends clinical text + VCF INFO fields to LLM
 - Per-variant structured reasoning displayed in the assessment modal:
   - Patient symptoms summary
@@ -51,9 +97,30 @@ ExpertBoard is an experimental, standalone prototype for AI-assisted complex cas
 | Backend | Python 3.12, Flask 3.0.3 |
 | ORM | SQLAlchemy 2.0 |
 | Database | MySQL 8.4 (Docker) |
-| LLM | Ollama (OpenAI-compatible API) |
+| LLM | Ollama local/cloud API or OpenAI-compatible API |
 | Frontend | Vanilla HTML/CSS/JS |
 | Container | Docker Compose |
+
+## Tool and service versions
+
+| Tool or service | Version or endpoint |
+|---|---|
+| Python base image | `python:3.11-slim` |
+| Flask | `3.0.3` |
+| SQLAlchemy | `2.0.31` |
+| PyMySQL | `1.1.1` |
+| Requests | `2.32.3` |
+| cryptography | `43.0.0` |
+| python-dotenv | `1.0.1` |
+| GA4GH VRS | `2.3.3` |
+| MySQL | `8.4` |
+| SeqRepo REST service | `biocommons/seqrepo-rest-service:0.2.2` |
+| SeqRepo data | `2024-12-20` by default |
+| OLS4MCP | `https://www.ebi.ac.uk/ols4/api/mcp` |
+| TogoMCP | `https://togomcp.rdfportal.org/mcp` |
+| Ensembl VEP | GRCh38 REST region API |
+| ClinVar | NCBI E-utilities `esearch`, `esummary`, and `efetch` |
+| Ollama | Configured at runtime in Admin |
 
 ---
 
@@ -72,6 +139,51 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
+## VEP and GA4GH VRS lookup
+
+Each variant row has a **VEP / VRS** action. It queries Ensembl VEP using the
+GRCh38 region endpoint and generates a normalized VRS Allele using the official
+`ga4gh.vrs` Python package. VEP remains available when SeqRepo is offline. By
+default, VRS uses the public SeqRepo REST service over HTTPS, so no local
+reference data download is required:
+
+```bash
+GA4GH_VRS_DATAPROXY_URI=seqrepo+https://services.genomicmedlab.org/seqrepo
+docker compose up -d --build app
+```
+
+For production or closed-network operation, run the optional local SeqRepo
+service. Store the GRCh38 data set in a host-managed persistent directory
+(preferably on a large data volume), and set these values in `.env`:
+
+```bash
+sudo mkdir -p /srv/expertboard/seqrepo
+printf '\nSEQREPO_DATA_DIR=/srv/expertboard/seqrepo\n' >> .env
+printf 'GA4GH_VRS_DATAPROXY_URI=seqrepo+http://seqrepo:5000/seqrepo\n' >> .env
+
+sudo docker run --rm \
+  -v /srv/expertboard/seqrepo:/usr/local/share/seqrepo \
+  biocommons/seqrepo-rest-service:0.2.2 \
+  sh -c 'apt-get update && apt-get install -y --no-install-recommends rsync && \
+         seqrepo pull -i 2024-12-20'
+```
+
+Start ExpertBoard with the optional SeqRepo REST service:
+
+```bash
+docker compose --profile vrs up -d --build
+```
+
+Verify SeqRepo before using VRS lookup:
+
+```bash
+curl -f http://localhost:5000/seqrepo/1/metadata/GRCh38:6
+```
+
+The host directory, data version, and host port can be overridden with
+`SEQREPO_DATA_DIR`, `SEQREPO_VERSION`, and `EXPERTBOARD_SEQREPO_PORT`. The
+application-side endpoint is configured through `GA4GH_VRS_DATAPROXY_URI`.
+
 Open:
 
 ```text
@@ -79,6 +191,22 @@ http://localhost:8010/boards
 ```
 
 Create the first demo board room from the landing page.
+
+## TogoMCP and PubCaseFinder
+
+The case Evidence inbox uses the PubCaseFinder tools introduced in TogoMCP
+2.16.0 to rank candidate diseases from HPO terms and retrieve PubMed case
+reports. It uses the hosted DBCLS endpoint by default:
+
+```bash
+TOGOMCP_BASE_URL=https://togomcp.rdfportal.org/mcp
+```
+
+For a private TogoMCP service on the same Docker network, set this to
+`http://togomcp:8000/mcp`. ExpertBoard sends only HPO and MONDO identifiers to
+TogoMCP, not patient names or clinical free text. When a review room is linked
+to a patient, the resulting evidence can be included in the existing Ollama
+variant analysis.
 
 ## MVP scope
 

@@ -5,11 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ r_patient.display_name or r_patient.patient_code }} | ExpertBoard</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='expertboard.css', v='20260729v') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='driver.css', v='1.3.1') }}">
 </head>
 <body>
     {% include "_role_bar.html" %}
     <main class="landing">
         <a class="page-back-link" href="{{ url_for('expertboard.patient_list') }}">Back to Patients</a>
+        <div class="patient-guide-launch">
+            <button class="inline-button patient-guide-button" id="patient-guide-start" type="button" aria-label="Start guide">Start guide</button>
+        </div>
 
         {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
@@ -32,7 +36,7 @@
                 <div class="patient-hero-stat-row">
                     <div class="stat-card"><span>Variants</span><strong>{{ r_variants|length }}</strong></div>
                 </div>
-                <form class="inline-form" method="POST"
+                <form class="inline-form" id="patient-status-form" method="POST"
                       action="{{ url_for('expertboard.patient_status', patient_id=r_patient.id) }}">
                     <span class="inline-label">Status</span>
                     <select class="inline-select" name="review_status">
@@ -45,7 +49,7 @@
                     </select>
                     <button class="inline-button" type="submit">Update</button>
                 </form>
-                <form class="inline-form" method="POST"
+                <form class="inline-form" id="patient-expert-board-form" method="POST"
                       action="{{ url_for('expertboard.patient_expert_group', patient_id=r_patient.id) }}">
                     <span class="inline-label">Expert board</span>
                     <select class="inline-select" name="expert_board_id">
@@ -67,17 +71,81 @@
         </section>
 
         <section class="workspace">
-            <article class="section section-wide">
+            <article class="section section-wide" id="clinical-free-text-section">
                 <h2 class="section-title">Clinical free text</h2>
-                <form class="clinical-form" method="POST"
-                      action="{{ url_for('expertboard.patient_clinical_text', patient_id=r_patient.id) }}">
-                    <textarea name="clinical_text" rows="5"
-                              placeholder="e.g. 12-year-old with progressive muscle weakness, ptosis, and exercise intolerance...">{{ r_patient.clinical_text or "" }}</textarea>
-                    <button class="inline-button" type="submit">Save</button>
-                </form>
+                <div class="clinical-hpo-layout">
+                    <form class="clinical-form" method="POST"
+                          action="{{ url_for('expertboard.patient_clinical_text', patient_id=r_patient.id) }}">
+                        <textarea name="clinical_text" rows="9"
+                                  placeholder="e.g. 12-year-old with progressive muscle weakness, ptosis, and exercise intolerance...">{{ r_patient.clinical_text or "" }}</textarea>
+                        <button class="inline-button" type="submit">Save clinical text</button>
+                    </form>
+                    <section class="hpo-review-panel" aria-labelledby="clinical-context-title">
+                        <div class="hpo-review-header">
+                            <div><h3 id="clinical-context-title">Patient context</h3><p>Review ancestry and disease candidates from the saved note.</p></div>
+                            <button class="link-button" id="clinical-context-extract-btn" type="button" data-llm-configured="{{ '1' if r_llm_configured else '0' }}" onclick="extractClinicalContext(this)">Extract</button>
+                        </div>
+                        <div id="clinical-context-status" class="va-data-status" role="status"></div>
+                        <div id="clinical-context-candidates" class="hpo-candidate-list"></div>
+                        <div class="hpo-review-actions"><button class="inline-button" id="clinical-context-confirm-btn" type="button" onclick="confirmClinicalContext(this)" disabled>Apply selected</button></div>
+                        <div id="clinical-context-confirmed" class="hpo-confirmed-list">
+                            {% for item in r_clinical_context.ancestry or [] %}<div class="hpo-confirmed-item"><div><strong>Ancestry: {{ item.value }}</strong><span>{{ item.source_text }}</span></div><button class="hpo-remove-btn" type="button" title="Remove confirmed ancestry" aria-label="Remove {{ item.value }}" data-context-value="{{ item.value }}" onclick="removeClinicalContext(this, 'ancestry', this.dataset.contextValue)">&#x2715;</button></div>{% endfor %}
+                            {% for item in r_clinical_context.diseases or [] %}<div class="hpo-confirmed-item"><div><strong>Disease: {{ item.value }}</strong><span>{{ item.source_text }}</span></div><button class="hpo-remove-btn" type="button" title="Remove confirmed disease" aria-label="Remove {{ item.value }}" data-context-value="{{ item.value }}" onclick="removeClinicalContext(this, 'diseases', this.dataset.contextValue)">&#x2715;</button></div>{% endfor %}
+                        </div>
+                    </section>
+                    <section class="hpo-review-panel patient-hpo-panel" aria-labelledby="hpo-review-title">
+                        <div class="hpo-review-header">
+                            <div>
+                                <h3 id="hpo-review-title">Patient HPO</h3>
+                                <p>Review candidates extracted from the saved clinical text.</p>
+                            </div>
+                            <button class="link-button" id="hpo-extract-btn" type="button"
+                                    data-llm-configured="{{ '1' if r_llm_configured else '0' }}"
+                                    onclick="extractHpoCandidates(this)">Extract candidates</button>
+                        </div>
+                        <a class="inline-link" href="https://pubcasefinder.dbcls.jp/" target="_blank" rel="noopener">Open PubCaseFinder DiseaseSearch ↗</a>
+                        <div id="hpo-review-status" class="va-data-status" role="status"></div>
+                           <div class="hpo-manual-row">
+                            <input id="hpo-manual-input" type="text" placeholder="HP:0001250,HP:0003022"
+                                aria-label="HPO identifier">
+                            <button class="link-button" type="button"
+                                 onclick="addManualHpoCandidate(this)">Add HPO</button>
+                           </div>
+                        <div id="hpo-candidate-list" class="hpo-candidate-list"></div>
+                        <div class="hpo-review-actions">
+                            <button class="inline-button" id="hpo-resolve-btn" type="button"
+                                onclick="resolveApprovedHpoCandidates(this)" disabled>Confirm symptoms and search HPO</button>
+                        </div>
+                        <div id="hpo-disease-results" class="hpo-disease-results" hidden></div>
+                        <div class="hpo-confirmed-block">
+                            <strong>Confirmed phenotypes</strong>
+                            <div id="hpo-confirmed-list" class="hpo-confirmed-list">
+                                {% for phenotype in r_confirmed_phenotypes %}
+                                    <div class="hpo-confirmed-item"
+                                         data-hpo-id="{{ phenotype.hpo_id }}"
+                                         data-label="{{ phenotype.hpo_label or '' }}"
+                                         data-source-text="{{ phenotype.source_quote or '' }}"
+                                         data-source="{{ phenotype.source }}"
+                                         data-confirmed-by="{{ phenotype.confirmed_by }}"
+                                         data-confirmed-at="{{ phenotype.confirmed_at }}">
+                                        <div>
+                                            <strong>{{ phenotype.hpo_id }} · {{ phenotype.hpo_label or "Unlabelled phenotype" }}</strong>
+                                            <span>Confirmed by {{ phenotype.confirmed_by }} · {{ phenotype.confirmed_at }}</span>
+                                        </div>
+                                        <button class="hpo-remove-btn" type="button" title="Remove confirmed HPO"
+                                                aria-label="Remove {{ phenotype.hpo_id }}"
+                                                onclick="removeConfirmedHpo(this, '{{ phenotype.hpo_id }}')">&#x2715;</button>
+                                    </div>
+                                {% else %}
+                                    <p class="hpo-empty">No HPO phenotypes confirmed.</p>
+                                {% endfor %}
+                            </div>
+                        </div>
+                    </section>
+                </div>
             </article>
 
-            <article class="section section-wide">
+            <article class="section section-wide" id="family-section">
                 <h2 class="section-title">Family</h2>
                 <form class="inline-form" method="POST"
                       action="{{ url_for('expertboard.patient_family', patient_id=r_patient.id) }}">
@@ -157,7 +225,7 @@
                 {% endif %}
             </article>
 
-            <article class="section section-wide">
+            <article class="section section-wide" id="vcf-variants-section">
                 <h2 class="section-title">VCF variants</h2>
                 <div class="vcf-toolbar">
                     <form method="POST"
@@ -167,13 +235,52 @@
                         <input type="file" name="vcf_file" accept=".vcf" required class="vcf-file-input">
                         <button type="submit" class="inline-button">{% if r_variants %}Re-import VCF{% else %}Import VCF{% endif %}</button>
                     </form>
-                    {% if r_variants and r_patient.clinical_text %}
-                        <button class="inline-button ai-analyze-btn" type="button"
+                    {% if not r_llm_configured %}
+                        <span class="status-hint">Configure LLM Base URL and model in Admin to enable Analyze with AI.</span>
+                    {% elif r_variants and r_patient.clinical_text %}
+                        <button class="inline-button ai-analyze-btn" id="ai-analyze-btn" type="button"
                                 data-url="{{ url_for('expertboard.api_patient_llm_analyze', patient_id=r_patient.id) }}"
                                 onclick="runLlmAnalysis(this)">
                             ✦ Analyze with AI
                         </button>
                         <span class="ai-status" id="ai-status" style="display:none"></span>
+                    {% elif r_variants and not r_patient.clinical_text %}
+                        <span class="status-hint">Add and save Clinical summary above to enable Analyze with AI.</span>
+                    {% else %}
+                        <span class="status-hint">Import a VCF file to enable Analyze with AI.</span>
+                    {% endif %}
+                    {% if r_variants %}
+                        <button class="inline-button priority-sort-btn" id="priority-sort-btn" type="button" onclick="sortByEvaluationPriority(this)">
+                            Sort by evaluation priority
+                        </button>
+                        <div class="annotation-refresh-group">
+                            <button class="inline-button" id="refresh-all-annotations-btn" type="button"
+                                    data-start-url="{{ url_for('expertboard.api_start_vep_refresh', patient_id=r_patient.id) }}"
+                                    data-status-url-template="{{ url_for('expertboard.api_vep_refresh_status', patient_id=r_patient.id, job_id='JOB_ID') }}"
+                                    onclick="refreshAllAnnotations(this)">
+                                Refresh all VEP / VRS
+                            </button>
+                            <button class="inline-button" id="refresh-vep-clinvar-btn" type="button"
+                                    data-start-url="{{ url_for('expertboard.api_start_vep_refresh', patient_id=r_patient.id) }}"
+                                    data-status-url-template="{{ url_for('expertboard.api_vep_refresh_status', patient_id=r_patient.id, job_id='JOB_ID') }}"
+                                    data-clinvar-url="{{ url_for('expertboard.api_patient_clinvar_refresh', patient_id=r_patient.id) }}"
+                                    onclick="refreshVepAndClinvar(this)">
+                                Refresh VEP &amp; ClinVar
+                            </button>
+                            <button class="inline-button" id="refresh-clinvar-only-btn" type="button"
+                                    data-clinvar-url="{{ url_for('expertboard.api_patient_clinvar_refresh', patient_id=r_patient.id) }}"
+                                    onclick="refreshClinvarOnly(this)">
+                                Refresh ClinVar only
+                            </button>
+                            <span class="annotation-last-updated" id="annotation-last-updated">Last updated:<br>Not yet</span>
+                            <span class="ai-status" id="annotation-refresh-status" role="status"></span>
+                            <span class="status-hint annotation-refresh-hint">
+                                Annotating many variants can take time.<br>
+                                ExpertBoard assumes a pre-annotated VCF narrowed to <br>
+                                <strong>a few dozen variants</strong>; <br>
+                                use this API refresh when the latest annotation data is needed.</strong>
+                            </span>
+                        </div>
                     {% endif %}
                 </div>
                 {% if r_variants %}
@@ -182,20 +289,28 @@
                         <table class="variant-table" id="variant-table">
                             <thead>
                                 <tr>
+                                    <th class="priority-rank-col">Rank</th>
                                     <th>
                                         Gene
                                         <button class="th-clear-btn" type="button"
                                                 onclick="clearVfFilters()" title="Clear all filters">✕</button>
                                         <input class="th-filter" id="vf-gene" type="search" placeholder="filter…">
                                     </th>
-                                    <th>HGVS c.</th>
-                                    <th>HGVS p.</th>
+                                    <th>MANE HGVS c.
+                                        <input class="th-filter" id="vf-hgvs" type="search" placeholder="search HGVS…">
+                                    </th>
+                                    <th>MANE HGVS p.</th>
+                                    <th>Chr</th>
+                                    <th>POS</th>
+                                    <th>rsID</th>
+                                    <th>REF</th>
+                                    <th>ALT</th>
                                     <th>
                                         Type
                                         <input class="th-filter" id="vf-type" type="search" placeholder="filter…">
                                     </th>
-                                    <th>Locus</th>
-                                    <th>REF/ALT</th>
+                                    <th>Live VEP</th>
+                                    <th>Live ClinVar</th>
                                     <th>
                                         <abbr title="Same variant assessed in other patients registered in this system">Other pt. reviews</abbr>
                                         <select class="th-filter" id="vf-past">
@@ -205,11 +320,10 @@
                                             <option value="uncertain_significance">VUS</option>
                                             <option value="likely_benign">Likely benign</option>
                                             <option value="benign">Benign</option>
-                                            <option value="drug_response">Drug response</option>
-                                            <option value="risk_factor">Risk factor</option>
                                             <option value="other">Other</option>
                                         </select>
                                     </th>
+                                    <th class="ai-col-header" id="ai-col-header" {% if not r_variants|selectattr('llm_score')|list %}style="display:none"{% endif %}>AI</th>
                                     <th>
                                         Assessed
                                         <select class="th-filter" id="vf-assessed">
@@ -219,8 +333,6 @@
                                             <option value="uncertain_significance">VUS</option>
                                             <option value="likely_benign">Likely benign</option>
                                             <option value="benign">Benign</option>
-                                            <option value="drug_response">Drug response</option>
-                                            <option value="risk_factor">Risk factor</option>
                                             <option value="other">Other</option>
                                         </select>
                                     </th>
@@ -235,57 +347,135 @@
                                             <option value="benign">Benign</option>
                                         </select>
                                     </th>
+                                    <th>
+                                        VEP Impact
+                                        <select class="th-filter" id="vf-impact">
+                                            <option value="">All</option>
+                                            <option value="high">HIGH</option>
+                                            <option value="moderate">MODERATE</option>
+                                            <option value="low">LOW</option>
+                                            <option value="modifier">MODIFIER</option>
+                                        </select>
+                                    </th>
                                     <th>GT</th>
                                     <th>DP</th>
+                                    <th>Priority Basis</th>
+                                    <th>VCF raw INFO</th>
                                     <th>Note
                                         <input class="th-filter" id="vf-note" type="search" placeholder="filter…">
                                     </th>
                                     {% if r_linked_variants %}<th>Shared</th>{% endif %}
                                     <th>JP DB</th>
-                                    <th class="ai-col-header" id="ai-col-header" {% if not r_variants|selectattr('llm_score')|list %}style="display:none"{% endif %}>AI</th>
                                 </tr>
                             </thead>
                             <tbody id="variant-tbody">
                                 {% for v in r_variants %}
                                     {% set shares = r_variant_shares.get(v.id, []) %}
                                     {% set va_list = r_assessments.get(v.id, []) %}
+                                    {% set live_vep = r_variant_annotation_summaries.get(v.id, {}) %}
+                                    {% set live_clinvar = r_clinvar_annotations.get(v.id, {}) %}
+                                    {% set clinvar_summary = live_clinvar.get('summary', {}) %}
+                                    {# Current NCBI esummary (v2.0) nests classification under germline_classification; older responses used clinical_significance. #}
+                                    {% set clinvar_classification = clinvar_summary.get('germline_classification') or clinvar_summary.get('clinical_significance', {}) %}
+                                    {% set clinvar_significance = clinvar_classification if clinvar_classification is mapping else clinvar_classification %}
+                                    {% set clinvar_review_status = (clinvar_classification.get('review_status') if clinvar_classification is mapping else None) or clinvar_summary.get('review_status') %}
+                                    {% set clinvar_significance_text = (clinvar_significance.get('description') or clinvar_significance.get('value')) if clinvar_significance is mapping else clinvar_significance %}
+                                    {% set effective_clnsig = clinvar_significance_text or v.clin_sig or '' %}
                                     <tr
                                         class="{{ 'shared-row' if shares else '' }}"
                                         data-gene="{{ (v.gene or '')|lower }}"
+                                        data-hgvs="{{ ((v.hgvs_c or '') ~ ' ' ~ (v.hgvs_p or ''))|lower }}"
                                         data-type="{{ (v.variant_type or '')|lower }}"
-                                        data-clnsig="{{ (v.clin_sig or '')|lower|replace(' ','_') }}"
+                                        data-clnsig="{{ effective_clnsig|lower|replace(' ','_') }}"
+                                        data-vep-impact="{{ (live_vep.impact or '')|lower }}"
                                         data-note="{{ (v.note or '')|lower }}"
-                                        data-past="{% for e in r_cross_assessments.get(v.id, []) %}{{ e.assessment.classification|lower|replace(' ','_') }}{% if not loop.last %}|{% endif %}{% endfor %}"
-                                        data-assessed="{% for e in va_list %}{{ e.assessment.classification|lower|replace(' ','_') }}{% if not loop.last %}|{% endif %}{% endfor %}"
+                                        data-past="{% for e in r_cross_assessments.get(v.id, []) %}{{ e.score.classification|lower|replace(' ','_') }}{% if not loop.last %}|{% endif %}{% endfor %}"
+                                        data-assessed="{% for e in va_list %}{{ e.score.classification|lower|replace(' ','_') }}{% if not loop.last %}|{% endif %}{% endfor %}"
                                         data-vkey="{{ v.chrom }}:{{ v.pos }}:{{ v.ref }}:{{ v.alt }}"
+                                        data-chrom="{{ v.chrom }}"
+                                        data-pos="{{ v.pos }}"
+                                        data-ref="{{ v.ref }}"
+                                        data-alt="{{ v.alt }}"
+                                        data-variant-id="{{ v.variant_ext_id or '' }}"
+                                        data-hgvs-c="{{ v.hgvs_c or '' }}"
+                                        data-hgvs-p="{{ v.hgvs_p or '' }}"
+                                        data-priority="{{ r_variant_priority.get(v.id, 99) }}"
+                                        data-raw-info="{{ v.raw_info or '' }}"
                                         data-vid="{{ v.id }}"
+                                        data-vep-updated-at="{{ v.vep_annotation_updated_at or '' }}"
+                                        data-clinvar-updated-at="{{ v.clinvar_annotation_updated_at or '' }}"
                                         data-ai-score="{{ v.llm_score if v.llm_score is not none else '' }}"
                                         data-ai-reason="{{ v.llm_reason or '' }}"
+                                        data-annotation-url="{{ url_for('expertboard.api_variant_annotation', patient_id=r_patient.id, variant_id=v.id) }}"
+                                        data-ai-review-url="{{ url_for('expertboard.api_variant_ai_review', patient_id=r_patient.id, variant_id=v.id) }}"
+                                        data-pubcasefinder-ai-review-url="{{ url_for('expertboard.api_variant_pubcasefinder_ai_review', patient_id=r_patient.id, variant_id=v.id) }}"
+                                        data-clinvar-url="{{ url_for('expertboard.api_variant_clinvar', patient_id=r_patient.id, variant_id=v.id) }}"
+                                        data-clinvar-updated-at="{{ v.clinvar_annotation_updated_at or '' }}"
                                     >
-                                        <td><strong>{{ v.gene or "—" }}</strong></td>
+                                        <td class="priority-rank-col priority-rank-value">{{ r_variant_priority.get(v.id, 99) }}</td>
+                                        <td class="variant-gene-cell">
+                                            <strong>{{ v.gene or "—" }}</strong>
+                                            <span class="hpo-gene-rank-badge" hidden></span>
+                                        </td>
                                         <td>{{ v.hgvs_c or "—" }}</td>
                                         <td>{{ v.hgvs_p or "—" }}</td>
+                                        <td>{{ v.chrom }}</td>
+                                        <td>{{ v.pos }}</td>
+                                        <td>{{ v.variant_ext_id or "—" }}</td>
+                                        <td>{{ v.ref }}</td>
+                                        <td>{{ v.alt }}</td>
                                         <td>{{ v.variant_type or "—" }}</td>
-                                        <td>{{ v.chrom }}:{{ v.pos }}</td>
-                                        <td>{{ v.ref }}/{{ v.alt }}</td>
+                                        <td class="live-vep-cell">
+                                            <span class="live-vep-summary">{{ live_vep.impact or "Not refreshed" }}{% if live_vep.hgvsc %} · {{ live_vep.hgvsc }}{% endif %}</span>
+                                            <span class="annotation-last-updated">Last updated: {{ v.vep_annotation_updated_at or "Not yet" }}</span>
+                                            {% set live_vep_full = r_variant_annotations.get(v.id) %}
+                                            {% if live_vep_full %}
+                                                <details class="raw-info-details">
+                                                    <summary>View VEP JSON</summary>
+                                                    <pre class="live-vep-json">{{ live_vep_full|tojson(indent=2) }}</pre>
+                                                </details>
+                                            {% else %}
+                                                <pre class="live-vep-json" hidden></pre>
+                                            {% endif %}
+                                        </td>
+                                        <td class="live-clinvar-cell">
+                                            <span class="live-clinvar-summary">
+                                                {% if clinvar_summary %}
+                                                    {% if clinvar_significance is mapping %}{{ clinvar_significance.get('description') or clinvar_significance.get('value') or "ClinVar record" }}{% else %}{{ clinvar_significance or "ClinVar record" }}{% endif %}
+                                                {% elif live_clinvar.submissions %}SCV evidence{% else %}Not fetched{% endif %}
+                                            </span>
+                                            <span class="live-clinvar-review">
+                                                {% if clinvar_review_status %}{{ clinvar_review_status }}{% endif %}
+                                            </span>
+                                            <span class="annotation-last-updated">Last updated:<br>{{ v.clinvar_annotation_updated_at or "Not yet" }}</span>
+                                            {% if live_clinvar %}
+                                                <details class="raw-info-details">
+                                                    <summary>View ClinVar JSON</summary>
+                                                    <pre class="live-clinvar-json">{{ live_clinvar|tojson(indent=2) }}</pre>
+                                                </details>
+                                            {% else %}
+                                                <pre class="live-clinvar-json" hidden></pre>
+                                            {% endif %}
+                                        </td>
                                         {# ── Same-variant assessments from other patients ── #}
                                         <td class="assessment-cell">
-                                            {% for entry in r_cross_assessments.get(v.id, []) %}
-                                                {% set ts = entry.assessment.created_at|string %}
-                                                <span class="assess-badge assess-{{ entry.css }} assess-past"
-                                                      title="Other patient: {{ entry.patient.patient_code if entry.patient else '?' }} · {{ entry.assessment.assessed_by or '—' }} · {{ ts[:16] }} (read-only)">
-                                                    <span class="assess-lock" aria-hidden="true">🔒</span>
-                                                    {%- if entry.group and entry.group.country -%}
-                                                        <span class="assess-country">{{ entry.group.country }}</span>
-                                                    {%- elif entry.group -%}
-                                                        <span class="assess-country">{{ entry.group.name }}</span>
-                                                    {%- endif -%}
-                                                    {{ entry.assessment.classification }}
-                                                    {%- if entry.assessment.acmg_codes -%}
-                                                        <span class="acmg-code-badge">{{ entry.assessment.acmg_codes }}</span>
-                                                    {%- endif -%}
-                                                </span>
-                                            {% endfor %}
+                                            {% set review_summary = r_variant_review_summaries.get(v.id) %}
+                                            {% if review_summary %}
+                                                <a class="inline-link other-review-summary" target="_blank" rel="noopener"
+                                                   href="{{ url_for('expertboard.variant_assessment_review', variant=v.chrom ~ ':' ~ v.pos ~ ' ' ~ v.ref ~ '>' ~ v.alt) }}"
+                                                   title="Open cohort statistics and all evidence in Variant reviews">
+                                                    <strong>Classification:</strong><br>
+                                                    {% for classification, count in review_summary.classifications %}{{ classification }} {{ "%.0f"|format(count * 100 / review_summary.assessment_count) }}%{% if not loop.last %}<br>{% endif %}{% endfor %}<br>
+                                                    <strong>Code:</strong><br>
+                                                    {% for code, count in review_summary.codes %}{{ code }}{% if count > 1 %} ({{ count }}){% endif %}{% if not loop.last %}, {% endif %}{% endfor %} ↗
+                                                </a>
+                                            {% endif %}
+                                        </td>
+                                        <td class="ai-cell" id="ai-{{ v.id }}"
+                                            {% if not v.llm_score and v.llm_score != 0 %}style="display:none"{% endif %}>
+                                            {% if v.llm_score is not none %}
+                                                <span class="ai-badge" title="AI analysis available">✦</span>
+                                            {% endif %}
                                         </td>
                                         {# ── This patient's assessments ── #}
                                         <td class="assessment-cell">
@@ -294,15 +484,7 @@
                                                 {% set by = entry.assessment.assessed_by or "—" %}
                                                 <span class="assess-badge assess-{{ entry.css }}"
                                                       title="{{ by }} · {{ ts[:16] }}{% if entry.assessment.notes %} · {{ entry.assessment.notes }}{% endif %}{% if entry.assessment.acmg_codes %} [{{ entry.assessment.acmg_codes }}]{% endif %}">
-                                                    {%- if entry.group and entry.group.country -%}
-                                                        <span class="assess-country">{{ entry.group.country }}</span>
-                                                    {%- elif entry.group -%}
-                                                        <span class="assess-country">{{ entry.group.name }}</span>
-                                                    {%- endif -%}
-                                                    {{ entry.assessment.classification }}
-                                                    {%- if entry.assessment.acmg_codes -%}
-                                                        <span class="acmg-code-badge">{{ entry.assessment.acmg_codes }}</span>
-                                                    {%- endif -%}
+                                                    {{ entry.score.classification }}
                                                     <form method="POST" style="display:inline"
                                                           action="{{ url_for('expertboard.patient_variant_assessment_remove', patient_id=r_patient.id, variant_id=v.id, assessment_id=entry.assessment.id) }}">
                                                         <button class="badge-remove" type="submit" title="Remove">×</button>
@@ -316,7 +498,34 @@
                                         <td><span class="clnsig clnsig-{{ (v.clin_sig or 'unknown')|lower|replace('_','-') }}">{{ v.clin_sig or "—" }}</span></td>
                                         <td>{{ v.genotype or "—" }}</td>
                                         <td>{{ v.depth if v.depth is not none else "—" }}</td>
-                                        <td class="note-cell">{{ (v.note or "")|replace('_', ' ') }}</td>
+                                        <td class="francis-inputs-cell">
+                                            <details class="raw-info-details">
+                                                <summary>View fields</summary>
+                                                <dl class="francis-input-list">
+                                                    {% for name in ("CLNSIG", "REVIEW_STAR", "CLNREVSTAT", "MANE_HIT", "VEP_IMPACT", "GNOMAD_AF", "GNOMAD_AF_GRPMAX", "GNOMAD_AF_EAS", "GNOMAD_AF_SAS", "gnomAD_AF_POPMAX", "REVEL", "CADD", "CADD_PHRED", "SpliceAI_AG", "SpliceAI_AL", "SpliceAI_DG", "SpliceAI_DL", "AlphaMissense", "AF") %}
+                                                        <dt>{{ name }}</dt><dd data-francis-field="{{ name }}">{{ r_variant_info.get(v.id, {}).get(name, "—") }}</dd>
+                                                    {% endfor %}
+                                                    {% for name in ("score_clinvar", "score_gnomad", "score_alphamissense", "score_cadd", "score_revel", "score_spliceai") %}
+                                                        <dt>{{ name }}</dt><dd>{{ r_variant_rule_scores.get(v.id, {}).get(name, "—") }}</dd>
+                                                    {% endfor %}
+                                                </dl>
+                                            </details>
+                                        </td>
+                                        <td class="raw-info-cell">
+                                            {% if v.raw_info %}
+                                                <details class="raw-info-details">
+                                                    <summary>View INFO</summary>
+                                                    <pre>{{ v.raw_info }}</pre>
+                                                </details>
+                                            {% else %}—{% endif %}
+                                        </td>
+                                        <td class="note-cell">
+                                            {% if v.note %}<div><strong>VCF:</strong> {{ v.note|replace('_', ' ') }}</div>{% endif %}
+                                            {% for entry in va_list if entry.assessment.notes %}
+                                                <div class="reviewer-note"><strong>Reviewer:</strong> {{ entry.assessment.notes }}</div>
+                                            {% endfor %}
+                                            {% if not v.note and not (va_list|selectattr('assessment.notes')|list) %}—{% endif %}
+                                        </td>
                                         {% if r_linked_variants %}
                                             <td>{% for label in shares %}<span class="shared-badge">{{ label }}</span>{% endfor %}</td>
                                         {% endif %}
@@ -330,38 +539,49 @@
                                                     type="button"
                                                     onclick="fetchTogoVar(this)">JP DB</button>
                                         </td>
-                                        <td class="ai-cell" id="ai-{{ v.id }}"
-                                            {% if not v.llm_score and v.llm_score != 0 %}style="display:none"{% endif %}>
-                                            {% if v.llm_score is not none %}
-                                                <span class="ai-badge" title="AI analysis available">✦</span>
-                                            {% endif %}
-                                        </td>
                                     </tr>
                                 {% endfor %}
                             </tbody>
                         </table>
                     </div>
                     <script>
+                        // If the page URL carries embedded Basic Auth credentials (e.g. a
+                        // proxy/tunnel URL), resolving relative fetch() URLs against
+                        // location.href inherits them, which browsers refuse to send.
+                        // Resolve against location.origin (never has credentials) instead.
+                        (function (nativeFetch) {
+                            window.fetch = function (input, init) {
+                                if (typeof input === 'string' && !/^[a-z][a-z0-9+.-]*:/i.test(input)) {
+                                    input = new URL(input, window.location.origin).toString();
+                                }
+                                return nativeFetch(input, init);
+                            };
+                        })(window.fetch);
+
                         (function () {
                             function applyFilters() {
                                 var gene     = document.getElementById('vf-gene').value.trim().toLowerCase();
+                                var hgvs     = document.getElementById('vf-hgvs').value.trim().toLowerCase();
                                 var type     = document.getElementById('vf-type').value.trim().toLowerCase();
                                 var clnsig   = document.getElementById('vf-clnsig').value.toLowerCase();
+                                var impact   = document.getElementById('vf-impact').value.toLowerCase();
                                 var note     = document.getElementById('vf-note').value.trim().toLowerCase();
                                 var past     = document.getElementById('vf-past').value;
                                 var assessed = document.getElementById('vf-assessed').value;
                                 document.querySelectorAll('#variant-tbody tr:not(.assessment-form-row)').forEach(function (row) {
                                     var match =
                                         (!gene     || row.dataset.gene.includes(gene)) &&
+                                        (!hgvs     || (row.dataset.hgvs || '').includes(hgvs)) &&
                                         (!type     || row.dataset.type.includes(type)) &&
                                         (!clnsig   || row.dataset.clnsig === clnsig) &&
+                                        (!impact   || (row.dataset.vepImpact || '') === impact) &&
                                         (!note     || (row.dataset.note || '').includes(note)) &&
                                         (!past     || ('|' + (row.dataset.past || '') + '|').includes('|' + past + '|')) &&
                                         (!assessed || ('|' + (row.dataset.assessed || '') + '|').includes('|' + assessed + '|'));
                                     row.style.display = match ? '' : 'none';
                                 });
                             }
-                            ['vf-gene', 'vf-type', 'vf-clnsig', 'vf-note', 'vf-past', 'vf-assessed'].forEach(function (id) {
+                            ['vf-gene', 'vf-hgvs', 'vf-type', 'vf-clnsig', 'vf-impact', 'vf-note', 'vf-past', 'vf-assessed'].forEach(function (id) {
                                 var el = document.getElementById(id);
                                 if (el) {
                                     el.addEventListener('input', applyFilters);
@@ -374,14 +594,12 @@
                                 'pathogenic': 9,
                                 'pathogenic/likely_pathogenic': 8,
                                 'likely_pathogenic': 7,
-                                'drug_response': 6,
-                                'risk_factor': 5,
-                                'association': 4,
-                                'uncertain_significance': 3,
-                                'vus': 3,
-                                'likely_benign': 2,
-                                'benign/likely_benign': 1,
-                                'benign': 1,
+                                'association': 6,
+                                'uncertain_significance': 5,
+                                'vus': 5,
+                                'likely_benign': 4,
+                                'benign/likely_benign': 3,
+                                'benign': 3,
                                 'not_provided': 0,
                                 'other': 0,
                             };
@@ -437,7 +655,7 @@
                         })();
 
                         function clearVfFilters() {
-                            ['vf-gene', 'vf-type', 'vf-note'].forEach(function (id) {
+                            ['vf-gene', 'vf-hgvs', 'vf-type', 'vf-note'].forEach(function (id) {
                                 var el = document.getElementById(id);
                                 if (el) el.value = '';
                             });
@@ -448,6 +666,22 @@
                             document.querySelectorAll('#variant-tbody tr:not(.assessment-form-row)').forEach(function (row) {
                                 row.style.display = '';
                             });
+                        }
+
+                        function sortByEvaluationPriority(button) {
+                            var tbody = document.getElementById('variant-tbody');
+                            document.getElementById('variant-table').classList.add('priority-ranked');
+                            var rows = Array.from(tbody.querySelectorAll('tr:not(.assessment-form-row)'));
+                            rows.sort(function(a, b) {
+                                return Number(a.dataset.priority || 99) - Number(b.dataset.priority || 99);
+                            });
+                            rows.forEach(function(row) {
+                                tbody.appendChild(row);
+                                var formRow = document.getElementById('af-' + row.dataset.vid);
+                                if (formRow) tbody.appendChild(formRow);
+                            });
+                            button.textContent = 'Sorted by evaluation priority';
+                            button.disabled = true;
                         }
 
                         function toggleAssessForm(id) {
@@ -512,7 +746,23 @@
                             statusEl.textContent = 'Sending to Ollama…';
 
                             fetch(url, {method: 'POST', headers: {'X-Requested-With': 'XMLHttpRequest'}})
-                                .then(function(r) { return r.json(); })
+                                .then(async function(r) {
+                                    var data = await r.json();
+                                    if (r.status === 413 && data.prompt_too_large) {
+                                        var shrink = window.confirm(
+                                            '送付データを小さくしていいですか？'
+                                        );
+                                        if (!shrink) throw new Error('AI analysis cancelled.');
+                                        statusEl.textContent = 'Sending smaller per-variant data to Ollama...';
+                                        var compactResponse = await fetch(url + '?compact=1', {
+                                            method: 'POST',
+                                            headers: {'X-Requested-With': 'XMLHttpRequest'}
+                                        });
+                                        data = await compactResponse.json();
+                                        if (!compactResponse.ok) throw new Error(data.error || 'AI analysis failed.');
+                                    }
+                                    return data;
+                                })
                                 .then(function(data) {
                                     if (data.error) {
                                         statusEl.textContent = '✖ ' + data.error;
@@ -537,9 +787,12 @@
                                                 patient_symptoms: info.patient_symptoms || '',
                                                 gene_diseases: info.gene_diseases || '',
                                                 relevance: info.relevance || '',
+                                                population_frequency: info.population_frequency || '',
+                                                in_silico_predictions: info.in_silico_predictions || '',
                                                 family_history: info.family_history || '',
                                                 score_rationale: info.score_rationale || '',
                                                 suggested_acmg: info.suggested_acmg || [],
+                                                evidence_basis: info.evidence_basis || [],
                                                 missing_data: info.missing_data || [],
                                             });
                                             tr.dataset.aiReason = reasoning;
@@ -645,12 +898,14 @@
                         {% endfor %}
                     </div>
 
+                    <script type="application/json" id="compare-shared-vkeys">{{ r_shared_vkeys | tojson }}</script>
+                    <script type="application/json" id="compare-proband-vkeys">{{ r_proband_vkeys | tojson }}</script>
                     <script>
                         (function () {
                             // Keys shared between proband and ≥1 linked patient
-                            var sharedKeys  = new Set({{ r_shared_vkeys  | tojson }});
+                            var sharedKeys = new Set(JSON.parse(document.getElementById('compare-shared-vkeys').textContent));
                             // All proband keys (for highlighting matching rows in linked columns)
-                            var probandKeys = new Set({{ r_proband_vkeys | tojson }});
+                            var probandKeys = new Set(JSON.parse(document.getElementById('compare-proband-vkeys').textContent));
 
                             // Proband column: highlight rows that appear in a linked patient
                             document.querySelectorAll('.compare-table[data-col="proband"] tbody tr').forEach(function (row) {
@@ -675,21 +930,106 @@
         </section>
     </main>
 
+    <div id="annotation-refresh-confirm" class="annotation-refresh-dialog" role="dialog"
+         aria-modal="true" aria-labelledby="annotation-refresh-confirm-title" hidden>
+        <div class="annotation-refresh-dialog-card">
+            <h3 id="annotation-refresh-confirm-title">IT TAKES TIME! and your VCF annotation will be updated</h3>
+            <p> We will update the table once the new VEP annotation is available.
+                It may take some time.
+                Are you sure you want to proceed?
+            </p>
+            <div class="annotation-refresh-dialog-actions">
+                <button class="inline-button" id="annotation-refresh-confirm-yes" type="button">YES, I WILL UPDATE</button>
+                <button class="vf-clear" id="annotation-refresh-confirm-no" type="button">NO</button>
+            </div>
+        </div>
+    </div>
+
     {# ── Assessment + ACMG popup modal (shared, one per page) ── #}
     <div id="acmg-modal" class="acmg-modal-overlay" style="display:none" onclick="if(event.target===this)closeAssessModal()">
         <div class="acmg-modal-box">
             <form id="assess-form" method="POST" action="">
                 <div class="acmg-modal-header">
+                    <button type="button" class="assessment-guide-button" id="assessment-guide-start">Start guide</button>
                     <h3>Add Assessment</h3>
                     <button type="button" class="acmg-modal-close" onclick="closeAssessModal()">&#x2715;</button>
                 </div>
                 <div class="acmg-modal-body">
-                    <div id="ai-suggestion-panel" class="ai-suggestion-panel" style="display:none">
+                    <div class="acmg-modal-columns">
+                    <div class="acmg-left-column">
+                        <section class="curator-source-inline" aria-labelledby="curator-source-links-title">
+                            <h3 id="curator-source-links-title">Curator source links</h3>
+                            <p class="curator-source-note">AI has not read the linked sources. Please check the latest information at the linked sources during curation.</p>
+                            <dl id="curator-source-variant-context" class="curator-source-variant-context"></dl>
+                            <div id="curator-source-links-inline-list" class="curator-source-links-inline-list"></div>
+                        </section>
+                        <div class="ai-input-search">
+                            <label for="ai-input-search-field">Search AI input</label>
+                            <input id="ai-input-search-field" type="search" placeholder="Search clinical note, VCF, HPO, VEP..." autocomplete="off">
+                            <span id="ai-input-search-status" role="status"></span>
+                        </div>
+                        <section class="va-review-panel">
+                        <div class="va-review-toolbar">
+                            <span class="va-data-variant" id="va-data-variant" hidden></span>
+                                <div class="annotation-refresh-individual-group">
+                                <button class="va-data-btn" id="va-refresh-btn" type="button"
+                                    onclick="fetchVariantAnnotation(this)">Refresh VEP / VRS</button>
+                                <span class="annotation-last-updated" id="va-last-updated">Last updated:\nNot yet</span>
+                                </div>
+                            <div class="annotation-refresh-individual-group">
+                                <button class="va-data-btn" id="clinvar-refresh-btn" type="button"
+                                    onclick="fetchVariantClinvar(this)">Fetch ClinVar</button>
+                                <span class="annotation-last-updated" id="clinvar-last-updated">Last updated:\nNot yet</span>
+                                <span class="ai-status" id="clinvar-status" role="status"></span>
+                            </div>
+                            <button class="ai-refresh-btn" id="ai-refresh-btn" type="button"
+                                    data-llm-configured="{{ '1' if r_llm_configured else '0' }}"
+                                    onclick="refreshAiCriteria(this)" disabled>Update AI criteria</button>
+                                <button class="ai-refresh-btn ai-pubcasefinder-btn" id="ai-pubcasefinder-btn" type="button"
+                                    data-llm-configured="{{ '1' if r_llm_configured else '0' }}"
+                                    onclick="refreshAiCriteria(this, true)" disabled>Suggest with PubCaseFinder</button>
+                        </div>
+                        <div id="va-data-loading" class="va-data-status" style="display:none"></div>
+                        <details class="ai-input-preview" open>
+                            <summary>Data sent to AI</summary>
+                            <dl class="ai-input-preview-list">
+                                <dt>Clinical note</dt><dd id="ai-input-clinical-note" data-ai-searchable></dd>
+                                <dt>Original VCF INFO</dt><dd><pre id="ai-input-vcf-info" data-ai-searchable></pre></dd>
+                                <dt>Confirmed HPO</dt><dd><pre id="ai-input-hpo" data-ai-searchable></pre></dd>
+                                <dt>Patient context</dt><dd id="ai-input-context" data-ai-searchable><pre></pre></dd>
+                                <dt>ClinVar evidence</dt><dd id="ai-input-clinvar" data-ai-searchable><pre>Not fetched yet.</pre></dd>
+                                <dt>PubCaseFinder</dt><dd id="ai-input-pubcasefinder">Not requested yet. Use “Suggest with PubCaseFinder” to retrieve it.</dd>
+                            </dl>
+                        </details>
+                        <div id="va-data-content" style="display:none">
+                            <dl class="va-data-summary">
+                                <dt>Genome build</dt><dd id="va-genome-build"></dd>
+                                <dt>Sequence ID</dt><dd id="va-sequence-id"></dd>
+                                <dt>VRS ID</dt><dd id="va-vrs-id"></dd>
+                                <dt>Digest</dt><dd id="va-vrs-digest"></dd>
+                            </dl>
+                            <div id="va-vrs-error" class="va-data-error" style="display:none"></div>
+                            <div id="va-vep-error" class="va-data-error" style="display:none"></div>
+                            <details data-ai-searchable>
+                                <summary>Normalized VRS Allele JSON</summary>
+                                <pre id="va-vrs-json" class="va-json"></pre>
+                            </details>
+                            <details data-ai-searchable>
+                                <summary>Ensembl VEP JSON</summary>
+                                <pre id="va-vep-json" class="va-json"></pre>
+                            </details>
+                        </div>
+                        </section>
+                    </div>
+                    <div class="acmg-right-column">
+                        <div id="ai-suggestion-panel" class="ai-suggestion-panel" style="display:none">
                         <div class="ai-suggestion-label">✦ AI Reasoning</div>
                         <dl class="ai-reasoning-list">
                             <dt>Patient symptoms</dt><dd id="ai-r-symptoms"></dd>
                             <dt>Gene-associated diseases</dt><dd id="ai-r-gene"></dd>
                             <dt>Relevance to patient</dt><dd id="ai-r-relevance"></dd>
+                            <dt>Population frequency</dt><dd id="ai-r-popfreq"></dd>
+                            <dt>In silico predictions</dt><dd id="ai-r-insilico"></dd>
                             <dt>Family history</dt><dd id="ai-r-family"></dd>
                             <dt>Assessment rationale</dt><dd id="ai-r-rationale"></dd>
                         </dl>
@@ -698,221 +1038,2124 @@
                             <span id="ai-acmg-badges"></span>
                             <button type="button" class="ai-apply-btn" id="ai-apply-btn" onclick="applyAiAcmg()">Apply suggestions</button>
                         </div>
+                        <details class="ai-evidence-basis" id="ai-evidence-basis" style="display:none">
+                            <summary>Evidence used for suggestions</summary>
+                            <div id="ai-evidence-basis-list"></div>
+                        </details>
                         <div class="ai-missing-data" id="ai-missing-data" style="display:none">
                             <span class="ai-missing-label">⚠ Missing annotation data:</span>
                             <ul id="ai-missing-list" class="ai-missing-list"></ul>
                         </div>
-                    </div>
-                    <div class="acmg-meta-row">
-                        <label class="acmg-meta-field">
-                            <span>Classification *</span>
-                            <select name="classification" required>
-                                <option value="" disabled selected>Select…</option>
-                                {% for key, label in r_classifications %}
-                                    <option value="{{ key }}">{{ label }}</option>
-                                {% endfor %}
-                            </select>
+                        </div>
+                        <div class="acmg-score-summary" aria-live="polite">
+                        <div><span>Total score</span><strong id="acmg-total-score">0</strong></div>
+                        <div><span>Posterior probability</span><strong id="acmg-posterior">10.2%</strong></div>
+                        <div><span>Classification</span><strong id="acmg-classification">Uncertain significance</strong></div>
+                        <label class="acmg-override-field">
+                            <input type="checkbox" name="reviewer_override_lb_threshold" value="1">
+                            <span>Use reviewer LB threshold (-2)</span>
                         </label>
-                        <label class="acmg-meta-field">
-                            <span>Evidence level</span>
-                            <select name="evidence_level">
-                                {% for key, label in r_evidence_levels %}
-                                    <option value="{{ key }}">{{ label }}</option>
-                                {% endfor %}
-                            </select>
-                        </label>
-                    </div>
-                    <div class="acmg-group">
+                        </div>
+                        <div class="acmg-group">
                         <h4 class="acmg-group-title acmg-path">Pathogenic criteria</h4>
                         <div class="acmg-criteria-grid">
                             {% for code, label in r_acmg_codes if code[0] not in ('B',) %}
-                                <label class="acmg-cb">
-                                    <input type="checkbox" value="{{ code }}"> {{ label }}
+                                <label class="acmg-cb" data-code="{{ code }}">
+                                    <span class="acmg-cb-main">
+                                        <input type="checkbox" value="{{ code }}">
+                                        <span>{{ label }}</span>
+                                    </span>
+                                    <select class="acmg-weight-select" aria-label="{{ code }} weight" disabled>
+                                        {% for weight_key, weight_label in r_acmg_weight_options[code] %}
+                                            <option value="{{ weight_key }}">{{ weight_label }}</option>
+                                        {% endfor %}
+                                    </select>
+                                    <div class="ai-criterion-evidence" data-criterion="{{ code }}" hidden></div>
+                                    <div class="ai-criterion-source-links" data-criterion-source-links="{{ code }}"></div>
+                                    <textarea class="acmg-criterion-comment" rows="2"
+                                              aria-label="{{ code }} comment"
+                                              placeholder="Comment for {{ code }}..." disabled></textarea>
                                 </label>
                             {% endfor %}
                         </div>
-                    </div>
-                    <div class="acmg-group">
+                        </div>
+                        <div class="acmg-group" id="acmg-benign-group">
                         <h4 class="acmg-group-title acmg-benign">Benign criteria</h4>
                         <div class="acmg-criteria-grid">
                             {% for code, label in r_acmg_codes if code[0] == 'B' %}
-                                <label class="acmg-cb">
-                                    <input type="checkbox" value="{{ code }}"> {{ label }}
+                                <label class="acmg-cb" data-code="{{ code }}">
+                                    <span class="acmg-cb-main">
+                                        <input type="checkbox" value="{{ code }}">
+                                        <span>{{ label }}</span>
+                                    </span>
+                                    <select class="acmg-weight-select" aria-label="{{ code }} weight" disabled>
+                                        {% for weight_key, weight_label in r_acmg_weight_options[code] %}
+                                            <option value="{{ weight_key }}">{{ weight_label }}</option>
+                                        {% endfor %}
+                                    </select>
+                                    <div class="ai-criterion-evidence" data-criterion="{{ code }}" hidden></div>
+                                    <div class="ai-criterion-source-links" data-criterion-source-links="{{ code }}"></div>
+                                    <textarea class="acmg-criterion-comment" rows="2"
+                                              aria-label="{{ code }} comment"
+                                              placeholder="Comment for {{ code }}..." disabled></textarea>
                                 </label>
                             {% endfor %}
                         </div>
-                    </div>
-                    <div class="acmg-notes-row">
+                        </div>
+                        <div class="acmg-notes-row">
                         <label>
                             <span>Notes</span>
                             <textarea name="notes" rows="2" placeholder="Free-text evidence notes…"></textarea>
                         </label>
+                        </div>
+                        <details class="va-spec-preview" open>
+                            <summary>VA-Spec JSON preview</summary>
+                            <pre id="va-spec-json" class="va-json" aria-live="polite"></pre>
+                        </details>
+                    </div>
                     </div>
                 </div>
                 <input type="hidden" name="acmg_codes" id="acmg-hidden-modal">
+                <input type="hidden" name="criterion_comments" id="criterion-comments-modal" value="{}">
+                <input type="hidden" name="annotation_snapshot" id="annotation-snapshot-modal" value="">
                 <div class="acmg-modal-footer">
-                    <span class="acmg-selected-preview" id="acmg-preview">— no ACMG criteria selected —</span>
-                    <button type="submit" class="inline-button">Save</button>
-                    <button type="button" class="vf-clear" onclick="closeAssessModal()">Cancel</button>
+                    <div class="acmg-footer-actions">
+                        <span class="acmg-selected-preview" id="acmg-preview">— no ACMG criteria selected —</span>
+                            <button type="submit" class="inline-button" id="assessment-save-button">Save</button>
+                        <button type="button" class="vf-clear" onclick="closeAssessModal()">Cancel</button>
+                    </div>
                 </div>
             </form>
         </div>
     </div>
+    <script type="application/json" id="acmg-default-weights">{{ r_acmg_default_weights|tojson|safe }}</script>
+    <script type="application/json" id="va-spec-context">{{ {
+        "reviewer": r_current_user_display,
+        "patientId": r_patient.id,
+        "condition": r_patient.diagnosis_name,
+        "clinicalText": r_patient.clinical_text,
+        "clinicalContext": r_clinical_context
+    }|tojson|safe }}</script>
+    <script type="application/json" id="saved-vep-annotations">{{ r_variant_annotations|tojson|safe }}</script>
+    <script type="application/json" id="saved-clinvar-annotations">{{ r_clinvar_annotations|tojson|safe }}</script>
     <script>
+        var currentAssessmentRow = null;
+        var hpoCandidates = [];
+        var clinicalContextCandidates = {ancestry: [], diseases: []};
+        var vaSpecContext = JSON.parse(document.getElementById('va-spec-context').textContent);
+        var savedVepAnnotations = JSON.parse(
+            document.getElementById('saved-vep-annotations').textContent || '{}'
+        );
+        var savedClinvarAnnotations = JSON.parse(
+            document.getElementById('saved-clinvar-annotations').textContent || '{}'
+        );
+
+        function confirmedPhenotypeContext() {
+            return Array.from(document.querySelectorAll('#hpo-confirmed-list .hpo-confirmed-item'))
+                .map(function(item) {
+                    return {
+                        hpo_id: item.dataset.hpoId,
+                        label: item.dataset.label,
+                        source_text: item.dataset.sourceText,
+                        source: item.dataset.source,
+                        confirmed_by: item.dataset.confirmedBy,
+                        confirmed_at: item.dataset.confirmedAt
+                    };
+                });
+        }
+
+        function extractClinicalContext(button) {
+            var status = document.getElementById('clinical-context-status');
+            if (button.dataset.llmConfigured !== '1') { status.textContent = 'Ollama is not configured.'; return; }
+            button.disabled = true;
+            status.textContent = 'Extracting clinical context candidates...';
+            fetch("{{ url_for('expertboard.api_patient_clinical_context_extract', patient_id=r_patient.id) }}", {method: 'POST', headers: {'Accept': 'application/json'}})
+                .then(function(response) { return response.json().then(function(data) { if (!response.ok) throw new Error(data.error); return data; }); })
+                .then(function(data) {
+                    clinicalContextCandidates = data.candidates || {ancestry: [], diseases: []};
+                    var list = document.getElementById('clinical-context-candidates'); list.replaceChildren();
+                    ['ancestry', 'diseases'].forEach(function(kind) { clinicalContextCandidates[kind].forEach(function(item, index) {
+                        var row = document.createElement('label'); row.className = 'hpo-candidate-item';
+                        var checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.checked = true; checkbox.dataset.kind = kind; checkbox.dataset.index = index;
+                        var copy = document.createElement('span'); copy.className = 'hpo-candidate-copy'; copy.textContent = (kind === 'ancestry' ? 'Ancestry: ' : 'Disease: ') + item.value + ' | ' + item.source_text;
+                        row.append(checkbox, copy); list.appendChild(row);
+                    }); });
+                    document.getElementById('clinical-context-confirm-btn').disabled = !list.children.length;
+                    status.textContent = list.children.length ? 'Select items to apply.' : 'No explicit ancestry or disease found.';
+                }).catch(function(error) { status.textContent = error.message; }).finally(function() { button.disabled = false; });
+        }
+
+        function confirmClinicalContext(button) {
+            var selected = {ancestry: [], diseases: []};
+            document.querySelectorAll('#clinical-context-candidates input:checked').forEach(function(box) { selected[box.dataset.kind].push(clinicalContextCandidates[box.dataset.kind][Number(box.dataset.index)]); });
+            fetch("{{ url_for('expertboard.api_patient_clinical_context_confirm', patient_id=r_patient.id) }}", {method: 'POST', headers: {'Content-Type': 'application/json', 'Accept': 'application/json'}, body: JSON.stringify(selected)})
+                .then(function(response) { return response.json().then(function(data) { if (!response.ok) throw new Error(data.error); return data; }); })
+                .then(function(data) { document.getElementById('clinical-context-status').textContent = 'Selected context saved.'; location.reload(); })
+                .catch(function(error) { document.getElementById('clinical-context-status').textContent = error.message; });
+        }
+
+        function removeClinicalContext(button, kind, value) {
+            fetch("{{ url_for('expertboard.api_patient_clinical_context_remove', patient_id=r_patient.id, kind='ancestry') }}".replace('ancestry', encodeURIComponent(kind)), {
+                method: 'DELETE',
+                headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+                body: JSON.stringify({value: value})
+            })
+                .then(function(response) { return response.json().then(function(data) { if (!response.ok) throw new Error(data.error); return data; }); })
+                .then(function() { button.closest('.hpo-confirmed-item').remove(); })
+                .catch(function(error) { document.getElementById('clinical-context-status').textContent = error.message; });
+        }
+
+        function renderHpoCandidates(candidates) {
+            hpoCandidates = candidates || [];
+            var list = document.getElementById('hpo-candidate-list');
+            list.replaceChildren();
+            hpoCandidates.forEach(function(candidate, index) {
+                var row = document.createElement('label');
+                row.className = 'hpo-candidate-item';
+                var checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.checked = true;
+                checkbox.dataset.index = index;
+                var copy = document.createElement('span');
+                copy.className = 'hpo-candidate-copy';
+                var heading = document.createElement('strong');
+                heading.textContent = candidate.hpo_id
+                    ? candidate.hpo_id + ' · ' + candidate.label
+                    : candidate.label;
+                var source = document.createElement('span');
+                source.textContent = candidate.source_text
+                    ? 'Clinical text: “' + candidate.source_text + '”'
+                    : 'No exact source phrase returned';
+                var match = document.createElement('span');
+                match.textContent = candidate.match_type === 'exact'
+                    ? 'Exact terminology match'
+                    : 'Suggested terminology match — verify before confirming';
+                if (candidate.match_type !== 'exact') match.className = 'hpo-match-suggested';
+                copy.append(heading, source, match);
+                row.append(checkbox, copy);
+                if (candidate.hpo_id) {
+                    var confirm = document.createElement('button');
+                    confirm.type = 'button';
+                    confirm.className = 'link-button hpo-candidate-confirm';
+                    confirm.textContent = 'Confirm';
+                    confirm.addEventListener('click', function(event) {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        confirmSingleHpo(confirm, index);
+                    });
+                    row.appendChild(confirm);
+                }
+                list.appendChild(row);
+            });
+        }
+
+        function renderConfirmedPhenotypes(confirmed) {
+            var list = document.getElementById('hpo-confirmed-list');
+            list.replaceChildren();
+            if (!confirmed.length) {
+                var empty = document.createElement('p');
+                empty.className = 'hpo-empty';
+                empty.textContent = 'No HPO phenotypes confirmed.';
+                list.appendChild(empty);
+            }
+            confirmed.forEach(function(phenotype) {
+                var item = document.createElement('div');
+                item.className = 'hpo-confirmed-item';
+                item.dataset.hpoId = phenotype.hpo_id;
+                item.dataset.label = phenotype.label || '';
+                item.dataset.sourceText = phenotype.source_text || '';
+                item.dataset.source = phenotype.source || 'clinical_text_review';
+                item.dataset.confirmedBy = phenotype.confirmed_by || '';
+                item.dataset.confirmedAt = phenotype.confirmed_at || '';
+                var content = document.createElement('div');
+                var heading = document.createElement('strong');
+                heading.textContent = phenotype.hpo_id + ' · ' + (phenotype.label || 'Unlabelled phenotype');
+                var provenance = document.createElement('span');
+                provenance.textContent = 'Confirmed by ' + phenotype.confirmed_by + ' · ' + phenotype.confirmed_at;
+                content.append(heading, provenance);
+                var remove = document.createElement('button');
+                remove.className = 'hpo-remove-btn';
+                remove.type = 'button';
+                remove.title = 'Remove confirmed HPO';
+                remove.setAttribute('aria-label', 'Remove ' + phenotype.hpo_id);
+                remove.textContent = '\u2715';
+                remove.addEventListener('click', function() {
+                    removeConfirmedHpo(remove, phenotype.hpo_id);
+                });
+                item.append(content, remove);
+                list.appendChild(item);
+            });
+            clearPhenotypeGeneMarks();
+            document.getElementById('hpo-disease-results').replaceChildren();
+            document.getElementById('hpo-disease-results').hidden = true;
+            updateVaSpecPreview();
+        }
+
+        function extractHpoCandidates(button) {
+            var status = document.getElementById('hpo-review-status');
+            if (button.dataset.llmConfigured !== '1') {
+                status.textContent = 'Ollama is not configured.';
+                status.classList.add('is-error');
+                return;
+            }
+            button.disabled = true;
+            status.textContent = 'Extracting phenotype candidates locally for review...';
+            status.classList.remove('is-error');
+            fetch("{{ url_for('expertboard.api_patient_phenotypes_extract', patient_id=r_patient.id) }}", {
+                method: 'POST', headers: {'Accept': 'application/json'}
+            })
+                .then(function(response) {
+                    return response.json().then(function(data) {
+                        if (!response.ok) throw new Error(data.error || 'HPO extraction failed.');
+                        return data;
+                    });
+                })
+                .then(function(data) {
+                    renderHpoCandidates(data.candidates || []);
+                    document.getElementById('hpo-resolve-btn').disabled = !(data.candidates || []).length;
+                    status.textContent = data.candidates.length
+                        ? 'Review each candidate, then confirm the selected HPO terms.'
+                        : 'No phenotype candidates were found.';
+                })
+                .catch(function(error) {
+                    status.textContent = error.message;
+                    status.classList.add('is-error');
+                })
+                .finally(function() { button.disabled = false; });
+        }
+
+        function resolveApprovedHpoCandidates(button) {
+            var selected = Array.from(document.querySelectorAll('#hpo-candidate-list input:checked'))
+                .map(function(checkbox) { return hpoCandidates[Number(checkbox.dataset.index)]; })
+                .filter(function(candidate) { return candidate && !candidate.hpo_id; });
+            var status = document.getElementById('hpo-review-status');
+            if (!selected.length) {
+                status.textContent = 'Select at least one symptom before searching HPO.';
+                status.classList.add('is-error');
+                return;
+            }
+            button.disabled = true;
+            status.textContent = 'Searching OLS4MCP for the selected symptoms...';
+            status.classList.remove('is-error');
+            fetch("{{ url_for('expertboard.api_patient_phenotypes_resolve_candidates', patient_id=r_patient.id) }}", {
+                method: 'POST',
+                headers: {'Accept': 'application/json', 'Content-Type': 'application/json'},
+                body: JSON.stringify({candidates: selected})
+            })
+                .then(function(response) {
+                    return response.json().then(function(data) {
+                        if (!response.ok) throw new Error(data.error || 'OLS4MCP search failed.');
+                        return data;
+                    });
+                })
+                .then(function(data) {
+                    var resolved = data.candidates || [];
+                    var resolvedByLabel = {};
+                    resolved.forEach(function(candidate) {
+                        var key = String(candidate.extracted_label || candidate.label || '').trim().toLowerCase();
+                        if (key) resolvedByLabel[key] = candidate;
+                    });
+                    hpoCandidates = hpoCandidates.map(function(candidate) {
+                        var key = String(candidate.label || '').trim().toLowerCase();
+                        return resolvedByLabel[key] || candidate;
+                    });
+                    renderHpoCandidates(hpoCandidates);
+                    status.textContent = resolved.length
+                        ? resolved.length + ' HPO match(es) found. Review all candidates, then confirm selected HPO.'
+                        : 'No HPO matches were found. Original symptom candidates were kept for review.';
+                })
+                .catch(function(error) {
+                    status.textContent = error.message;
+                    status.classList.add('is-error');
+                })
+                .finally(function() { button.disabled = false; });
+        }
+
+        function addManualHpoCandidate(button) {
+            var field = document.getElementById('hpo-manual-input');
+            var hpoIds = field.value.split(',')
+                .map(function(value) { return value.trim().toUpperCase(); })
+                .filter(Boolean);
+            var status = document.getElementById('hpo-review-status');
+            if (!hpoIds.length || hpoIds.some(function(hpoId) { return !/^HP:\d{7}$/.test(hpoId); })) {
+                status.textContent = 'Enter HPO IDs separated by commas, such as HP:0001250,HP:0003022.';
+                status.classList.add('is-error');
+                return;
+            }
+            hpoIds = hpoIds.filter(function(hpoId, index, items) {
+                return items.indexOf(hpoId) === index;
+            });
+            var existingIds = confirmedPhenotypeContext().map(function(item) { return item.hpo_id; });
+            var candidateIds = hpoCandidates.map(function(item) { return item.hpo_id; });
+            var pendingIds = hpoIds.filter(function(hpoId) {
+                return !existingIds.includes(hpoId) && !candidateIds.includes(hpoId);
+            });
+            if (!pendingIds.length) {
+                status.textContent = 'All entered HPO IDs are already confirmed or listed as candidates.';
+                status.classList.remove('is-error');
+                return;
+            }
+            button.disabled = true;
+            status.textContent = 'Validating ' + pendingIds.length + ' HPO ID(s) against HPO...';
+            status.classList.remove('is-error');
+            Promise.all(pendingIds.map(function(hpoId) {
+                return fetch("{{ url_for('expertboard.api_patient_phenotypes_resolve', patient_id=r_patient.id) }}", {
+                    method: 'POST',
+                    headers: {'Accept': 'application/json', 'Content-Type': 'application/json'},
+                    body: JSON.stringify({hpo_id: hpoId})
+                }).then(function(response) {
+                    return response.json().then(function(data) {
+                        if (!response.ok) throw new Error(hpoId + ': ' + (data.error || 'HPO lookup failed.'));
+                        return data.candidate;
+                    });
+                });
+            }))
+                .then(function(candidates) {
+                    candidates.forEach(function(candidate) {
+                        if (!hpoCandidates.some(function(item) { return item.hpo_id === candidate.hpo_id; })) {
+                            hpoCandidates.push(candidate);
+                        }
+                    });
+                    renderHpoCandidates(hpoCandidates);
+                    field.value = '';
+                    status.textContent = candidates.length + ' HPO candidate(s) added. Confirm selected HPO to save.';
+                })
+                .catch(function(error) {
+                    status.textContent = error.message;
+                    status.classList.add('is-error');
+                })
+                .finally(function() { button.disabled = false; });
+        }
+
+        function confirmSingleHpo(button, index) {
+            var candidate = hpoCandidates[index];
+            if (!candidate || !candidate.hpo_id) return;
+            var status = document.getElementById('hpo-review-status');
+            var selected = confirmedPhenotypeContext().concat([candidate]);
+            selected = selected.filter(function(item, itemIndex, items) {
+                return items.findIndex(function(other) { return other.hpo_id === item.hpo_id; }) === itemIndex;
+            });
+            button.disabled = true;
+            status.textContent = 'Saving ' + candidate.hpo_id + '...';
+            fetch("{{ url_for('expertboard.api_patient_phenotypes_confirm', patient_id=r_patient.id) }}", {
+                method: 'POST',
+                headers: {'Accept': 'application/json', 'Content-Type': 'application/json'},
+                body: JSON.stringify({phenotypes: selected})
+            })
+                .then(function(response) {
+                    return response.json().then(function(data) {
+                        if (!response.ok) throw new Error(data.error || 'HPO confirmation failed.');
+                        return data;
+                    });
+                })
+                .then(function(data) {
+                    renderConfirmedPhenotypes(data.confirmed || []);
+                    hpoCandidates = hpoCandidates.filter(function(item, itemIndex) {
+                        return itemIndex !== index;
+                    });
+                    renderHpoCandidates(hpoCandidates);
+                    status.textContent = candidate.hpo_id + ' confirmed and saved.';
+                })
+                .catch(function(error) {
+                    status.textContent = error.message;
+                    status.classList.add('is-error');
+                    button.disabled = false;
+                });
+        }
+
+        function confirmPatientHpo(button) {
+            var selectedCandidates = Array.from(document.querySelectorAll('#hpo-candidate-list input:checked'))
+                .map(function(checkbox) { return hpoCandidates[Number(checkbox.dataset.index)]; })
+                .filter(Boolean);
+            var selected = confirmedPhenotypeContext().concat(selectedCandidates);
+            selected = selected.filter(function(item, index, items) {
+                return items.findIndex(function(other) { return other.hpo_id === item.hpo_id; }) === index;
+            });
+            var status = document.getElementById('hpo-review-status');
+            button.disabled = true;
+            fetch("{{ url_for('expertboard.api_patient_phenotypes_confirm', patient_id=r_patient.id) }}", {
+                method: 'POST',
+                headers: {'Accept': 'application/json', 'Content-Type': 'application/json'},
+                body: JSON.stringify({phenotypes: selected})
+            })
+                .then(function(response) {
+                    return response.json().then(function(data) {
+                        if (!response.ok) throw new Error(data.error || 'HPO confirmation failed.');
+                        return data;
+                    });
+                })
+                .then(function(data) {
+                    renderConfirmedPhenotypes(data.confirmed || []);
+                    status.textContent = (data.confirmed || []).length + ' HPO phenotype(s) confirmed and saved.';
+                })
+                .catch(function(error) {
+                    status.textContent = error.message;
+                    status.classList.add('is-error');
+                })
+                .finally(function() { button.disabled = !hpoCandidates.length; });
+        }
+
+        function removeConfirmedHpo(button, hpoId) {
+            if (!window.confirm('Remove ' + hpoId + ' from the confirmed patient HPO set?')) return;
+            var status = document.getElementById('hpo-review-status');
+            button.disabled = true;
+            fetch("{{ url_for('expertboard.api_patient_phenotype_remove', patient_id=r_patient.id, hpo_id='HP:0000000') }}"
+                .replace('HP:0000000', encodeURIComponent(hpoId)), {method: 'DELETE', headers: {'Accept': 'application/json'}})
+                .then(function(response) {
+                    return response.json().then(function(data) {
+                        if (!response.ok) throw new Error(data.error || 'Could not remove HPO.');
+                        return data;
+                    });
+                })
+                .then(function(data) {
+                    renderConfirmedPhenotypes(data.confirmed || []);
+                    status.textContent = hpoId + ' removed from confirmed patient HPO.';
+                })
+                .catch(function(error) {
+                    status.textContent = error.message;
+                    status.classList.add('is-error');
+                    button.disabled = false;
+                });
+        }
+
+        function clearPhenotypeGeneMarks() {
+            document.querySelectorAll('#variant-tbody tr:not(.assessment-form-row)').forEach(function(row) {
+                row.classList.remove('hpo-gene-match');
+                var badge = row.querySelector('.hpo-gene-rank-badge');
+                if (badge) {
+                    badge.hidden = true;
+                    badge.textContent = '';
+                    badge.removeAttribute('title');
+                }
+            });
+        }
+
+        function markPhenotypeRelatedGenes() {
+            var status = document.getElementById('hpo-review-status');
+            if (!confirmedPhenotypeContext().length) {
+                return;
+            }
+            status.textContent = 'Ranking phenotype-associated genes with PubCaseFinder...';
+            status.classList.remove('is-error');
+            fetch("{{ url_for('expertboard.api_patient_pubcasefinder_genes', patient_id=r_patient.id) }}", {
+                method: 'POST', headers: {'Accept': 'application/json'}
+            })
+                .then(function(response) {
+                    return response.json().then(function(data) {
+                        if (!response.ok) throw new Error(data.error || 'Gene ranking failed.');
+                        return data;
+                    });
+                })
+                .then(function(data) {
+                    var rankedGenes = new Map();
+                    ((data.ranking || {}).results || []).forEach(function(result) {
+                        var symbol = String(result.gene_symbol || '').trim().toUpperCase();
+                        if (symbol && !rankedGenes.has(symbol)) {
+                            rankedGenes.set(symbol, {rank: result.rank, score: result.score});
+                        }
+                    });
+                    clearPhenotypeGeneMarks();
+                    var matchedRows = 0;
+                    document.querySelectorAll('#variant-tbody tr:not(.assessment-form-row)').forEach(function(row) {
+                        var symbol = String(row.dataset.gene || '').trim().toUpperCase();
+                        var match = rankedGenes.get(symbol);
+                        if (!match) return;
+                        row.classList.add('hpo-gene-match');
+                        var badge = row.querySelector('.hpo-gene-rank-badge');
+                        badge.textContent = 'Pheno_Disease rank' + match.rank;
+                        badge.title = 'PubCaseFinder phenotype-associated gene rank ' + match.rank +
+                            ' (score ' + match.score + '). This is not evidence of variant pathogenicity.';
+                        badge.hidden = false;
+                        matchedRows += 1;
+                    });
+                    status.textContent = matchedRows
+                        ? matchedRows + ' variant row(s) match the top phenotype-associated genes. This does not indicate pathogenicity.'
+                        : 'No variant genes match the top 50 phenotype-associated genes.';
+                })
+                .catch(function(error) {
+                    clearPhenotypeGeneMarks();
+                    status.textContent = error.message;
+                    status.classList.add('is-error');
+                });
+        }
+
+        function showPhenotypeRelatedDiseases(button) {
+            var status = document.getElementById('hpo-review-status');
+            var results = document.getElementById('hpo-disease-results');
+            if (!confirmedPhenotypeContext().length) {
+                status.textContent = 'Confirm at least one patient HPO before ranking diseases.';
+                status.classList.add('is-error');
+                return;
+            }
+            button.disabled = true;
+            status.textContent = 'Ranking phenotype-associated diseases with PubCaseFinder...';
+            status.classList.remove('is-error');
+            fetch("{{ url_for('expertboard.api_patient_pubcasefinder_diseases', patient_id=r_patient.id) }}", {
+                method: 'POST', headers: {'Accept': 'application/json'}
+            })
+                .then(function(response) {
+                    return response.json().then(function(data) {
+                        if (!response.ok) throw new Error(data.error || 'Disease ranking failed.');
+                        return data;
+                    });
+                })
+                .then(function(data) {
+                    results.replaceChildren();
+                    ((data.ranking || {}).results || []).forEach(function(disease) {
+                        var item = document.createElement('div');
+                        item.className = 'hpo-disease-item';
+                        var heading = document.createElement('strong');
+                        var name = disease.name_en || disease.id;
+                        if (disease.name_ja && disease.name_ja !== disease.name_en) {
+                            name += ' / ' + disease.name_ja;
+                        }
+                        heading.textContent = '#' + disease.rank + ' ' + name;
+                        var genes = document.createElement('span');
+                        genes.textContent = 'Genes: ' + ((disease.gene_symbols || []).join(', ') || 'Not listed');
+                        var inheritance = document.createElement('span');
+                        inheritance.className = 'hpo-inheritance';
+                        inheritance.textContent = 'Inheritance: ' +
+                            ((disease.inheritance || []).join(', ') || 'Not listed');
+                        var score = document.createElement('span');
+                        score.textContent = 'Phenotype-match score: ' + disease.score;
+                        item.append(heading, genes, inheritance, score);
+                        results.appendChild(item);
+                    });
+                    results.hidden = false;
+                    status.textContent = 'Related diseases and reported inheritance modes loaded. These are phenotype associations, not diagnoses.';
+                })
+                .catch(function(error) {
+                    results.replaceChildren();
+                    results.hidden = true;
+                    status.textContent = error.message;
+                    status.classList.add('is-error');
+                })
+                .finally(function() { button.disabled = !confirmedPhenotypeContext().length; });
+        }
+
+        function setVariantAnnotationError(elementId, message) {
+            var element = document.getElementById(elementId);
+            element.textContent = message || '';
+            element.style.display = message ? 'block' : 'none';
+        }
+
+        function renderVariantAnnotation(data, pubcasefinder) {
+            var snapshot = Object.assign({}, data);
+            if (pubcasefinder) snapshot.pubcasefinder = pubcasefinder;
+            if (vaSpecContext.clinicalContext &&
+                ((vaSpecContext.clinicalContext.ancestry || []).length ||
+                 (vaSpecContext.clinicalContext.diseases || []).length)) {
+                snapshot.confirmed_clinical_context = vaSpecContext.clinicalContext;
+            }
+            document.getElementById('annotation-snapshot-modal').value = JSON.stringify(snapshot);
+            if (pubcasefinder) {
+                document.getElementById('ai-input-pubcasefinder').textContent =
+                    JSON.stringify(pubcasefinder, null, 2);
+            }
+            var vrs = data.vrs || {};
+            document.getElementById('va-genome-build').textContent = data.genome_build || '—';
+            document.getElementById('va-sequence-id').textContent = vrs.sequence_id || '—';
+            document.getElementById('va-vrs-id').textContent = vrs.vrs_id || '—';
+            document.getElementById('va-vrs-digest').textContent = vrs.digest || '—';
+            document.getElementById('va-vrs-json').textContent = vrs.allele
+                ? JSON.stringify(vrs.allele, null, 2) : '';
+            document.getElementById('va-vep-json').textContent = data.vep
+                ? JSON.stringify(data.vep, null, 2) : '';
+            setVariantAnnotationError('va-vrs-error', data.vrs_error);
+            setVariantAnnotationError('va-vep-error', data.vep_error);
+            updateVaSpecPreview();
+        }
+
+        function fetchVariantAnnotation(button) {
+            var requestRow = currentAssessmentRow;
+            if (!requestRow) return;
+            var loading = document.getElementById('va-data-loading');
+            var content = document.getElementById('va-data-content');
+            loading.textContent = 'Querying Ensembl VEP and SeqRepo...';
+            loading.classList.remove('is-error');
+            loading.style.display = 'block';
+            content.style.display = 'none';
+            button.disabled = true;
+
+            fetch(requestRow.dataset.annotationUrl, {
+                method: 'POST',
+                headers: {'Accept': 'application/json'}
+            })
+                .then(function(response) {
+                    return response.json().then(function(data) {
+                        if (!response.ok && !data.vep && !data.vrs) {
+                            throw new Error(data.error || data.vep_error || data.vrs_error || 'Annotation failed.');
+                        }
+                        return data;
+                    });
+                })
+                .then(function(data) {
+                    if (currentAssessmentRow !== requestRow) return;
+                    renderVariantAnnotation(data);
+                    document.getElementById('va-last-updated').textContent =
+                        'Last updated:\n' + formatAnnotationTimestamp(new Date());
+                    loading.style.display = 'none';
+                    content.style.display = 'block';
+                    document.getElementById('ai-refresh-btn').disabled =
+                        document.getElementById('ai-refresh-btn').dataset.llmConfigured !== '1';
+                })
+                .catch(function(error) {
+                    if (currentAssessmentRow !== requestRow) return;
+                    loading.textContent = error.message;
+                    loading.classList.add('is-error');
+                })
+                .finally(function() {
+                    if (currentAssessmentRow === requestRow) button.disabled = false;
+                });
+        }
+
+        function liveVepFields(annotation) {
+            var vep = annotation.vep || {};
+            var transcripts = vep.transcript_consequences || [];
+            var transcript = transcripts.find(function(item) {
+                return item.mane_select || item.mane_plus_clinical;
+            }) || transcripts[0] || {};
+            var spliceai = transcript.spliceai || {};
+            return {
+                VEP_IMPACT: transcript.impact || '',
+                MANE_HIT: transcript.mane_select || transcript.mane_plus_clinical ? 'Yes' : '',
+                VEP_HGVSC: transcript.hgvsc || '',
+                VEP_HGVSP: transcript.hgvsp || '',
+                REVEL: transcript.revel_score,
+                CADD_PHRED: transcript.cadd_phred,
+                AlphaMissense: transcript.alphamissense,
+                SpliceAI_AG: spliceai.AG,
+                SpliceAI_AL: spliceai.AL,
+                SpliceAI_DG: spliceai.DG,
+                SpliceAI_DL: spliceai.DL
+            };
+        }
+
+        function applyLiveAnnotationToRow(row, annotation) {
+            var fields = liveVepFields(annotation);
+            var francisInfo = annotation.francis_info || {};
+            row.dataset.annotation = JSON.stringify(annotation);
+            row.dataset.liveVep = JSON.stringify(fields);
+            Object.keys(Object.assign({}, fields, francisInfo)).forEach(function(name) {
+                var value = francisInfo[name] !== undefined ? francisInfo[name] : fields[name];
+                if (value === undefined || value === null || value === '') return;
+                var target = row.querySelector('[data-francis-field="' + name + '"]');
+                if (target) target.textContent = value;
+            });
+            if (annotation.francis_priority !== undefined) {
+                row.dataset.priority = String(annotation.francis_priority);
+                row.querySelector('.priority-rank-value').textContent = annotation.francis_priority;
+            }
+            if (fields.VEP_IMPACT) {
+                row.dataset.vepImpact = String(fields.VEP_IMPACT).toLowerCase();
+                row.querySelector('.live-vep-summary').textContent =
+                    fields.VEP_IMPACT + (fields.VEP_HGVSC ? ' · ' + fields.VEP_HGVSC : '');
+                if (annotation.francis_priority === undefined &&
+                    (row.dataset.priority === '5' || row.dataset.priority === '6')) {
+                    row.dataset.priority = ['high', 'moderate'].includes(row.dataset.vepImpact)
+                        ? '5' : '6';
+                    row.querySelector('.priority-rank-value').textContent = row.dataset.priority;
+                }
+            }
+            var updated = row.querySelector('.live-vep-cell .annotation-last-updated');
+            var pageUpdated = document.getElementById('annotation-last-updated');
+            var updatedAt = annotation.updated_at || formatAnnotationTimestamp(new Date());
+            if (updated) {
+                updated.textContent = 'Last updated:\n' + updatedAt;
+            }
+            if (pageUpdated) {
+                pageUpdated.innerHTML = 'Last updated:<br>' + updatedAt;
+            }
+            var vepCell = row.querySelector('.live-vep-cell');
+            if (vepCell) {
+                var vepJsonBlock = vepCell.querySelector('.live-vep-json');
+                var vepJsonText = JSON.stringify(annotation, null, 2);
+                if (vepJsonBlock && vepJsonBlock.closest('details')) {
+                    vepJsonBlock.textContent = vepJsonText;
+                } else {
+                    if (vepJsonBlock) vepJsonBlock.remove();
+                    var vepDetails = document.createElement('details');
+                    vepDetails.className = 'raw-info-details';
+                    var vepSummaryEl = document.createElement('summary');
+                    vepSummaryEl.textContent = 'View VEP JSON';
+                    var vepPre = document.createElement('pre');
+                    vepPre.className = 'live-vep-json';
+                    vepPre.textContent = vepJsonText;
+                    vepDetails.append(vepSummaryEl, vepPre);
+                    vepCell.appendChild(vepDetails);
+                }
+            }
+        }
+
+        function applyClinvarToRow(row, annotation) {
+            var francisInfo = annotation.francis_info || {};
+            Object.keys(francisInfo).forEach(function(name) {
+                var target = row.querySelector('[data-francis-field="' + name + '"]');
+                if (target) target.textContent = francisInfo[name];
+            });
+            if (annotation.francis_priority !== undefined) {
+                row.dataset.priority = String(annotation.francis_priority);
+                row.querySelector('.priority-rank-value').textContent = annotation.francis_priority;
+            }
+            var summary = annotation.summary || {};
+            // Current NCBI esummary (v2.0) nests classification under germline_classification;
+            // older responses used clinical_significance.
+            var classification = summary.germline_classification || summary.clinical_significance || {};
+            var significance = classification;
+            var reviewStatus = summary.review_status;
+            if (significance && typeof significance === 'object') {
+                reviewStatus = reviewStatus || significance.review_status;
+                significance = significance.description || significance.value || '';
+            }
+            if (significance) {
+                row.dataset.clnsig = String(significance).toLowerCase().replace(/ /g, '_');
+            }
+            var clinvarSummary = row.querySelector('.live-clinvar-summary');
+            var clinvarReview = row.querySelector('.live-clinvar-review');
+            var clinvarUpdated = row.querySelector('.live-clinvar-cell .annotation-last-updated');
+            if (clinvarSummary) {
+                clinvarSummary.textContent = significance ||
+                    ((annotation.submissions || []).length ? 'SCV evidence' : 'No record');
+            }
+            if (clinvarReview) {
+                clinvarReview.textContent = reviewStatus ||
+                    ((annotation.submissions || []).map(function(item) {
+                        return item.review_status || '';
+                    }).filter(Boolean).join('; '));
+            }
+            if (clinvarUpdated) {
+                clinvarUpdated.innerHTML = 'Last updated:<br>' + (annotation.updated_at || 'now');
+            }
+            var clinvarCell = row.querySelector('.live-clinvar-cell');
+            if (clinvarCell) {
+                var jsonBlock = clinvarCell.querySelector('.live-clinvar-json');
+                var jsonText = JSON.stringify(annotation, null, 2);
+                if (jsonBlock && jsonBlock.closest('details')) {
+                    jsonBlock.textContent = jsonText;
+                } else {
+                    if (jsonBlock) jsonBlock.remove();
+                    var details = document.createElement('details');
+                    details.className = 'raw-info-details';
+                    var summaryEl = document.createElement('summary');
+                    summaryEl.textContent = 'View ClinVar JSON';
+                    var pre = document.createElement('pre');
+                    pre.className = 'live-clinvar-json';
+                    pre.textContent = jsonText;
+                    details.append(summaryEl, pre);
+                    clinvarCell.appendChild(details);
+                }
+            }
+        }
+
+        async function refreshAllAnnotations(button) {
+            var confirmed = await confirmAnnotationRefresh();
+            if (!confirmed) return;
+
+            var rows = Array.from(
+                document.querySelectorAll('#variant-tbody tr[data-annotation-url]')
+            );
+            var status = document.getElementById('annotation-refresh-status');
+            if (!rows.length) return;
+
+            button.disabled = true;
+            status.textContent = 'Starting background VEP refresh...';
+            try {
+                var response = await fetch(button.dataset.startUrl, {
+                    method: 'POST', headers: {'Accept': 'application/json'}
+                });
+                var job = await response.json();
+                if (!response.ok) throw new Error(job.error || 'Could not start VEP refresh.');
+                pollVepRefresh(button, job.job_id, rows, status);
+            } catch (error) {
+                status.textContent = 'VEP refresh failed to start: ' + error.message;
+                button.disabled = false;
+            }
+        }
+
+        async function refreshVepAndClinvar(button) {
+            var confirmed = await confirmAnnotationRefresh();
+            if (!confirmed) return;
+            var status = document.getElementById('annotation-refresh-status');
+            setButtonLoading(button, 'Refreshing VEP & ClinVar…');
+            status.textContent = 'Starting background VEP refresh...';
+            try {
+                var response = await fetch(button.dataset.startUrl, {
+                    method: 'POST', headers: {'Accept': 'application/json'}
+                });
+                var job = await response.json();
+                if (!response.ok) throw new Error(job.error || 'Could not start VEP refresh.');
+                pollVepRefresh(button, job.job_id, [], status, true);
+            } catch (error) {
+                status.textContent = 'VEP refresh failed to start: ' + error.message;
+                clearButtonLoading(button);
+            }
+        }
+
+        async function pollVepRefresh(button, jobId, rows, status, fetchClinvarAfter) {
+            try {
+                var url = button.dataset.statusUrlTemplate.replace('JOB_ID', jobId);
+                var response = await fetch(url, {headers: {'Accept': 'application/json'}});
+                var job = await response.json();
+                if (!response.ok) throw new Error(job.error || 'Could not read VEP refresh status.');
+                Object.keys(job.results || {}).forEach(function(variantId) {
+                    var row = document.querySelector('#variant-tbody tr[data-vid="' + variantId + '"]');
+                    if (row) applyLiveAnnotationToRow(row, job.results[variantId]);
+                });
+                status.textContent = 'Refreshing ' + job.completed + ' / ' + job.total + ' annotations...';
+                if (job.status === 'running') {
+                    window.setTimeout(function() { pollVepRefresh(button, jobId, rows, status); }, 1000);
+                    return;
+                }
+                var failures = Object.keys(job.failures || {});
+                if (!fetchClinvarAfter && Object.keys(job.results || {}).length) {
+                    applyFrancisFilter();
+                }
+                status.textContent = failures.length
+                    ? 'Completed with errors for variant(s): ' + failures.join(', ')
+                    : 'All VEP / VRS annotations refreshed, saved, and Francis filter applied.';
+                if (fetchClinvarAfter) {
+                    status.textContent = 'VEP complete. Fetching ClinVar for all variants...';
+                    var clinvarResponse = await fetch(button.dataset.clinvarUrl, {
+                        method: 'POST', headers: {'Accept': 'application/json'}
+                    });
+                    var clinvarData = await clinvarResponse.json();
+                    if (!clinvarResponse.ok) throw new Error(clinvarData.error || 'ClinVar lookup failed.');
+                    var clinvarFailures = Object.keys(clinvarData.failures || {});
+                    Object.keys(clinvarData.results || {}).forEach(function(variantId) {
+                        var row = document.querySelector('#variant-tbody tr[data-vid="' + variantId + '"]');
+                        if (row) applyClinvarToRow(row, clinvarData.results[variantId]);
+                    });
+                    applyFrancisFilter();
+                    status.textContent = clinvarFailures.length
+                        ? 'VEP complete. ClinVar saved with ' + clinvarFailures.length + ' failure(s). Reload to apply ClinVar values.'
+                        : 'VEP & ClinVar complete. Reload to apply ClinVar values to Francis filter.';
+                }
+                clearButtonLoading(button);
+            } catch (error) {
+                status.textContent = 'VEP refresh status failed: ' + error.message;
+                clearButtonLoading(button);
+            }
+        }
+
+        function applyFrancisFilter() {
+            var button = document.getElementById('priority-sort-btn');
+            if (!button) return;
+            var tbody = document.getElementById('variant-tbody');
+            var rows = Array.from(tbody.querySelectorAll('tr:not(.assessment-form-row)'));
+            rows.sort(function(a, b) {
+                return Number(a.dataset.priority || 99) - Number(b.dataset.priority || 99);
+            });
+            rows.forEach(function(row) {
+                tbody.appendChild(row);
+                var formRow = document.getElementById('af-' + row.dataset.vid);
+                if (formRow) tbody.appendChild(formRow);
+            });
+            document.getElementById('variant-table').classList.add('priority-ranked');
+            button.textContent = 'Sorted by evaluation priority';
+            button.disabled = true;
+        }
+
+        async function refreshClinvarOnly(button) {
+            var confirmed = await confirmAnnotationRefresh();
+            if (!confirmed) return;
+            var status = document.getElementById('annotation-refresh-status');
+            setButtonLoading(button, 'Refreshing ClinVar…');
+            status.textContent = 'Fetching ClinVar for all variants...';
+            try {
+                var response = await fetch(button.dataset.clinvarUrl, {
+                    method: 'POST', headers: {'Accept': 'application/json'}
+                });
+                var data = await response.json();
+                if (!response.ok) throw new Error(data.error || 'ClinVar lookup failed.');
+                var failures = Object.keys(data.failures || {});
+                Object.keys(data.results || {}).forEach(function(variantId) {
+                    var row = document.querySelector('#variant-tbody tr[data-vid="' + variantId + '"]');
+                    if (row) applyClinvarToRow(row, data.results[variantId]);
+                });
+                applyFrancisFilter();
+                status.textContent = failures.length
+                    ? 'ClinVar refreshed with ' + failures.length + ' failure(s) for variant(s): ' + failures.join(', ')
+                    : 'All ClinVar annotations refreshed and Francis filter applied.';
+            } catch (error) {
+                status.textContent = 'ClinVar refresh failed: ' + error.message;
+            } finally {
+                clearButtonLoading(button);
+            }
+        }
+
+        async function fetchVariantClinvar(button) {
+            var requestRow = currentAssessmentRow;
+            if (!requestRow) return;
+            var status = document.getElementById('clinvar-status');
+            var url = requestRow.dataset.clinvarUrl;
+            setButtonLoading(button, 'Fetching ClinVar…');
+            status.textContent = 'Fetching ClinVar...';
+            try {
+                var response = await fetch(url, {
+                    method: 'POST', headers: {'Accept': 'application/json'}
+                });
+                var data = await response.json();
+                if (!response.ok) throw new Error(data.error || 'ClinVar lookup failed.');
+                document.getElementById('clinvar-last-updated').textContent =
+                    'Last updated:\n' + (data.updated_at || 'now');
+                document.getElementById('ai-input-clinvar').textContent =
+                    JSON.stringify(data.result || {}, null, 2);
+                var clinvarResult = data.result || {};
+                var tableRow = document.querySelector(
+                    '#variant-tbody tr[data-vid="' + requestRow.dataset.vid + '"]'
+                );
+                if (tableRow) {
+                    applyClinvarToRow(tableRow, Object.assign({}, clinvarResult, {
+                        updated_at: data.updated_at,
+                        francis_info: data.francis_info,
+                        francis_priority: data.francis_priority
+                    }));
+                }
+                var clinvarQuery = clinvarResult.query || '';
+                var clinvarMessage = clinvarResult.summary ||
+                    (clinvarResult.submissions || []).length
+                    ? 'ClinVar evidence saved for AI analysis.'
+                    : 'No ClinVar summary or SCV evidence found for this query.';
+                status.replaceChildren();
+                status.appendChild(document.createTextNode(clinvarMessage));
+                if (clinvarQuery || clinvarResult.clinvar_url) {
+                    var clinvarLink = document.createElement('a');
+                    clinvarLink.href = clinvarResult.clinvar_url ||
+                        'https://www.ncbi.nlm.nih.gov/clinvar/?term=' + encodeURIComponent(clinvarQuery);
+                    clinvarLink.target = '_blank';
+                    clinvarLink.rel = 'noopener noreferrer';
+                    clinvarLink.className = 'ai-source-link';
+                    clinvarLink.textContent = 'Open ClinVar search';
+                    status.appendChild(document.createTextNode(' '));
+                    status.appendChild(clinvarLink);
+                }
+            } catch (error) {
+                status.textContent = 'Error: ' + error.message;
+            } finally {
+                clearButtonLoading(button);
+            }
+        }
+
+        function formatAnnotationTimestamp(date) {
+            return date.toLocaleString([], {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+        }
+
+        function setButtonLoading(button, loadingText) {
+            if (!button) return;
+            if (button.dataset.originalText === undefined) {
+                button.dataset.originalText = button.textContent;
+            }
+            button.textContent = loadingText || 'Loading…';
+            button.classList.add('btn-loading');
+            button.disabled = true;
+        }
+
+        function clearButtonLoading(button) {
+            if (!button) return;
+            if (button.dataset.originalText !== undefined) {
+                button.textContent = button.dataset.originalText;
+                delete button.dataset.originalText;
+            }
+            button.classList.remove('btn-loading');
+            button.disabled = false;
+        }
+
+        function confirmAnnotationRefresh() {
+            var dialog = document.getElementById('annotation-refresh-confirm');
+            return new Promise(function(resolve) {
+                var finish = function(value) {
+                    dialog.hidden = true;
+                    resolve(value);
+                };
+                document.getElementById('annotation-refresh-confirm-yes').onclick = function() {
+                    finish(true);
+                };
+                document.getElementById('annotation-refresh-confirm-no').onclick = function() {
+                    finish(false);
+                };
+                dialog.oncancel = function() {
+                    finish(false);
+                };
+                dialog.hidden = false;
+            });
+        }
+
+        function renderAiReasoning(reasoning) {
+            var snapshotField = document.getElementById('annotation-snapshot-modal');
+            var snapshot = {};
+            try { snapshot = JSON.parse(snapshotField.value || '{}'); } catch (e) { snapshot = {}; }
+            snapshot.ai_reasoning = reasoning || {};
+            snapshot.evidence_basis = reasoning && reasoning.evidence_basis
+                ? reasoning.evidence_basis : [];
+            snapshotField.value = JSON.stringify(snapshot);
+            var panel = document.getElementById('ai-suggestion-panel');
+            document.getElementById('ai-r-symptoms').textContent = reasoning.patient_symptoms || '—';
+            document.getElementById('ai-r-gene').textContent = reasoning.gene_diseases || '—';
+            document.getElementById('ai-r-relevance').textContent = reasoning.relevance || '—';
+            document.getElementById('ai-r-popfreq').textContent = reasoning.population_frequency || '—';
+            document.getElementById('ai-r-insilico').textContent = reasoning.in_silico_predictions || '—';
+            document.getElementById('ai-r-family').textContent = reasoning.family_history || '—';
+            document.getElementById('ai-r-rationale').textContent = reasoning.score_rationale || '—';
+
+            var suggestPanel = document.getElementById('ai-acmg-suggest');
+            var badges = document.getElementById('ai-acmg-badges');
+            var suggested = reasoning.suggested_acmg || [];
+            badges.replaceChildren();
+            if (suggested.length) {
+                suggested.forEach(function(code) {
+                    var chip = document.createElement('span');
+                    chip.className = 'acmg-suggest-chip';
+                    chip.textContent = code;
+                    badges.appendChild(chip);
+                });
+                document.getElementById('ai-apply-btn').style.display = '';
+            } else {
+                var empty = document.createElement('span');
+                empty.className = 'ai-no-criteria';
+                empty.textContent = 'No applicable criteria found — manual selection required.';
+                badges.appendChild(empty);
+                document.getElementById('ai-apply-btn').style.display = 'none';
+            }
+            suggestPanel.dataset.codes = JSON.stringify(suggested);
+            suggestPanel.style.display = 'flex';
+
+            var evidenceBasis = reasoning.evidence_basis || [];
+            var evidencePanel = document.getElementById('ai-evidence-basis');
+            var evidenceList = document.getElementById('ai-evidence-basis-list');
+            evidenceList.replaceChildren();
+            evidenceBasis.forEach(function(item) {
+                var row = document.createElement('div');
+                row.className = 'ai-evidence-basis-item';
+                var title = document.createElement('strong');
+                title.textContent = item.criterion || 'Evidence';
+                var detail = document.createElement('span');
+                detail.textContent = (item.source || 'Unknown source') + ' / ' +
+                    (item.field || 'unknown field') + ': ' + (item.value || 'Not provided');
+                var explanation = document.createElement('span');
+                explanation.textContent = item.explanation || '';
+                row.append(title, detail, explanation);
+                curatorSourceLinks((item.criterion || '').split('_')[0]).forEach(function(link) {
+                    row.appendChild(link);
+                });
+                evidenceList.appendChild(row);
+            });
+            evidencePanel.style.display = evidenceBasis.length ? 'block' : 'none';
+            renderCriterionSourceLinks(reasoning.suggested_acmg || []);
+            document.querySelectorAll('.ai-criterion-evidence').forEach(function(element) {
+                var matches = evidenceBasis.filter(function(item) {
+                    return (item.criterion || '').split('_')[0] === element.dataset.criterion;
+                });
+                element.replaceChildren();
+                if (!matches.length) {
+                    element.hidden = true;
+                    return;
+                }
+                matches.forEach(function(item) {
+                    var detail = document.createElement('span');
+                    detail.textContent = (item.source || 'Unknown source') + ' / ' +
+                        (item.field || 'unknown field') + ': ' + (item.value || 'Not provided');
+                    var explanation = document.createElement('span');
+                    explanation.textContent = item.explanation || '';
+                    element.append(detail, explanation);
+                });
+                element.hidden = false;
+            });
+
+            var missingPanel = document.getElementById('ai-missing-data');
+            var missingList = document.getElementById('ai-missing-list');
+            var missing = reasoning.missing_data || [];
+            missingList.replaceChildren();
+            missing.forEach(function(message) {
+                var item = document.createElement('li');
+                item.textContent = message;
+                missingList.appendChild(item);
+            });
+            missingPanel.style.display = missing.length ? 'block' : 'none';
+            panel.style.display = 'block';
+        }
+
+        function variantSourceContext() {
+            var row = currentAssessmentRow || {};
+            var dataset = row.dataset || {};
+            return {
+                chrom: dataset.chrom || '',
+                pos: dataset.pos || '',
+                ref: dataset.ref || '',
+                alt: dataset.alt || '',
+                gene: dataset.gene || '',
+                variantId: dataset.variantId || ''
+                ,hgvsC: dataset.hgvsC || ''
+                ,hgvsP: dataset.hgvsP || ''
+            };
+        }
+
+        function sourceLink(label, url) {
+            var link = document.createElement('a');
+            link.className = 'ai-source-link';
+            link.href = url;
+            link.target = '_blank';
+            link.rel = 'noopener noreferrer';
+            link.textContent = label;
+            return link;
+        }
+
+        function curatorSourceLinks(criterion) {
+            var context = variantSourceContext();
+            var coordinate = [context.chrom, context.pos, context.ref, context.alt]
+                .map(encodeURIComponent).join('-');
+            var links = [];
+            if (criterion === 'PVS1') {
+                var autoPvs1Chrom = String(context.chrom || '').replace(/^chr/i, '');
+                var autoPvs1Variant = [autoPvs1Chrom, context.pos, context.ref, context.alt]
+                    .filter(Boolean).map(encodeURIComponent).join('-');
+                links.push(sourceLink(
+                    'AutoPVS1',
+                    'https://autopvs1.bgi.com/variant/hg38/' + autoPvs1Variant
+                ));
+            }
+            if (criterion === 'PS1') {
+                var clinvarTerm = encodeURIComponent(
+                    [context.gene, context.hgvsP, context.hgvsC, context.variantId].filter(Boolean).join(' ')
+                );
+                links.push(sourceLink(
+                    'ClinVar search',
+                    'https://www.ncbi.nlm.nih.gov/clinvar/?term=' + clinvarTerm
+                ));
+            }
+            if (criterion === 'PM1' || criterion === 'PM5') {
+                links.push(sourceLink(
+                    'NCBI Variation',
+                    'https://www.ncbi.nlm.nih.gov/variation/view/?chr=' + encodeURIComponent(context.chrom) +
+                    '&pos=' + encodeURIComponent(context.pos) +
+                    '&ref=' + encodeURIComponent(context.ref) +
+                    '&alt=' + encodeURIComponent(context.alt)
+                ));
+            }
+            if (['PM2', 'BA1', 'BS1', 'BS2'].includes(criterion)) {
+                links.push(sourceLink(
+                    'gnomAD variant',
+                    'https://gnomad.broadinstitute.org/variant/' + coordinate + '?dataset=gnomad_r4'
+                ));
+            }
+            if (criterion === 'PP2') {
+                links.push(sourceLink(
+                    'gnomAD gene',
+                    'https://gnomad.broadinstitute.org/gene/' + encodeURIComponent(context.gene.toUpperCase()) + '?dataset=gnomad_r4'
+                ));
+            }
+            if (criterion === 'PP3' || criterion === 'BP4') {
+                if (context.variantId) {
+                    var ensemblVariantId = String(context.variantId);
+                    if (/^\d+$/.test(ensemblVariantId)) {
+                        ensemblVariantId = 'rs' + ensemblVariantId;
+                    }
+                    links.push(sourceLink(
+                        'Ensembl Variation',
+                        'https://www.ensembl.org/Homo_sapiens/Variation/Explore?v=' + encodeURIComponent(ensemblVariantId)
+                    ));
+                }
+            }
+            return links;
+        }
+
+        function renderCuratorSourceLinks() {
+            var list = document.getElementById('curator-source-links-inline-list');
+            if (!list) return;
+            list.replaceChildren();
+            var criteria = ['PVS1', 'PS1', 'PM1', 'PM5', 'PM2', 'BA1', 'BS1', 'BS2', 'PP2', 'PP3', 'BP4'];
+            var seen = new Set();
+            criteria.forEach(function(criterion) {
+                var links = curatorSourceLinks(criterion);
+                links.forEach(function(link) {
+                    if (seen.has(link.href)) return;
+                    seen.add(link.href);
+                    list.appendChild(link);
+                });
+            });
+        }
+
+        function renderCriterionSourceLinks(suggestedCriteria) {
+            document.querySelectorAll('[data-criterion-source-links]').forEach(function(container) {
+                container.replaceChildren();
+                var criterion = container.dataset.criterionSourceLinks;
+                var suggested = suggestedCriteria.some(function(code) {
+                    return String(code).split('_')[0] === criterion;
+                });
+                if (!suggested) return;
+                curatorSourceLinks(criterion).forEach(function(link) {
+                    link.textContent = 'Check current status';
+                    link.classList.add('ai-criterion-source-link');
+                    container.appendChild(link);
+                });
+            });
+        }
+
+        function renderCuratorSourceContext() {
+            var context = variantSourceContext();
+            var contextList = document.getElementById('curator-source-variant-context');
+            if (!contextList) return;
+            contextList.replaceChildren();
+            [
+                ['Variant', [context.chrom, context.pos, context.ref, context.alt].filter(Boolean).join(':')],
+                ['Gene', context.gene || '—'],
+                ['HGVS c.', context.hgvsC || '—'],
+                ['HGVS p.', context.hgvsP || '—'],
+                ['rsID', context.variantId || '—']
+            ].forEach(function(item) {
+                var term = document.createElement('dt');
+                term.textContent = item[0];
+                var value = document.createElement('dd');
+                value.textContent = item[1];
+                contextList.append(term, value);
+            });
+            renderCuratorSourceLinks();
+        }
+
+        function refreshAiCriteria(button, includePubCaseFinder) {
+            var requestRow = currentAssessmentRow;
+            if (!requestRow) return;
+            var loading = document.getElementById('va-data-loading');
+            button.disabled = true;
+            loading.textContent = includePubCaseFinder
+                ? 'Updating AI criteria with PubCaseFinder evidence...'
+                : 'Updating AI criteria from fresh VEP / VRS data...';
+            loading.classList.remove('is-error');
+            loading.style.display = 'block';
+
+            var requestPath = includePubCaseFinder
+                ? requestRow.dataset.pubcasefinderAiReviewUrl
+                : requestRow.dataset.aiReviewUrl;
+            var requestUrl = new URL(requestPath, window.location.origin).toString();
+            fetch(requestUrl, {
+                method: 'POST',
+                headers: {'Accept': 'application/json'}
+            })
+                .then(function(response) {
+                    return response.json().then(function(data) {
+                        if (!response.ok) throw new Error(data.error || 'AI review failed.');
+                        return data;
+                    });
+                })
+                .then(function(data) {
+                    if (currentAssessmentRow !== requestRow) return;
+                    renderVariantAnnotation(data.annotation || {}, data.pubcasefinder);
+                    renderAiReasoning(data.analysis);
+                    requestRow.dataset.aiScore = data.analysis.score;
+                    requestRow.dataset.aiReason = JSON.stringify(data.analysis);
+                    var aiCell = document.getElementById('ai-' + requestRow.dataset.vid);
+                    aiCell.style.display = '';
+                    aiCell.innerHTML = '<span class="ai-badge" title="AI analysis available">\u2726</span>';
+                    document.getElementById('ai-col-header').style.display = '';
+                    loading.textContent = includePubCaseFinder
+                        ? 'AI criteria updated with PubCaseFinder evidence.'
+                        : 'AI criteria updated from current annotations.';
+                })
+                .catch(function(error) {
+                    if (currentAssessmentRow !== requestRow) return;
+                    loading.textContent = error.message;
+                    loading.classList.add('is-error');
+                })
+                .finally(function() {
+                    if (currentAssessmentRow === requestRow) button.disabled = false;
+                });
+        }
+
+        var acmgDefaultWeights = JSON.parse(document.getElementById('acmg-default-weights').textContent);
+        var acmgStrengthPoints = {
+            VeryStrong: 8,
+            Strong: 4,
+            Moderate: 2,
+            Supporting: 1,
+            Indeterminate: 0,
+            StandAlone: 8
+        };
+        var acmgPriorProbability = 0.102;
+        var acmgEvidenceStrengthUnit = 2.0801;
+
+        function normalizeAcmgWeight(weight) {
+            var raw = (weight || '').toString().replace(/\s+/g, '').toLowerCase();
+            if (raw === 'verystrong') return 'VeryStrong';
+            if (raw === 'strong') return 'Strong';
+            if (raw === 'moderate') return 'Moderate';
+            if (raw === 'supporting') return 'Supporting';
+            if (raw === 'indeterminate') return 'Indeterminate';
+            if (raw === 'standalone') return 'StandAlone';
+            return weight || '';
+        }
+
+        function syncAcmgRowState(row) {
+            var cb = row.querySelector('input[type=checkbox]');
+            var sel = row.querySelector('select');
+            var comment = row.querySelector('.acmg-criterion-comment');
+            if (!cb || !sel) {
+                return;
+            }
+            sel.disabled = !cb.checked;
+            if (comment) comment.disabled = !cb.checked;
+            row.classList.toggle('is-selected', cb.checked);
+        }
+
+        function collectCriterionComments() {
+            var comments = {};
+            document.querySelectorAll('#acmg-modal .acmg-cb').forEach(function(row) {
+                var cb = row.querySelector('input[type=checkbox]');
+                var field = row.querySelector('.acmg-criterion-comment');
+                var comment = field ? field.value.trim() : '';
+                if (cb && cb.checked && comment) comments[cb.value] = comment;
+            });
+            document.getElementById('criterion-comments-modal').value = JSON.stringify(comments);
+        }
+
+        function acmgTokenFromRow(row) {
+            var cb = row.querySelector('input[type=checkbox]');
+            if (!cb || !cb.checked) {
+                return null;
+            }
+            var sel = row.querySelector('select');
+            var weight = sel ? (sel.value || '') : '';
+            return weight ? (cb.value + '_' + weight) : cb.value;
+        }
+
+        function tokenStrength(token) {
+            var parts = token.split('_');
+            var code = parts[0];
+            var explicit = parts.length > 1 ? parts.slice(1).join('_') : '';
+            return normalizeAcmgWeight(explicit || acmgDefaultWeights[code] || 'Supporting');
+        }
+
+        function tokenSide(token) {
+            return token && token.charAt(0) === 'B' ? 'benign' : 'pathogenic';
+        }
+
+        function calculateAcmgAssessment(checked) {
+            var total = (checked || []).reduce(function(sum, token) {
+                var points = acmgStrengthPoints[tokenStrength(token)] || 0;
+                return sum + (tokenSide(token) === 'benign' ? -points : points);
+            }, 0);
+            var odds = Math.pow(acmgEvidenceStrengthUnit, total);
+            var posterior = (odds * acmgPriorProbability) /
+                (odds * acmgPriorProbability - acmgPriorProbability + 1);
+            var reviewerOverride = document.querySelector(
+                '#assess-form [name=reviewer_override_lb_threshold]'
+            ).checked;
+            var classification;
+            if (total >= 10) classification = 'Pathogenic';
+            else if (total >= 6) classification = 'Likely pathogenic';
+            else if (total >= 0) classification = 'Uncertain significance';
+            else if (reviewerOverride && total > -2) classification = 'Uncertain significance';
+            else if (total >= -6) classification = 'Likely benign';
+            else classification = 'Benign';
+
+            return {
+                total: total,
+                posterior: posterior,
+                classification: classification,
+                reviewerOverride: reviewerOverride
+            };
+        }
+
+        function autoClassify(checked) {
+            var assessment = calculateAcmgAssessment(checked);
+
+            document.getElementById('acmg-total-score').textContent = assessment.total;
+            document.getElementById('acmg-posterior').textContent =
+                (assessment.posterior * 100).toFixed(2) + '%';
+            document.getElementById('acmg-classification').textContent = assessment.classification;
+        }
+
+        function vaSpecStrength(strength) {
+            return {
+                VeryStrong: 'very strong',
+                StandAlone: 'stand alone',
+                Strong: 'strong',
+                Moderate: 'moderate',
+                Supporting: 'supporting'
+            }[strength] || null;
+        }
+
+        function vaSpecDirection(classification) {
+            if (classification === 'Pathogenic' || classification === 'Likely pathogenic') return 'supports';
+            if (classification === 'Benign' || classification === 'Likely benign') return 'disputes';
+            return 'neutral';
+        }
+
+        function vaSpecEvidenceOutcome(code, strength) {
+            var standardDefaults = {
+                PVS1: 'VeryStrong', PS1: 'Strong', PS2: 'Strong', PS3: 'Strong', PS4: 'Strong',
+                PM1: 'Moderate', PM2: 'Moderate', PM3: 'Moderate', PM4: 'Moderate',
+                PM5: 'Moderate', PM6: 'Moderate', PP1: 'Supporting', PP2: 'Supporting',
+                PP3: 'Supporting', PP4: 'Supporting', BA1: 'StandAlone', BS1: 'Strong',
+                BS2: 'Strong', BS3: 'Strong', BS4: 'Strong', BP1: 'Supporting',
+                BP2: 'Supporting', BP3: 'Supporting', BP4: 'Supporting',
+                BP5: 'Supporting', BP7: 'Supporting'
+            };
+            if (strength === 'Indeterminate') return code + '_not_met';
+            if (strength === standardDefaults[code] || code === 'BA1') return code;
+            return code + '_' + vaSpecStrength(strength).replace(' ', '_');
+        }
+
+        function updateVaSpecPreview() {
+            if (!currentAssessmentRow) return;
+            var rows = Array.from(document.querySelectorAll('#acmg-modal .acmg-cb'));
+            var tokens = rows.map(acmgTokenFromRow).filter(Boolean);
+            var assessment = calculateAcmgAssessment(tokens);
+            var comments = {};
+            rows.forEach(function(row) {
+                var checkbox = row.querySelector('input[type=checkbox]');
+                var field = row.querySelector('.acmg-criterion-comment');
+                if (checkbox && checkbox.checked && field && field.value.trim()) {
+                    comments[checkbox.value] = field.value.trim();
+                }
+            });
+            var classificationCode = assessment.classification.toLowerCase();
+            var statementId = 'urn:expertboard:assessment:preview';
+            var propositionId = 'urn:expertboard:proposition:variant-' + currentAssessmentRow.dataset.vid;
+            var vrsId = document.getElementById('va-vrs-id').textContent.trim();
+            var subjectVariant = vrsId && vrsId !== '—'
+                ? vrsId : 'urn:expertboard:variant:' + currentAssessmentRow.dataset.vid;
+            var contribution = {
+                type: 'Contribution',
+                contributor: {
+                    type: 'Agent',
+                    name: vaSpecContext.reviewer || 'Unknown reviewer'
+                },
+                activityType: 'evidence evaluation',
+                date: new Date().toISOString().slice(0, 10)
+            };
+            var proposition = {
+                id: propositionId,
+                type: 'VariantPathogenicityProposition',
+                subjectVariant: subjectVariant,
+                predicate: 'isCausalFor',
+                objectCondition: {
+                    id: 'urn:expertboard:patient:' + vaSpecContext.patientId + ':condition',
+                    conceptType: 'Disease',
+                    name: vaSpecContext.condition || 'Unspecified condition'
+                }
+            };
+            if (currentAssessmentRow.dataset.gene) {
+                proposition.geneContextQualifier = {
+                    conceptType: 'Gene',
+                    name: currentAssessmentRow.dataset.gene.toUpperCase()
+                };
+            }
+            var evidenceLines = rows.filter(function(row) {
+                var checkbox = row.querySelector('input[type=checkbox]');
+                return checkbox && checkbox.checked;
+            }).map(function(row, index) {
+                var checkbox = row.querySelector('input[type=checkbox]');
+                var code = checkbox.value;
+                var token = acmgTokenFromRow(row);
+                var strength = tokenStrength(token);
+                var direction = strength === 'Indeterminate'
+                    ? 'neutral' : (tokenSide(token) === 'benign' ? 'disputes' : 'supports');
+                var line = {
+                    id: statementId + ':evidence-' + (index + 1),
+                    type: 'EvidenceLine',
+                    targetProposition: propositionId,
+                    directionOfEvidenceProvided: direction,
+                    scoreOfEvidenceProvided: Math.abs(
+                        (acmgStrengthPoints[strength] || 0)
+                    ),
+                    evidenceOutcome: {
+                        primaryCoding: {
+                            code: vaSpecEvidenceOutcome(code, strength),
+                            system: 'ACMG Guidelines, 2015'
+                        },
+                        name: 'ACMG 2015 ' + code + ' criterion assessment'
+                    },
+                    specifiedBy: {
+                        type: 'Method',
+                        name: 'ACMG 2015 ' + code + ' Criterion',
+                        methodType: code,
+                        reportedIn: {
+                            type: 'Document',
+                            pmid: '25741868',
+                            name: 'ACMG Guidelines, 2015'
+                        }
+                    },
+                    contributions: [contribution]
+                };
+                var mappedStrength = vaSpecStrength(strength);
+                if (mappedStrength) {
+                    line.strengthOfEvidenceProvided = {
+                        primaryCoding: {
+                            code: mappedStrength,
+                            system: 'ACMG Guidelines, 2015'
+                        }
+                    };
+                }
+                if (comments[code]) {
+                    line.extensions = [{name: 'reviewerComment', value: comments[code]}];
+                }
+                return line;
+            });
+            var notes = document.querySelector('#assess-form [name=notes]').value.trim();
+            var extensions = [
+                {name: 'tavtigianTotalScore', value: assessment.total},
+                {name: 'posteriorProbability', value: assessment.posterior},
+                {name: 'reviewerLbThresholdOverride', value: assessment.reviewerOverride}
+            ];
+            if (notes) extensions.push({name: 'reviewerNotes', value: notes});
+            var confirmedPhenotypes = confirmedPhenotypeContext();
+            if (confirmedPhenotypes.length) {
+                extensions.push({
+                    name: 'expertboardConfirmedPatientPhenotypes',
+                    value: {
+                        patient_id: vaSpecContext.patientId,
+                        vocabulary: 'Human Phenotype Ontology',
+                        terms: confirmedPhenotypes.map(function(phenotype) {
+                            return {
+                                id: phenotype.hpo_id,
+                                label: phenotype.label,
+                                source_text: phenotype.source_text,
+                                confirmed_by: phenotype.confirmed_by,
+                                confirmed_at: phenotype.confirmed_at
+                            };
+                        })
+                    }
+                });
+            }
+            var vaSpec = {
+                id: statementId,
+                type: 'Statement',
+                proposition: proposition,
+                direction: vaSpecDirection(assessment.classification),
+                classification: {
+                    primaryCoding: {
+                        code: classificationCode,
+                        system: 'ACMG Guidelines, 2015'
+                    },
+                    name: assessment.classification
+                },
+                contributions: [contribution],
+                specifiedBy: {
+                    type: 'Method',
+                    name: 'ACMG Guidelines, 2015',
+                    methodType: 'guideline',
+                    reportedIn: {
+                        type: 'Document',
+                        pmid: '25741868',
+                        name: 'Richards et al., 2015, Genet Med.'
+                    }
+                },
+                hasEvidenceLines: evidenceLines,
+                extensions: extensions
+            };
+            document.getElementById('va-spec-json').textContent = JSON.stringify(vaSpec, null, 2);
+        }
+
+        function updateAcmgPreview() {
+            var checked = Array.from(document.querySelectorAll('#acmg-modal .acmg-cb'))
+                .map(acmgTokenFromRow)
+                .filter(Boolean);
+            document.getElementById('acmg-hidden-modal').value = checked.join(', ');
+            document.getElementById('acmg-preview').textContent =
+                checked.length ? checked.map(function(token) {
+                    var points = acmgStrengthPoints[tokenStrength(token)] || 0;
+                    var signedPoints = tokenSide(token) === 'benign' ? -points : points;
+                    return token + ' (' + (signedPoints > 0 ? '+' : '') + signedPoints + ')';
+                }).join(', ') : '\u2014 no ACMG criteria selected \u2014';
+            autoClassify(checked);
+            updateVaSpecPreview();
+        }
+
         function openAssessModal(actionUrl, trEl) {
+            currentAssessmentRow = trEl;
             document.getElementById('assess-form').action = actionUrl;
             document.getElementById('assess-form').reset();
-            document.querySelectorAll('#acmg-modal input[type=checkbox]').forEach(function(cb){ cb.checked = false; });
+            document.querySelectorAll('#acmg-modal .acmg-cb').forEach(function(row){
+                var cb = row.querySelector('input[type=checkbox]');
+                var sel = row.querySelector('select');
+                var comment = row.querySelector('.acmg-criterion-comment');
+                if (cb) cb.checked = false;
+                if (sel) sel.disabled = true;
+                if (comment) comment.disabled = true;
+                row.classList.remove('is-selected');
+            });
             document.getElementById('acmg-hidden-modal').value = '';
+            document.getElementById('criterion-comments-modal').value = '{}';
+            document.getElementById('annotation-snapshot-modal').value = '';
             document.getElementById('acmg-preview').textContent = '\u2014 no ACMG criteria selected \u2014';
-            // AI suggestion
+            autoClassify([]);
+            document.getElementById('va-data-variant').textContent = trEl.dataset.vkey;
+            document.getElementById('ai-input-clinical-note').textContent =
+                vaSpecContext.clinicalText || 'Not provided';
+            document.getElementById('ai-input-vcf-info').textContent =
+                trEl.dataset.rawInfo || 'No original VCF INFO';
+            document.getElementById('ai-input-hpo').textContent =
+                JSON.stringify(confirmedPhenotypeContext(), null, 2);
+            document.getElementById('ai-input-context').textContent =
+                JSON.stringify(vaSpecContext.clinicalContext || {}, null, 2);
+            document.getElementById('ai-input-clinvar').textContent =
+                JSON.stringify(savedClinvarAnnotations[String(trEl.dataset.vid)] || {
+                    status: 'Not fetched yet.'
+                }, null, 2);
+            document.getElementById('ai-input-pubcasefinder').textContent =
+                'Not requested yet. Use "Suggest with PubCaseFinder" to retrieve it.';
+            document.getElementById('va-data-loading').style.display = 'none';
+            document.getElementById('va-data-loading').classList.remove('is-error');
+            document.getElementById('va-data-content').style.display = 'none';
+            document.getElementById('va-vrs-id').textContent = '';
+                    document.getElementById('va-last-updated').textContent = 'Last updated:\nNot yet';
+                document.getElementById('clinvar-last-updated').textContent =
+                    'Last updated:\n' + (trEl.dataset.clinvarUpdatedAt || 'Not yet');
+            document.getElementById('clinvar-status').textContent = '';
+            document.getElementById('va-refresh-btn').disabled = false;
+            document.getElementById('ai-refresh-btn').disabled =
+                document.getElementById('ai-refresh-btn').dataset.llmConfigured !== '1';
+            document.getElementById('ai-pubcasefinder-btn').disabled = true;
+            renderCriterionSourceLinks([]);
+
+            var savedAnnotation = savedVepAnnotations[String(trEl.dataset.vid)];
+            if (savedAnnotation) {
+                renderVariantAnnotation(savedAnnotation);
+                document.getElementById('va-data-loading').style.display = 'none';
+                document.getElementById('va-data-content').style.display = 'block';
+                document.getElementById('va-last-updated').textContent =
+                    'Last updated:\n' + (trEl.dataset.vepUpdatedAt || 'Unknown');
+                document.getElementById('ai-refresh-btn').disabled =
+                    document.getElementById('ai-refresh-btn').dataset.llmConfigured !== '1';
+            }
+
             var panel = document.getElementById('ai-suggestion-panel');
             var aiScore = trEl ? trEl.dataset.aiScore : '';
             var aiReason = trEl ? trEl.dataset.aiReason : '';
             if (aiScore !== '' && aiReason) {
                 try {
-                    var r = JSON.parse(aiReason);
-                    document.getElementById('ai-r-symptoms').textContent  = r.patient_symptoms  || '—';
-                    document.getElementById('ai-r-gene').textContent      = r.gene_diseases      || '—';
-                    document.getElementById('ai-r-relevance').textContent = r.relevance          || '—';
-                    document.getElementById('ai-r-family').textContent    = r.family_history     || '—';
-                    document.getElementById('ai-r-rationale').textContent = r.score_rationale   || '—';
-                    // Suggested ACMG criteria
-                    var suggestPanel = document.getElementById('ai-acmg-suggest');
-                    var badges = document.getElementById('ai-acmg-badges');
-                    var suggested = r.suggested_acmg || [];
-                    if (suggested.length > 0) {
-                        badges.innerHTML = suggested.map(function(c) {
-                            return '<span class="acmg-suggest-chip">' + c + '</span>';
-                        }).join('');
-                        document.getElementById('ai-apply-btn').style.display = '';
-                        suggestPanel.dataset.codes = JSON.stringify(suggested);
-                    } else {
-                        badges.innerHTML = '<span class="ai-no-criteria">No applicable criteria found — manual selection required.</span>';
-                        document.getElementById('ai-apply-btn').style.display = 'none';
-                        suggestPanel.dataset.codes = '[]';
-                    }
-                    suggestPanel.style.display = 'flex';
-                    // Missing annotation data
-                    var missingPanel = document.getElementById('ai-missing-data');
-                    var missingList = document.getElementById('ai-missing-list');
-                    var missing = r.missing_data || [];
-                    if (missing.length > 0) {
-                        missingList.innerHTML = missing.map(function(m) {
-                            return '<li>' + m.replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</li>';
-                        }).join('');
-                        missingPanel.style.display = 'block';
-                    } else {
-                        missingPanel.style.display = 'none';
-                    }
-                    panel.style.display = 'block';
-                } catch(e) { panel.style.display = 'none'; }
+                    renderAiReasoning(JSON.parse(aiReason));
+                } catch(e) {
+                    panel.style.display = 'none';
+                }
             } else {
                 panel.style.display = 'none';
             }
+
             document.getElementById('acmg-modal').style.display = 'flex';
+            renderCuratorSourceContext();
+            var canUsePubCaseFinder = confirmedPhenotypeContext().length > 0 &&
+                document.getElementById('ai-pubcasefinder-btn').dataset.llmConfigured === '1';
+            document.getElementById('ai-pubcasefinder-btn').disabled = !canUsePubCaseFinder;
+            updateVaSpecPreview();
         }
+
         function closeAssessModal() {
             document.getElementById('acmg-modal').style.display = 'none';
+            currentAssessmentRow = null;
         }
+
         function applyAiAcmg() {
             var suggestPanel = document.getElementById('ai-acmg-suggest');
             var codes = JSON.parse(suggestPanel.dataset.codes || '[]');
-            // Uncheck all first, then check suggested
-            document.querySelectorAll('#acmg-modal input[type=checkbox]').forEach(function(cb){
-                cb.checked = codes.indexOf(cb.value) !== -1;
+            document.querySelectorAll('#acmg-modal .acmg-cb').forEach(function(row){
+                var cb = row.querySelector('input[type=checkbox]');
+                var sel = row.querySelector('select');
+                if (!cb || !sel) {
+                    return;
+                }
+                var match = codes.find(function(code) {
+                    return code === cb.value || code.indexOf(cb.value + '_') === 0;
+                });
+                if (match) {
+                    cb.checked = true;
+                    var suffix = match.indexOf('_') !== -1 ? match.split('_').slice(1).join('_') : '';
+                    if (suffix) {
+                        sel.value = suffix;
+                    }
+                }
+                syncAcmgRowState(row);
             });
-            // Trigger preview update
-            var event = new Event('change', {bubbles: true});
-            var firstCb = document.querySelector('#acmg-modal input[type=checkbox]');
-            if (firstCb) firstCb.dispatchEvent(event);
+            updateAcmgPreview();
         }
-        (function () {
-            function updateAcmgPreview() {
-                var checked = Array.from(
-                    document.querySelectorAll('#acmg-modal input[type=checkbox]:checked')
-                ).map(function(cb){ return cb.value; });
-                document.getElementById('acmg-hidden-modal').value = checked.join(', ');
-                document.getElementById('acmg-preview').textContent =
-                    checked.length ? checked.join(', ') : '— no ACMG criteria selected —';
-                autoClassify(checked);
+
+        document.querySelectorAll('#acmg-modal .acmg-cb').forEach(function(row){
+            var cb = row.querySelector('input[type=checkbox]');
+            var sel = row.querySelector('select');
+            if (cb) {
+                cb.addEventListener('change', function(){
+                    syncAcmgRowState(row);
+                    updateAcmgPreview();
+                });
             }
-
-            function autoClassify(checked) {
-                if (!checked || checked.length === 0) return;
-
-                var pvs = checked.filter(function(c){ return c === 'PVS1'; }).length;
-                var ps  = checked.filter(function(c){ return /^PS/.test(c); }).length;
-                var pm  = checked.filter(function(c){ return /^PM/.test(c); }).length;
-                var pp  = checked.filter(function(c){ return /^PP/.test(c); }).length;
-                var ba  = checked.filter(function(c){ return c === 'BA1'; }).length;
-                var bs  = checked.filter(function(c){ return /^BS/.test(c); }).length;
-                var bp  = checked.filter(function(c){ return /^BP/.test(c); }).length;
-
-                var cls = '';
-
-                // ── Pathogenic ──
-                if (
-                    (pvs && ps >= 1) ||
-                    (pvs && pm >= 2) ||
-                    (pvs && pm >= 1 && pp >= 1) ||
-                    (pvs && pp >= 2) ||
-                    ps >= 2 ||
-                    (ps >= 1 && pm >= 3) ||
-                    (ps >= 1 && pm >= 2 && pp >= 2) ||
-                    (ps >= 1 && pm >= 1 && pp >= 4)
-                ) {
-                    cls = 'Pathogenic';
-                }
-                // ── Likely pathogenic ──
-                else if (
-                    (pvs && pm >= 1) ||
-                    (ps >= 1 && pm >= 1) ||   // 1 PS + 1-2 PM (≥3 PM case already Pathogenic above)
-                    (ps >= 1 && pp >= 2) ||
-                    pm >= 3 ||
-                    (pm >= 2 && pp >= 2) ||
-                    (pm >= 1 && pp >= 4)
-                ) {
-                    cls = 'Likely pathogenic';
-                }
-                // ── Benign ──
-                else if (ba >= 1 || bs >= 2) {
-                    cls = 'Benign';
-                }
-                // ── Likely benign ──
-                else if ((bs >= 1 && bp >= 1) || bp >= 2) {
-                    cls = 'Likely benign';
-                }
-                // ── VUS (criteria present but insufficient for above) ──
-                else {
-                    cls = 'Uncertain significance';
-                }
-
-                var sel = document.querySelector('#assess-form [name=classification]');
-                if (sel && cls) {
-                    sel.value = cls;
-                    sel.style.outline = '2px solid #6366f1';
-                    setTimeout(function(){ sel.style.outline = ''; }, 1200);
-                }
-
-                // Auto-set evidence level
-                var evMap = {
-                    'Pathogenic':             'strong',
-                    'Likely pathogenic':      'moderate',
-                    'Benign':                 'strong',
-                    'Likely benign':          'moderate',
-                    'Uncertain significance': 'supporting',
-                };
-                var evSel = document.querySelector('#assess-form [name=evidence_level]');
-                if (evSel && evMap[cls]) {
-                    evSel.value = evMap[cls];
-                }
+            if (sel) {
+                sel.addEventListener('change', updateAcmgPreview);
             }
+            var comment = row.querySelector('.acmg-criterion-comment');
+            if (comment) comment.addEventListener('input', updateVaSpecPreview);
+            syncAcmgRowState(row);
+        });
+        document.querySelector('#assess-form [name=reviewer_override_lb_threshold]')
+            .addEventListener('change', updateAcmgPreview);
+        document.querySelector('#assess-form [name=notes]')
+            .addEventListener('input', updateVaSpecPreview);
+        document.getElementById('assess-form').addEventListener('submit', collectCriterionComments);
 
-            document.querySelectorAll('#acmg-modal input[type=checkbox]').forEach(function(cb){
-                cb.addEventListener('change', updateAcmgPreview);
+        document.getElementById('ai-input-search-field').addEventListener('input', function(event) {
+            var query = event.target.value.trim().toLowerCase();
+            var status = document.getElementById('ai-input-search-status');
+            var matches = Array.from(document.querySelectorAll('.acmg-left-column [data-ai-searchable]'))
+                .filter(function(element) { return query && element.textContent.toLowerCase().includes(query); });
+            document.querySelectorAll('.acmg-left-column [data-ai-searchable]').forEach(function(element) {
+                element.classList.remove('ai-search-match');
             });
-        })();
+            if (!query) {
+                status.textContent = '';
+                return;
+            }
+            status.textContent = matches.length + ' match' + (matches.length === 1 ? '' : 'es');
+            if (matches.length) {
+                matches[0].classList.add('ai-search-match');
+                matches[0].scrollIntoView({block: 'center'});
+            }
+        });
+        document.getElementById('ai-input-search-field').addEventListener('keydown', function(event) {
+            if (event.key === 'Enter') event.preventDefault();
+        });
+        document.getElementById('ai-input-search-field').addEventListener('keypress', function(event) {
+            if (event.key === 'Enter') event.preventDefault();
+        });
+        document.getElementById('assess-form').addEventListener('submit', function(event) {
+            if (document.activeElement && document.activeElement.id === 'ai-input-search-field') {
+                event.preventDefault();
+                event.stopImmediatePropagation();
+            }
+        }, true);
+
+        // Auto-trigger gene marking on page load if confirmed phenotypes exist
+        document.addEventListener('DOMContentLoaded', function() {
+            // PubCaseFinder searches require an explicit user action.
+        });
+    </script>
+    <script src="{{ url_for('static', filename='driver.js.iife.js', v='1.3.1') }}"></script>
+    <script>
+        (function () {
+            var startButton = document.getElementById('patient-guide-start');
+            if (!startButton) return;
+            var guideResumeKey = 'expertboardPatientGuideResume';
+
+            function saveGuideResume(stepIndex) {
+                try {
+                    sessionStorage.setItem(guideResumeKey, JSON.stringify({
+                        stepIndex: stepIndex,
+                        timestamp: Date.now()
+                    }));
+                } catch (error) {}
+            }
+
+            function consumeGuideResume() {
+                try {
+                    var saved = JSON.parse(sessionStorage.getItem(guideResumeKey) || 'null');
+                    sessionStorage.removeItem(guideResumeKey);
+                    if (saved && Date.now() - saved.timestamp < 120000) return saved.stepIndex;
+                } catch (error) {}
+                return 0;
+            }
+
+            function startPatientGuide(startIndex) {
+                var driverFactory = window.driver && window.driver.js &&
+                    (window.driver.js.driver || window.driver);
+                if (typeof driverFactory !== 'function') return false;
+                var guide = driverFactory({
+                    showProgress: true,
+                    disableActiveInteraction: false,
+                    steps: [
+                        {
+                            element: '.patient-hero',
+                            popover: {
+                                title: 'Patient case',
+                                description: 'This page shows the individual patient case information.',
+                                side: 'bottom',
+                                align: 'center'
+                            }
+                        },
+                        {
+                            element: '#patient-status-form',
+                            popover: {
+                                title: 'Status',
+                                description: 'Use this to track review progress. The current status is also shown in the Review queue kanban view.',
+                                side: 'left',
+                                align: 'center'
+                            },
+                            onHighlightStarted: function(element) {
+                                element.addEventListener('submit', function() {
+                                    saveGuideResume(2);
+                                }, {once: true, capture: true});
+                            }
+                        },
+                        {
+                            element: '#patient-expert-board-form',
+                            popover: {
+                                title: 'Expert board',
+                                description: 'Select the expert board to request variant assessment. Boards represent specialist panels organized by disease area and expertise.',
+                                side: 'left',
+                                align: 'center'
+                            },
+                            onHighlightStarted: function(element) {
+                                element.addEventListener('submit', function() {
+                                    saveGuideResume(3);
+                                }, {once: true, capture: true});
+                            }
+                        },
+                        {
+                            element: '#clinical-free-text-section',
+                            popover: {
+                                title: 'Clinical free text',
+                                description: 'Enter the patient case information from the VCF or clinical record here as free text.',
+                                side: 'top',
+                                align: 'center'
+                            },
+                            onHighlightStarted: function(element) {
+                                element.addEventListener('submit', function() {
+                                    saveGuideResume(4);
+                                }, {once: true, capture: true});
+                            }
+                        },
+                        {
+                            element: '#clinical-context-extract-btn',
+                            popover: {
+                                title: 'Extract',
+                                description: 'Extract ancestry and disease candidates from the saved clinical note.',
+                                side: 'bottom',
+                                align: 'end'
+                            }
+                        },
+                        {
+                            element: '#clinical-context-confirm-btn',
+                            popover: {
+                                title: 'Apply selected',
+                                description: 'Review the candidates and apply them only when they are correct.',
+                                side: 'bottom',
+                                align: 'end'
+                            },
+                            onHighlightStarted: function(element) {
+                                element.addEventListener('click', function() {
+                                    saveGuideResume(6);
+                                }, {once: true, capture: true});
+                            }
+                        },
+                        {
+                            element: '#hpo-extract-btn',
+                            popover: {
+                                title: 'Extract candidates',
+                                description: 'Extract symptoms from the clinical note, review them, then search HPO only for selected symptoms.',
+                                side: 'bottom',
+                                align: 'end'
+                            }
+                        },
+                        {
+                            element: '#hpo-candidate-list',
+                            popover: {
+                                title: 'Confirm HPO candidates',
+                                description: 'Use Confirm beside each resolved HPO candidate to save it to the patient phenotype set.',
+                                side: 'bottom',
+                                align: 'end'
+                            }
+                        },
+                        {
+                            element: '#hpo-resolve-btn',
+                            popover: {
+                                title: 'Confirm symptoms and search HPO',
+                                description: 'Select the checkboxes for the symptoms you approve, then use this button to search HPO terms for them.',
+                                side: 'top',
+                                align: 'end'
+                            }
+                        },
+                        {
+                            element: '#family-section',
+                            popover: {
+                                title: 'Family',
+                                description: 'Add family information here. Add the individual family member VCF first. When this page represents the proband, selecting a father or mother VCF enables variant comparison.',
+                                side: 'top',
+                                align: 'center'
+                            },
+                            onHighlightStarted: function(element) {
+                                element.addEventListener('submit', function() {
+                                    saveGuideResume(10);
+                                }, {once: true, capture: true});
+                            }
+                        },
+                        {
+                            element: '#vcf-variants-section',
+                            popover: {
+                                title: 'VCF variants',
+                                description: 'The variants from the registered VCF files are displayed here.',
+                                side: 'top',
+                                align: 'center'
+                            }
+                        },
+                        {
+                            element: '#ai-analyze-btn',
+                            popover: {
+                                title: 'Analyze with AI',
+                                description: 'Click this button to use the VCF variant information and ACMG guidelines to support the review. Each variant can also be analyzed later from its individual assessment view.',
+                                side: 'bottom',
+                                align: 'center'
+                            }
+                        },
+                        {
+                            element: '#ai-col-header',
+                            popover: {
+                                title: 'AI analysis complete',
+                                description: 'When the diamond mark appears in the AI column, the AI analysis is complete.',
+                                side: 'bottom',
+                                align: 'center'
+                            }
+                        },
+                        {
+                            element: '.assess-add-btn',
+                            popover: {
+                                title: 'Open variant assessment',
+                                description: 'Click the plus button to open the assessment screen for this variant.',
+                                side: 'bottom',
+                                align: 'center'
+                            }
+                        }
+                    ]
+                });
+                guide.drive(startIndex || 0);
+                return true;
+            }
+
+            startButton.addEventListener('click', function () {
+                if (startPatientGuide(0)) return;
+                startButton.disabled = true;
+                startButton.textContent = 'Loading guide...';
+                var script = document.createElement('script');
+                script.src = "{{ url_for('static', filename='driver.js.iife.js', v='1.3.1') }}";
+                script.onload = function () {
+                    if (!startPatientGuide(0)) startButton.textContent = 'Guide unavailable';
+                };
+                script.onerror = function () { startButton.textContent = 'Guide unavailable'; };
+                document.head.appendChild(script);
+            });
+            var resumeStep = consumeGuideResume();
+            if (resumeStep) setTimeout(function () { startPatientGuide(resumeStep); }, 300);
+        }());
+    </script>
+    <script>
+        (function () {
+            function startAssessmentGuide() {
+                if (!window.driver || !window.driver.js ||
+                    typeof window.driver.js.driver !== 'function') {
+                    alert('Driver.js failed to load.');
+                    return;
+                }
+                var guide = window.driver.js.driver({
+                    showProgress: true,
+                    steps: [
+                        {
+                            element: '#acmg-modal .acmg-modal-header',
+                            popover: {
+                                title: 'Add Assessment',
+                                description: 'Use this window to review one variant and save a curator assessment.',
+                                side: 'bottom',
+                                align: 'start'
+                            }
+                        },
+                        {
+                            element: 'section.va-review-panel',
+                            popover: {
+                                title: 'Variant annotation and AI input',
+                                description: 'Review the original VCF data, refreshed VEP/VRS data, clinical note, HPO, and patient context used for the assessment.',
+                                side: 'right',
+                                align: 'start'
+                            }
+                        },
+                        {
+                            element: '#va-refresh-btn',
+                            popover: {
+                                title: 'Refresh VEP / VRS',
+                                description: 'Refresh the current variant annotation before assessing it.',
+                                side: 'bottom',
+                                align: 'center'
+                            }
+                        },
+                        {
+                            element: '#ai-refresh-btn',
+                            popover: {
+                                title: 'Update AI criteria',
+                                description: 'Use the current VEP/VRS annotation to request AI-supported ACMG criteria suggestions.',
+                                side: 'bottom',
+                                align: 'center'
+                            }
+                        },
+                        {
+                            element: '#ai-pubcasefinder-btn',
+                            popover: {
+                                title: 'Suggest with PubCaseFinder',
+                                description: 'Use the confirmed HPO and PubCaseFinder candidate disease or gene information as additional context.',
+                                side: 'bottom',
+                                align: 'center'
+                            }
+                        },
+                        {
+                            element: '#ai-suggestion-panel',
+                            popover: {
+                                title: 'AI Reasoning',
+                                description: 'Review the AI reasoning, suggested criteria, missing data, and evidence used for each suggestion.',
+                                side: 'left',
+                                align: 'start'
+                            }
+                        },
+                                                {
+                            element: '#ai-apply-btn.ai-apply-btn',
+                            popover: {
+                                title: 'Apply AI suggestions',
+                                description: 'Apply the AI-suggested criteria to the assessment.',
+                                side: 'left',
+                                align: 'start'
+                            }
+                        },
+                        {
+                            element: 'div.acmg-group',
+                            popover: {
+                                title: 'Pathogenic criteria',
+                                description: 'Select the criteria supported by the available evidence and adjust their strength when needed.',
+                                side: 'left',
+                                align: 'start'
+                            }
+                        },
+                        {
+                            element: '#acmg-benign-group',
+                            popover: {
+                                title: 'Benign criteria',
+                                description: 'Select the criteria supported by the available evidence and adjust their strength when needed.',
+                                side: 'left',
+                                align: 'start'
+                            }
+                        },
+                        {
+                            element: '#acmg-modal .acmg-notes-row',
+                            popover: {
+                                title: 'Assessment notes',
+                                description: 'Add curator comments or other notes that explain the assessment.',
+                                side: 'left',
+                                align: 'center'
+                            }
+                        },
+                        {
+                            element: '#assessment-save-button',
+                            popover: {
+                                title: 'Save assessment',
+                                description: 'Save the selected criteria, comments, annotation snapshot, and assessment result.',
+                                side: 'top',
+                                align: 'center'
+                            }
+                        }
+                    ]
+                });
+                guide.drive();
+            }
+
+            document.getElementById('assessment-guide-start').addEventListener('click', startAssessmentGuide);
+        }());
     </script>
 </body>
 </html>

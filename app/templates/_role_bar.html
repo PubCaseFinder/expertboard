@@ -9,6 +9,8 @@
                href="{{ url_for('expertboard.patient_list') }}">Patients</a>
             <a class="site-nav-link {% if request.endpoint == 'expertboard.patient_queue' %}active{% endif %}"
                href="{{ url_for('expertboard.patient_queue') }}">Review queue</a>
+                <a class="site-nav-link {% if request.endpoint == 'expertboard.variant_assessment_review' %}active{% endif %}"
+                    href="{{ url_for('expertboard.variant_assessment_review') }}">Variant reviews</a>
             <a class="site-nav-link {% if request.endpoint == 'expertboard.admin_panel' %}active{% endif %}"
                href="{{ url_for('expertboard.admin_panel') }}">Admin</a>
         </nav>

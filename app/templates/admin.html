@@ -239,15 +239,21 @@
             </article>
 
             <article class="section">
-                <h2 class="section-title">Ollama settings</h2>
-                <p class="section-copy">Configure the Ollama endpoint used for LLM features (e.g. HPO extraction).</p>
+                <h2 class="section-title">LLM settings</h2>
+                <p class="section-copy">Configure the local or cloud endpoint used for AI analysis. Use a base URL (not a full endpoint path).</p>
                 <form class="admin-form" method="POST" action="{{ url_for('expertboard.admin_save_ollama') }}">
                     <label class="form-field">
                         <span>Base URL</span>
                         <input type="url" name="ollama_base_url"
                                value="{{ r_ollama.base_url }}"
-                               placeholder="https://your-ollama-host/api">
+                               placeholder="http://localhost:11434 or https://ollama.com/api">
                     </label>
+                    <p class="status-hint" style="margin-top:4px;">
+                        Ollama local example: <strong>http://localhost:11434</strong><br>
+                        Ollama Cloud example: <strong>https://ollama.com/api</strong><br>
+                        OpenAI-compatible example: <strong>https://your-host/v1</strong><br>
+                        If you paste <code>/api/chat</code>, <code>/api</code>, or <code>/chat/completions</code>, ExpertBoard normalizes it automatically.
+                    </p>
                     <label class="form-field">
                         <span>Model</span>
                         <input type="text" name="ollama_model"
@@ -261,6 +267,9 @@
                                placeholder="Bearer token / API key"
                                autocomplete="new-password">
                     </label>
+                    <p class="status-hint" style="margin-top:4px;">
+                        Ollama Cloud may require an API key even though local Ollama does not.
+                    </p>
                     <button class="launch-button" type="submit">Save</button>
                 </form>
             </article>

@@ -452,7 +452,23 @@
 
                     <section class="view-panel" data-panel="evidence">
                         <article class="panel">
-                            <h2 class="panel-title">Evidence inbox</h2>
+                            <div class="panel-header">
+                                <div>
+                                    <h2 class="panel-title">PubCaseFinder evidence</h2>
+                                    <p class="panel-copy">Rank candidate diseases from this case's HPO terms and retrieve case reports through TogoMCP.</p>
+                                </div>
+                                <div class="top-actions">
+                                    <button class="launch-button" id="pcf-fetch" type="button">Find evidence</button>
+                                    {% if r_case_detail.clinical_brief.patient %}
+                                        <button class="link-button" id="pcf-analyze" type="button">Analyze with Ollama</button>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            <p class="panel-copy" id="pcf-status" role="status"></p>
+                            <div class="evidence-grid" id="pcf-results"></div>
+                        </article>
+                        <article class="panel">
+                            <h2 class="panel-title">Review tasks</h2>
                             <div class="evidence-grid">
                                 {% for task in r_case_detail.tasks %}
                                     <div class="task-card">
@@ -489,6 +505,17 @@
     </div>
 
     <script>
+        // Resolve relative fetch() URLs against location.origin (never has credentials)
+        // so a page URL with embedded Basic Auth doesn't make fetch() throw.
+        (function (nativeFetch) {
+            window.fetch = function (input, init) {
+                if (typeof input === 'string' && !/^[a-z][a-z0-9+.-]*:/i.test(input)) {
+                    input = new URL(input, window.location.origin).toString();
+                }
+                return nativeFetch(input, init);
+            };
+        })(window.fetch);
+
         const navItems = document.querySelectorAll("[data-view]");
         const panels = document.querySelectorAll("[data-panel]");
 
@@ -500,6 +527,81 @@
         navItems.forEach((item) => {
             item.addEventListener("click", () => switchBoardView(item.dataset.view));
         });
+
+        const pcfFetchButton = document.getElementById("pcf-fetch");
+        const pcfAnalyzeButton = document.getElementById("pcf-analyze");
+        const pcfStatus = document.getElementById("pcf-status");
+        const pcfResults = document.getElementById("pcf-results");
+
+        function addEvidenceCard(title, detail, tag) {
+            const card = document.createElement("div");
+            card.className = "evidence-card";
+            const heading = document.createElement("strong");
+            heading.textContent = title;
+            const copy = document.createElement("p");
+            copy.textContent = detail;
+            const badge = document.createElement("span");
+            badge.className = "tag";
+            badge.textContent = tag;
+            card.append(heading, copy, badge);
+            pcfResults.appendChild(card);
+        }
+
+        function renderPubCaseFinderEvidence(evidence) {
+            pcfResults.replaceChildren();
+            (evidence.ranking.results || []).forEach((item) => {
+                const genes = (item.gene_symbols || []).join(", ") || "No gene listed";
+                addEvidenceCard(
+                    `#${item.rank} ${item.name_en || item.id}`,
+                    `Score ${item.score} · ${genes}`,
+                    "PubCaseFinder"
+                );
+            });
+            const reports = evidence.case_reports && evidence.case_reports.results || [];
+            reports.forEach((report) => {
+                addEvidenceCard(
+                    report.title || `PMID ${report.pmid}`,
+                    `${report.journal || "Journal unavailable"} · ${report.year || "Year unavailable"}`,
+                    `PubMed ${report.pmid || ""}`.trim()
+                );
+            });
+        }
+
+        async function runEvidenceAction(button, endpoint, analyzing) {
+            button.disabled = true;
+            pcfStatus.textContent = analyzing
+                ? "Collecting PubCaseFinder evidence and running Ollama analysis..."
+                : "Collecting PubCaseFinder evidence...";
+            try {
+                const response = await fetch(endpoint, {method: "POST"});
+                const payload = await response.json();
+                if (!response.ok) throw new Error(payload.error || "Evidence request failed.");
+                const evidence = payload.evidence || payload;
+                renderPubCaseFinderEvidence(evidence);
+                const count = evidence.ranking.returned || 0;
+                const reports = evidence.case_reports ? evidence.case_reports.returned : 0;
+                pcfStatus.textContent = analyzing
+                    ? `Ollama analysis completed with ${count} candidates and ${reports} case reports.`
+                    : `Found ${count} candidates and ${reports} case reports.`;
+            } catch (error) {
+                pcfStatus.textContent = error.message;
+            } finally {
+                button.disabled = false;
+            }
+        }
+
+        pcfFetchButton.addEventListener("click", () => runEvidenceAction(
+            pcfFetchButton,
+            "{{ url_for('expertboard.api_case_pubcasefinder_evidence', case_id=r_case_detail.case.id) }}",
+            false
+        ));
+        if (pcfAnalyzeButton) {
+            pcfAnalyzeButton.addEventListener("click", () => runEvidenceAction(
+                pcfAnalyzeButton,
+                "{{ url_for('expertboard.api_case_pubcasefinder_ai_review', case_id=r_case_detail.case.id) }}",
+                true
+            ));
+        }
     </script>
 </body>
 </html>

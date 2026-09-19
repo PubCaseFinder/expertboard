@@ -1,3 +1,7 @@
+import json
+import threading
+import uuid
+
 from flask import Blueprint
 from flask import abort
 from flask import flash
@@ -6,19 +10,91 @@ from flask import redirect
 from flask import render_template
 from flask import request
 from flask import url_for
+import re
+import requests
 
 from app import auth
 from app import cases
+from app import clinvar_client
 from app import patients
 from app import admin
 from app import panel
 from app import family as family_module
+from app import hpo_client
 from app import togovar_client
+from app import togomcp_client
 from app import assessments as assessments_module
 from app import llm as llm_module
+from app import vep_api
+from app.db import Session
+from app.models import Case
+from app.models import Variant
+from app import variant_priority
 
 
 bp = Blueprint("expertboard", __name__)
+
+_vep_jobs = {}
+_vep_jobs_lock = threading.Lock()
+
+
+def _fetch_and_save_vep_annotation(patient_id, variant):
+    """Single source of truth for VEP/VRS refresh, used by both the per-variant
+    and bulk (Refresh VEP & ClinVar) endpoints so both pages stay in sync."""
+    annotation = vep_api.annotate_variant(
+        variant.chrom, variant.pos, variant.ref, variant.alt, genome_build="GRCh38"
+    )
+    if not annotation.get("vep") and not annotation.get("vrs"):
+        raise RuntimeError(annotation.get("vep_error") or annotation.get("vrs_error") or "Annotation failed.")
+    saved = patients.save_vep_annotation(patient_id, variant.id, annotation)
+    annotation["updated_at"] = (
+        saved.vep_annotation_updated_at.isoformat()
+        if saved and saved.vep_annotation_updated_at else None
+    )
+    annotation["francis_info"] = variant_priority.display_info_values(variant, annotation)
+    annotation["francis_priority"] = variant_priority.evaluation_priority(variant, annotation)
+    return annotation
+
+
+def _fetch_and_save_clinvar_annotation(patient_id, variant):
+    """Single source of truth for ClinVar refresh, used by both the per-variant
+    and bulk (Refresh VEP & ClinVar) endpoints so both pages stay in sync."""
+    result = clinvar_client.fetch_variant(variant)
+    # ClinVar describes the variant, not the patient: share the result with
+    # every patient's row for this exact chrom/pos/ref/alt.
+    _matches, updated_at = patients.propagate_clinvar_annotation(
+        variant.chrom, variant.pos, variant.ref, variant.alt, result
+    )
+    vep_annotation = None
+    if variant.vep_annotation:
+        try:
+            vep_annotation = json.loads(variant.vep_annotation)
+        except (TypeError, ValueError):
+            pass
+    result["updated_at"] = updated_at.isoformat()
+    result["francis_info"] = variant_priority.display_info_values(variant, vep_annotation, result)
+    result["francis_priority"] = variant_priority.evaluation_priority(variant, vep_annotation, result)
+    return result
+
+
+def _run_vep_refresh_job(job_id, patient_id, variant_ids):
+    for variant_id in variant_ids:
+        try:
+            variant = Session().get(Variant, variant_id)
+            if variant is None or variant.patient_id != patient_id:
+                raise RuntimeError("Variant no longer belongs to this patient.")
+            annotation = _fetch_and_save_vep_annotation(patient_id, variant)
+            with _vep_jobs_lock:
+                _vep_jobs[job_id]["results"][str(variant_id)] = annotation
+                _vep_jobs[job_id]["completed"] += 1
+        except Exception as exc:
+            with _vep_jobs_lock:
+                _vep_jobs[job_id]["failures"][str(variant_id)] = str(exc)
+                _vep_jobs[job_id]["completed"] += 1
+        finally:
+            Session.remove()
+    with _vep_jobs_lock:
+        _vep_jobs[job_id]["status"] = "completed"
 
 
 def _vkey(v):
@@ -59,6 +135,26 @@ def patient_queue():
     return render_template(
         "patient_queue.html",
         r_columns=patients.list_patients_by_status(),
+    )
+
+
+@bp.route("/variant-assessments")
+def variant_assessment_review():
+    records = assessments_module.list_va_spec_review_records()
+    by_patient = {}
+    for record in records:
+        patient = record["patient"]
+        by_patient.setdefault(patient.id, {
+            "patient": patient,
+            "records": [],
+        })["records"].append(record)
+    return render_template(
+        "variant_assessment_review.html",
+        r_records=records,
+        r_by_gene=assessments_module.group_va_spec_records_by_gene_position(records),
+        r_by_classification=assessments_module.group_va_spec_records_by_classification(records),
+        r_by_patient=list(by_patient.values()),
+        r_target_variant=(request.args.get("variant") or "").strip(),
     )
 
 
@@ -109,6 +205,67 @@ def patient_detail(patient_id):
 
     # Proband variants
     proband_variants = patients.get_patient_variants(patient_id)
+    r_clinvar_annotations = {}
+    for variant in proband_variants:
+        if not variant.clinvar_annotation:
+            continue
+        try:
+            annotation = json.loads(variant.clinvar_annotation)
+        except (TypeError, ValueError):
+            continue
+        if isinstance(annotation, dict):
+            r_clinvar_annotations[variant.id] = annotation
+    r_variant_info = {
+        variant.id: variant_priority.display_info_values(
+            variant,
+            None,
+            r_clinvar_annotations.get(variant.id),
+        )
+        for variant in proband_variants
+    }
+    r_variant_annotations = {}
+    r_variant_annotation_summaries = {}
+    for variant in proband_variants:
+        if not variant.vep_annotation:
+            continue
+        try:
+            annotation = json.loads(variant.vep_annotation)
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(annotation, dict):
+            continue
+        r_variant_annotations[variant.id] = annotation
+        vep = annotation.get("vep") or {}
+        transcript = next(
+            (
+                item
+                for item in (vep.get("transcript_consequences") or [])
+                if item.get("mane_select") or item.get("mane_plus_clinical")
+            ),
+            None,
+        ) or ((vep.get("transcript_consequences") or [None])[0] or {})
+        r_variant_annotation_summaries[variant.id] = {
+            "impact": transcript.get("impact") or "",
+            "hgvsc": transcript.get("hgvsc") or "",
+            "hgvsp": transcript.get("hgvsp") or "",
+        }
+        if transcript.get("impact"):
+            r_variant_info[variant.id]["VEP_IMPACT"] = transcript["impact"]
+        if transcript.get("hgvsc"):
+            r_variant_info[variant.id]["VEP_HGVSC"] = transcript["hgvsc"]
+        if transcript.get("hgvsp"):
+            r_variant_info[variant.id]["VEP_HGVSP"] = transcript["hgvsp"]
+    r_variant_priority = variant_priority.evaluation_priorities(
+        proband_variants, r_variant_annotations, r_clinvar_annotations
+    )
+    r_variant_rule_scores = {
+        variant.id: variant_priority.display_rule_scores(
+            variant,
+            r_variant_annotations.get(variant.id),
+            r_clinvar_annotations.get(variant.id),
+        )
+        for variant in proband_variants
+    }
     proband_key_map = {_vkey(v): v.id for v in proband_variants}
 
     # Linked patient variants (deduplicated by patient id)
@@ -138,7 +295,17 @@ def patient_detail(patient_id):
     return render_template(
         "patient_detail.html",
         r_patient=patient,
+        r_clinical_context=patients.get_clinical_context(patient),
+        r_current_user_display=auth.current_user_display(),
+        r_llm_configured=llm_module.is_configured(),
+        r_confirmed_phenotypes=patients.list_confirmed_phenotypes(patient_id),
         r_variants=proband_variants,
+        r_variant_priority=r_variant_priority,
+        r_variant_info=r_variant_info,
+        r_variant_annotations=r_variant_annotations,
+        r_clinvar_annotations=r_clinvar_annotations,
+        r_variant_annotation_summaries=r_variant_annotation_summaries,
+        r_variant_rule_scores=r_variant_rule_scores,
         r_variant_shares=variant_shares,
         r_proband_vkeys=list(proband_key_map.keys()),
         r_shared_vkeys=list(shared_vkeys_set),
@@ -156,9 +323,14 @@ def patient_detail(patient_id):
         r_cross_assessments=assessments_module.list_cross_patient_for_variants(
             proband_variants, patient_id
         ),
+        r_variant_review_summaries=assessments_module.summarize_assessments_for_variants(
+            proband_variants
+        ),
         r_classifications=assessments_module.CLASSIFICATIONS,
         r_evidence_levels=assessments_module.EVIDENCE_LEVELS,
         r_acmg_codes=assessments_module.ACMG_CODES,
+        r_acmg_weight_options=assessments_module.ACMG_WEIGHT_OPTIONS,
+        r_acmg_default_weights=assessments_module.ACMG_DEFAULT_WEIGHTS,
     )
 
 
@@ -168,8 +340,26 @@ def patient_variant_assessment_add(patient_id, variant_id):
     if patient is None:
         abort(404)
     raw_acmg = request.form.getlist("acmg_codes")
-    acmg_str = ", ".join(raw_acmg) if raw_acmg else None
-    _a, error = assessments_module.add_assessment(
+    acmg_tokens = []
+    for item in raw_acmg:
+        for token in (item or "").split(","):
+            token = token.strip()
+            if token:
+                acmg_tokens.append(token)
+    acmg_str = ", ".join(dict.fromkeys(acmg_tokens)) if acmg_tokens else None
+    try:
+        criterion_comments = request.get_json(silent=True) or {}
+        criterion_comments = criterion_comments.get("criterion_comments", {})
+        if not criterion_comments:
+            import json
+            criterion_comments = json.loads(
+                request.form.get("criterion_comments") or "{}"
+            )
+        if not isinstance(criterion_comments, dict):
+            criterion_comments = {}
+    except (TypeError, ValueError):
+        criterion_comments = {}
+    assessment, error = assessments_module.add_assessment(
         variant_id,
         None,
         request.form.get("classification"),
@@ -177,9 +367,207 @@ def patient_variant_assessment_add(patient_id, variant_id):
         request.form.get("notes"),
         auth.current_user_display(),   # auto-stamped from session
         acmg_codes=acmg_str,
+        reviewer_override=request.form.get("reviewer_override_lb_threshold") == "1",
+        criterion_comments=criterion_comments,
+        annotation_snapshot=request.form.get("annotation_snapshot"),
     )
+    if request.accept_mimetypes.best == "application/json":
+        if error:
+            return jsonify({"error": error}), 400
+        return jsonify(assessments_module.assessment_payload(assessment)), 201
     flash(error or "Assessment saved.", "error" if error else "success")
     return redirect(url_for("expertboard.patient_detail", patient_id=patient_id))
+
+
+@bp.route(
+    "/api/patients/<int:patient_id>/variants/<int:variant_id>/annotation",
+    methods=["POST"],
+)
+def api_variant_annotation(patient_id, variant_id):
+    variant = Session().get(Variant, variant_id)
+    if variant is None or variant.patient_id != patient_id:
+        abort(404)
+    try:
+        result = _fetch_and_save_vep_annotation(patient_id, variant)
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 502
+    result["persisted"] = True
+    return jsonify(result), 200
+
+
+@bp.route("/api/patients/<int:patient_id>/clinvar-refresh", methods=["POST"])
+def api_patient_clinvar_refresh(patient_id):
+    variant_list = patients.get_patient_variants(patient_id)
+    if not variant_list:
+        return jsonify({"error": "No variants for this patient."}), 400
+    results = {}
+    failures = {}
+    for variant in variant_list:
+        try:
+            results[str(variant.id)] = _fetch_and_save_clinvar_annotation(patient_id, variant)
+        except requests.RequestException as exc:
+            failures[str(variant.id)] = str(exc)
+    return jsonify({"results": results, "failures": failures})
+
+
+@bp.route("/api/patients/<int:patient_id>/variants/<int:variant_id>/clinvar", methods=["POST"])
+def api_variant_clinvar(patient_id, variant_id):
+    variant = Session().get(Variant, variant_id)
+    if variant is None or variant.patient_id != patient_id:
+        abort(404)
+    try:
+        result = _fetch_and_save_clinvar_annotation(patient_id, variant)
+    except requests.RequestException as exc:
+        return jsonify({"error": str(exc)}), 502
+    return jsonify({
+        "result": result,
+        "updated_at": result.get("updated_at"),
+        "francis_info": result.get("francis_info"),
+        "francis_priority": result.get("francis_priority"),
+    })
+
+
+@bp.route("/api/patients/<int:patient_id>/vep-refresh", methods=["POST"])
+def api_start_vep_refresh(patient_id):
+    if patients.get_patient(patient_id) is None:
+        abort(404)
+    variant_ids = [variant.id for variant in patients.get_patient_variants(patient_id)]
+    if not variant_ids:
+        return jsonify({"error": "No variants for this patient."}), 400
+    with _vep_jobs_lock:
+        for job_id, job in _vep_jobs.items():
+            if job["patient_id"] == patient_id and job["status"] == "running":
+                return jsonify({"job_id": job_id, "status": job["status"]}), 202
+        job_id = uuid.uuid4().hex
+        _vep_jobs[job_id] = {
+            "patient_id": patient_id,
+            "status": "running",
+            "total": len(variant_ids),
+            "completed": 0,
+            "failures": {},
+            "results": {},
+        }
+    worker = threading.Thread(
+        target=_run_vep_refresh_job,
+        args=(job_id, patient_id, variant_ids),
+        daemon=True,
+        name=f"vep-refresh-{job_id[:8]}",
+    )
+    worker.start()
+    return jsonify({"job_id": job_id, "status": "running"}), 202
+
+
+@bp.route("/api/patients/<int:patient_id>/vep-refresh/<job_id>")
+def api_vep_refresh_status(patient_id, job_id):
+    with _vep_jobs_lock:
+        job = _vep_jobs.get(job_id)
+        if job is None or job["patient_id"] != patient_id:
+            abort(404)
+        return jsonify({
+            "status": job["status"],
+            "total": job["total"],
+            "completed": job["completed"],
+            "failures": job["failures"],
+            "results": job["results"],
+        })
+
+
+@bp.route(
+    "/api/patients/<int:patient_id>/variants/<int:variant_id>/ai-review",
+    methods=["POST"],
+)
+def api_variant_ai_review(patient_id, variant_id):
+    if not llm_module.is_configured():
+        return jsonify({"error": "Ollama is not configured. Set the URL in Admin."}), 503
+
+    patient = patients.get_patient(patient_id)
+    variant = Session().get(Variant, variant_id)
+    if patient is None or variant is None or variant.patient_id != patient_id:
+        abort(404)
+
+    annotation = vep_api.annotate_variant(
+        variant.chrom,
+        variant.pos,
+        variant.ref,
+        variant.alt,
+        genome_build="GRCh38",
+    )
+    if not annotation.get("vep") and not annotation.get("vrs"):
+        return jsonify({"error": "VEP and VRS annotation failed.", "annotation": annotation}), 502
+
+    result = llm_module.analyze_variants(
+        patient.clinical_text,
+        [variant],
+        annotations_by_variant={
+            variant.id: vep_api.compact_annotation_for_llm(annotation)
+        },
+        clinical_context=patients.get_clinical_context(patient),
+    )
+    if "error" in result:
+        return jsonify({"error": result["error"], "annotation": annotation}), 502
+
+    patients.save_llm_scores(patient_id, result)
+    analysis = result.get(variant.id) or result.get(str(variant.id))
+    if analysis is None:
+        return jsonify({"error": "AI returned no result for this variant."}), 502
+    return jsonify({"annotation": annotation, "analysis": analysis})
+
+
+@bp.route(
+    "/api/patients/<int:patient_id>/variants/<int:variant_id>/pubcasefinder-ai-review",
+    methods=["POST"],
+)
+def api_variant_pubcasefinder_ai_review(patient_id, variant_id):
+    """Suggest criteria using current annotation and PubCaseFinder rankings."""
+    if not llm_module.is_configured():
+        return jsonify({"error": "Ollama is not configured. Set the URL in Admin."}), 503
+
+    patient = patients.get_patient(patient_id)
+    variant = Session().get(Variant, variant_id)
+    if patient is None or variant is None or variant.patient_id != patient_id:
+        abort(404)
+
+    hpo_ids = [item.hpo_id for item in patients.list_confirmed_phenotypes(patient_id)]
+    if not hpo_ids:
+        return jsonify({"error": "Confirm at least one HPO phenotype before using PubCaseFinder AI criteria."}), 400
+
+    annotation = vep_api.annotate_variant(
+        variant.chrom, variant.pos, variant.ref, variant.alt, genome_build="GRCh38"
+    )
+    if not annotation.get("vep") and not annotation.get("vrs"):
+        return jsonify({"error": "VEP and VRS annotation failed.", "annotation": annotation}), 502
+
+    try:
+        evidence = togomcp_client.collect_pubcasefinder_evidence(hpo_ids)
+        gene_ranking = togomcp_client.collect_pubcasefinder_gene_ranking(hpo_ids)
+    except (RuntimeError, ValueError) as exc:
+        return jsonify({"error": str(exc), "annotation": annotation}), 502
+    evidence["candidate_gene_ranking"] = gene_ranking.get("ranking")
+    evidence["candidate_disease_ranking"] = gene_ranking.get("disease_ranking")
+
+    result = llm_module.analyze_variants(
+        patient.clinical_text,
+        [variant],
+        annotations_by_variant={variant.id: vep_api.compact_annotation_for_llm(annotation)},
+        case_evidence=evidence,
+        clinical_context=patients.get_clinical_context(patient),
+    )
+    if "error" in result:
+        return jsonify({"error": result["error"], "annotation": annotation}), 502
+
+    patients.save_llm_scores(patient_id, result)
+    analysis = result.get(variant.id) or result.get(str(variant.id))
+    if analysis is None:
+        return jsonify({"error": "AI returned no result for this variant."}), 502
+    return jsonify({"annotation": annotation, "analysis": analysis, "pubcasefinder": evidence})
+
+
+@bp.route("/api/assessments/<int:assessment_id>")
+def api_assessment(assessment_id):
+    assessment = assessments_module.get_assessment(assessment_id)
+    if assessment is None:
+        return jsonify({"error": "Assessment not found."}), 404
+    return jsonify(assessments_module.assessment_payload(assessment))
 
 
 @bp.route("/patients/<int:patient_id>/variants/<int:variant_id>/assessments/<int:assessment_id>/remove", methods=["POST"])
@@ -307,6 +695,56 @@ def patient_clinical_text(patient_id):
     return redirect(url_for("expertboard.patient_detail", patient_id=patient_id))
 
 
+@bp.route("/api/patients/<int:patient_id>/clinical-context/extract", methods=["POST"])
+def api_patient_clinical_context_extract(patient_id):
+    patient = patients.get_patient(patient_id)
+    if patient is None:
+        abort(404)
+    try:
+        return jsonify({"candidates": llm_module.extract_clinical_context(patient.clinical_text)})
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 502
+
+
+@bp.route("/api/patients/<int:patient_id>/clinical-context/confirm", methods=["POST"])
+def api_patient_clinical_context_confirm(patient_id):
+    patient = patients.get_patient(patient_id)
+    if patient is None:
+        abort(404)
+    payload = request.get_json(silent=True) or {}
+    clinical_text = patient.clinical_text or ""
+    context = {"ancestry": [], "diseases": []}
+    for key in context:
+        for item in payload.get(key, [])[:20]:
+            if not isinstance(item, dict):
+                continue
+            value = str(item.get("value") or "").strip()[:255]
+            source_text = str(item.get("source_text") or "").strip()[:1000]
+            if value and source_text and source_text.casefold() in clinical_text.casefold():
+                context[key].append({"value": value, "source_text": source_text})
+    context["confirmed_by"] = auth.current_user_display()
+    patients.save_clinical_context(patient_id, context)
+    return jsonify({"confirmed": context})
+
+
+@bp.route("/api/patients/<int:patient_id>/clinical-context/<kind>", methods=["DELETE"])
+def api_patient_clinical_context_remove(patient_id, kind):
+    patient = patients.get_patient(patient_id)
+    if patient is None:
+        abort(404)
+    if kind not in ("ancestry", "diseases"):
+        return jsonify({"error": "Unknown clinical context type."}), 400
+    payload = request.get_json(silent=True) or {}
+    value = str(payload.get("value") or "").strip()
+    context = patients.get_clinical_context(patient)
+    context[kind] = [
+        item for item in context.get(kind, [])
+        if str(item.get("value") or "") != value
+    ]
+    patients.save_clinical_context(patient_id, context)
+    return jsonify({"confirmed": context})
+
+
 @bp.route("/admin")
 def admin_panel():
     return render_template(
@@ -375,7 +813,7 @@ def admin_save_ollama():
     raw_key = (request.form.get("ollama_api_key") or "").strip()
     if raw_key:
         admin.set_setting(admin.OLLAMA_API_KEY_KEY, raw_key)
-    flash("Ollama settings saved.", "success")
+    flash("LLM settings saved.", "success")
     return redirect(url_for("expertboard.admin_panel"))
 
 
@@ -396,9 +834,37 @@ def api_patient_llm_analyze(patient_id):
     if not variant_list:
         return jsonify({"error": "No variants for this patient."}), 400
 
-    result = llm_module.analyze_variants(patient.clinical_text, variant_list)
-    if "error" in result:
-        return jsonify({"error": result["error"]}), 502
+    annotations_by_variant = {}
+    for variant in variant_list:
+        if not variant.vep_annotation:
+            continue
+        try:
+            annotation = json.loads(variant.vep_annotation)
+        except (TypeError, ValueError):
+            continue
+        if isinstance(annotation, dict):
+            annotations_by_variant[variant.id] = annotation
+
+    compact_input = request.args.get("compact") == "1"
+    result = {}
+    for variant in variant_list:
+        one_result = llm_module.analyze_variants(
+            patient.clinical_text,
+            [variant],
+            annotations_by_variant={variant.id: annotations_by_variant.get(variant.id)},
+            clinical_context=patients.get_clinical_context(patient),
+            compact_input=compact_input,
+        )
+        if "error" in one_result:
+            message = one_result["error"]
+            if not compact_input and len(message) > 0:
+                return jsonify({
+                    "error": message,
+                    "prompt_too_large": "context length" in message.lower()
+                    or "prompt is too long" in message.lower(),
+                }), 413 if "context length" in message.lower() or "prompt is too long" in message.lower() else 502
+            return jsonify({"error": message}), 502
+        result.update(one_result)
 
     # Persist scores back to DB
     patients.save_llm_scores(patient_id, result)
@@ -482,4 +948,253 @@ def case_detail(case_id):
             room_id=case_detail["case"].id,
         )
     )
+
+
+@bp.route("/api/cases/<int:case_id>/pubcasefinder-evidence", methods=["POST"])
+def api_case_pubcasefinder_evidence(case_id):
+    case = Session().get(Case, case_id)
+    if case is None:
+        abort(404)
+    try:
+        evidence = togomcp_client.collect_pubcasefinder_evidence([case.phenotypes])
+    except (RuntimeError, ValueError) as exc:
+        return jsonify({"error": str(exc)}), 502
+    return jsonify(evidence)
+
+
+@bp.route("/api/patients/<int:patient_id>/pubcasefinder-evidence", methods=["POST"])
+def api_patient_pubcasefinder_evidence(patient_id):
+    patient = patients.get_patient(patient_id)
+    if patient is None:
+        abort(404)
+
+    payload = request.get_json(silent=True) or {}
+    phenotype_sources = [payload.get("hpo_ids")]
+    if not togomcp_client.extract_hpo_ids(phenotype_sources):
+        phenotype_sources.append(
+            [item.hpo_id for item in patients.list_confirmed_phenotypes(patient_id)]
+        )
+    try:
+        evidence = togomcp_client.collect_pubcasefinder_evidence(phenotype_sources)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 502
+    return jsonify(evidence)
+
+
+@bp.route("/api/patients/<int:patient_id>/pubcasefinder-genes", methods=["POST"])
+def api_patient_pubcasefinder_genes(patient_id):
+    if patients.get_patient(patient_id) is None:
+        abort(404)
+    confirmed_hpo_ids = [
+        item.hpo_id for item in patients.list_confirmed_phenotypes(patient_id)
+    ]
+    try:
+        ranking = togomcp_client.collect_pubcasefinder_gene_ranking(
+            confirmed_hpo_ids
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 502
+    return jsonify(ranking)
+
+
+@bp.route("/api/patients/<int:patient_id>/pubcasefinder-diseases", methods=["POST"])
+def api_patient_pubcasefinder_diseases(patient_id):
+    if patients.get_patient(patient_id) is None:
+        abort(404)
+    confirmed_hpo_ids = [
+        item.hpo_id for item in patients.list_confirmed_phenotypes(patient_id)
+    ]
+    try:
+        ranking = togomcp_client.collect_pubcasefinder_disease_ranking(
+            confirmed_hpo_ids
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 502
+    return jsonify(ranking)
+
+
+def _patient_phenotype_payload(phenotype):
+    return {
+        "hpo_id": phenotype.hpo_id,
+        "label": phenotype.hpo_label or "",
+        "source": phenotype.source,
+        "source_text": phenotype.source_quote or "",
+        "confirmed_by": phenotype.confirmed_by,
+        "confirmed_at": phenotype.confirmed_at.isoformat()
+        if hasattr(phenotype.confirmed_at, "isoformat")
+        else str(phenotype.confirmed_at),
+    }
+
+
+@bp.route("/api/patients/<int:patient_id>/phenotypes")
+def api_patient_phenotypes(patient_id):
+    patient = patients.get_patient(patient_id)
+    if patient is None:
+        abort(404)
+    return jsonify(
+        {
+            "type": "PatientPhenotypeContext",
+            "patient_id": patient.id,
+            "confirmed_phenotypes": [
+                _patient_phenotype_payload(item)
+                for item in patients.list_confirmed_phenotypes(patient_id)
+            ],
+        }
+    )
+
+
+@bp.route("/api/patients/<int:patient_id>/phenotypes/extract", methods=["POST"])
+def api_patient_phenotypes_extract(patient_id):
+    patient = patients.get_patient(patient_id)
+    if patient is None:
+        abort(404)
+    if not (patient.clinical_text or "").strip():
+        return jsonify({"error": "Save clinical free text before extracting HPO candidates."}), 400
+    try:
+        candidates = llm_module.extract_hpo_phenotypes(patient.clinical_text)
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 502
+    return jsonify({"candidates": candidates})
+
+
+@bp.route("/api/patients/<int:patient_id>/phenotypes/resolve", methods=["POST"])
+def api_patient_phenotypes_resolve(patient_id):
+    if patients.get_patient(patient_id) is None:
+        abort(404)
+    payload = request.get_json(silent=True) or {}
+    try:
+        phenotype = hpo_client.resolve_id(payload.get("hpo_id"))
+    except requests.RequestException as exc:
+        return jsonify({"error": f"HPO terminology lookup failed: {exc}"}), 502
+    if phenotype is None:
+        return jsonify({"error": "Enter a current HPO ID such as HP:0001250."}), 400
+    return jsonify(
+        {
+            "candidate": {
+                **phenotype,
+                "source": "manual_review",
+                "source_text": "",
+            }
+        }
+    )
+
+
+@bp.route("/api/patients/<int:patient_id>/phenotypes/resolve-candidates", methods=["POST"])
+def api_patient_phenotypes_resolve_candidates(patient_id):
+    if patients.get_patient(patient_id) is None:
+        abort(404)
+    payload = request.get_json(silent=True) or {}
+    candidates = payload.get("candidates")
+    if not isinstance(candidates, list):
+        return jsonify({"error": "candidates must be a JSON array."}), 400
+    try:
+        resolved = hpo_client.resolve_candidates_via_ols4mcp(
+            [item for item in candidates if isinstance(item, dict)]
+        )
+    except (requests.RequestException, RuntimeError, ValueError) as exc:
+        return jsonify({"error": str(exc)}), 502
+    return jsonify({"candidates": resolved})
+
+
+@bp.route("/api/patients/<int:patient_id>/phenotypes/confirm", methods=["POST"])
+def api_patient_phenotypes_confirm(patient_id):
+    patient = patients.get_patient(patient_id)
+    if patient is None:
+        abort(404)
+    payload = request.get_json(silent=True) or {}
+    raw_items = payload.get("phenotypes")
+    if not isinstance(raw_items, list):
+        return jsonify({"error": "phenotypes must be a JSON array."}), 400
+
+    clinical_text = patient.clinical_text or ""
+    confirmed = []
+    seen = set()
+    for raw_item in raw_items[:100]:
+        if not isinstance(raw_item, dict):
+            continue
+        hpo_id = str(raw_item.get("hpo_id") or "").strip().upper()
+        if not re.fullmatch(r"HP:\d{7}", hpo_id) or hpo_id in seen:
+            continue
+        seen.add(hpo_id)
+        source_text = str(raw_item.get("source_text") or "").strip()[:1000]
+        if source_text and source_text.casefold() not in clinical_text.casefold():
+            source_text = ""
+        source = str(raw_item.get("source") or "clinical_text_review")
+        if source not in ("clinical_text_review", "manual_review"):
+            source = "clinical_text_review"
+        confirmed.append(
+            {
+                "hpo_id": hpo_id,
+                "label": str(raw_item.get("label") or "Unlabelled phenotype")[:255],
+                "source": source,
+                "source_text": source_text,
+            }
+        )
+
+    saved = patients.replace_confirmed_phenotypes(
+        patient_id, confirmed, auth.current_user_display()
+    )
+    return jsonify(
+        {"confirmed": [_patient_phenotype_payload(item) for item in saved or []]}
+    )
+
+
+@bp.route(
+    "/api/patients/<int:patient_id>/phenotypes/<hpo_id>", methods=["DELETE"]
+)
+def api_patient_phenotype_remove(patient_id, hpo_id):
+    if patients.get_patient(patient_id) is None:
+        abort(404)
+    normalized = hpo_id.strip().upper()
+    if not re.fullmatch(r"HP:\d{7}", normalized):
+        return jsonify({"error": "Invalid HPO ID."}), 400
+    if not patients.remove_confirmed_phenotype(patient_id, normalized):
+        return jsonify({"error": "Confirmed phenotype not found."}), 404
+    return jsonify(
+        {
+            "confirmed": [
+                _patient_phenotype_payload(item)
+                for item in patients.list_confirmed_phenotypes(patient_id)
+            ]
+        }
+    )
+
+
+@bp.route("/api/cases/<int:case_id>/pubcasefinder-ai-review", methods=["POST"])
+def api_case_pubcasefinder_ai_review(case_id):
+    if not llm_module.is_configured():
+        return jsonify({"error": "Ollama is not configured. Set the URL in Admin."}), 503
+
+    case = Session().get(Case, case_id)
+    if case is None:
+        abort(404)
+    if case.patient_id is None:
+        return jsonify({"error": "This review room is not linked to a patient."}), 400
+
+    patient = patients.get_patient(case.patient_id)
+    variant_list = patients.get_patient_variants(case.patient_id)
+    if patient is None or not variant_list:
+        return jsonify({"error": "The linked patient has no variants."}), 400
+
+    try:
+        evidence = togomcp_client.collect_pubcasefinder_evidence([case.phenotypes])
+    except (RuntimeError, ValueError) as exc:
+        return jsonify({"error": str(exc)}), 502
+
+    result = llm_module.analyze_variants(
+        patient.clinical_text,
+        variant_list,
+        case_evidence=evidence,
+    )
+    if "error" in result:
+        return jsonify({"error": result["error"], "evidence": evidence}), 502
+
+    patients.save_llm_scores(case.patient_id, result)
+    return jsonify({"evidence": evidence, "analysis": result})
 
